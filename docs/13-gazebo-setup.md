@@ -264,7 +264,7 @@ If this works, **the full pipeline is verified**: Gazebo → ROS 2 → Python �
 
 If all 4 are checked, Day 1-2 is done. Move to Week 1 work.
 
-If any are not checked, escalate to the team. Add Person 5 or Person 4 to help. **Don't sit on infrastructure problems alone.**
+If any are not checked, escalate immediately. Person 5 is paired with Person 1 every day specifically so Person 1 is never solo on infrastructure problems. **Don't sit on infrastructure problems alone.**
 
 ## Cross-References
 

@@ -192,7 +192,7 @@ PX4 simulates GPS in absolute lat/lon. We pick a fictional location for the demo
 
 This is configured in PX4's `PX4_HOME_LAT` / `PX4_HOME_LON` environment variables.
 
-## Building the Scene (Person 5's Week 1 Work)
+## Building the Scene (Person 1 + Person 5, paired daily)
 
 Day 1-3:
 - Browse Gazebo Fuel for assets
@@ -217,7 +217,7 @@ Day 8 onwards:
 
 ## Validation: Does Gemma 4 See It?
 
-Before integrating with the agent loop, Person 5 manually:
+Before integrating with the agent loop, Person 2 manually (using screenshots Person 5 captures from drone-eye view):
 1. Takes 20 screenshots from drone-eye view at 25m altitude
 2. Sends each to Gemma 4 base model with the system prompt
 3. Verifies the model identifies the right targets with reasonable confidence

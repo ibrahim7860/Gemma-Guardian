@@ -9,7 +9,15 @@ Fine-tuning is the credibility play. It earns:
 - A measurable accuracy improvement over base Gemma 4
 - A real evaluation section in the writeup with falsifiable claims
 
-But fine-tuning is also the highest-risk solo workstream in the project. We isolate it.
+But fine-tuning is also the highest-risk workstream in the project. We isolate it as a clean go/no-go workflow.
+
+## Ownership
+
+**Person 2 owns fine-tuning end-to-end** alongside the drone agent. This is deliberate: the same person writes the vision prompts, defines what "good" output looks like, and integrates the adapter back into the agent runtime. There is no handoff between fine-tuner and agent author — they are the same person, with no shared support resource.
+
+**Person 5 is paired exclusively with Person 1 on the simulation workstream and is not available to support fine-tuning.** This is a strategic choice: Person 1's simulation stack is the higher-risk seat on the project, and we double-up there rather than spread Person 5 thin across roles. Person 2 carries fine-tuning solo.
+
+Because Person 2 has no helper, the Day-2 Unsloth verification gate and the Day-10 GO/NO-GO gate are non-negotiable. If fine-tuning starts pulling Person 2 off the agent loop, **the team invokes NO-GO early rather than reassigning help.** Sunk cost is not a reason to keep the FT workstream alive past the gate.
 
 ## Scope
 
@@ -68,7 +76,7 @@ For our purposes we don't need to match top entries. A modest improvement over b
 
 ## Day-1 Verification (Critical)
 
-**Person 5 must verify by end of Day 2:**
+**Person 2 must verify by end of Day 2:**
 
 1. Unsloth installs cleanly on the dev machine
 2. Unsloth supports Gemma 4 vision LoRA fine-tuning (not just text)
@@ -190,10 +198,10 @@ These are honest targets. We don't claim state-of-the-art.
 
 ## The Day-10 Go/No-Go Gate (May 8)
 
-Person 5 reports to the team:
+Person 2 reports to the team:
 
 **If the fine-tuned adapter beats base Gemma 4 by ≥10 percentage points on validation accuracy:**
-- GO. Integrate the adapter into Person 2's drone agent.
+- GO. Integrate the adapter into the drone agent (Person 2 owns this since fine-tuning and the agent live in the same seat).
 - Update the writeup to include the fine-tuning section.
 - Compete for the Unsloth special prize.
 

@@ -273,9 +273,8 @@ All Python code reads these via a small loader function. Frontend can show them 
 
 Prompt engineering is iterative. The team's process:
 
-1. Person 5 owns prompt engineering for vision tasks
-2. Person 2 owns prompt engineering for the drone agent loop
-3. Person 3 owns prompt engineering for EGS tasks
+1. Person 2 owns prompt engineering for vision tasks **and** the drone agent loop (now a single seat covering both)
+2. Person 3 owns prompt engineering for EGS tasks
 4. Iteration happens in a notebook (`ml/prompt_iteration.ipynb`) with a small evaluation set
 5. Successful changes get committed; failures are noted with metrics
 

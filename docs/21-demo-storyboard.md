@@ -139,7 +139,7 @@ This is less impressive but more reliable to capture.
 
 3. **Use OBS Studio** (free, supports multi-source recording, scene composition).
 
-4. **Edit in DaVinci Resolve** (free) or any video editor familiar to Person 5.
+4. **Edit in DaVinci Resolve** (free) or any video editor familiar to Person 4.
 
 ### Visual Style
 
@@ -152,7 +152,7 @@ This is less impressive but more reliable to capture.
 ### Narration
 
 Narration is optional. If included:
-- Person 5 records (or another team member with a clear voice)
+- Person 4 records (or another team member with a clear voice)
 - Quiet room, decent USB mic
 - Pace: ~165 words per minute
 - Total words: ~245 for 90 seconds
@@ -188,7 +188,7 @@ Frame the simulation positively: *"This code runs unchanged on real Jetson Orin 
 
 ## Storyboard Frame-by-Frame Reference
 
-A sketched storyboard exists in `docs_assets/storyboard.png` (Person 5 creates this Day 14). Each beat has 2-4 frame sketches showing what the camera/screen displays.
+A sketched storyboard exists in `docs_assets/storyboard.png` (Person 4 creates this Day 14). Each beat has 2-4 frame sketches showing what the camera/screen displays.
 
 ## Test Audience
 

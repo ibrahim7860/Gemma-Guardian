@@ -80,7 +80,7 @@ This is still a winning submission. The previous Gemma 3n hackathon's first plac
 
 **If pass:**
 
-1. Person 5 integrates adapter into Person 2's drone agent code
+1. Person 2 integrates adapter into the drone agent code (fine-tuning and the agent live in the same seat)
 2. Adapter loads at startup of the Ollama instance
 3. Writeup updates to claim Unsloth special prize
 4. Evaluation section includes adapter-vs-base comparison numbers
@@ -90,7 +90,7 @@ This is still a winning submission. The previous Gemma 3n hackathon's first plac
 1. Adapter is **completely dropped** from the demo
 2. Base Gemma 4 with prompt engineering is used everywhere
 3. Writeup includes honest "we attempted fine-tuning, here's what happened" section
-4. Person 5 pivots full-time to demo polish and writeup
+4. Person 5 stays with Person 1 on simulation — no reassignment. If FT fails, Person 2 absorbs the fallback path (base Gemma 4 + heavy prompts) themselves, and Person 4 ships the demo/writeup solo.
 
 **No half-measures.** A partially-working adapter that sometimes helps and sometimes hurts is worse than no adapter. We ship what works or skip cleanly.
 
