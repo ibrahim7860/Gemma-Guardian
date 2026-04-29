@@ -70,13 +70,14 @@ Read docs in this order when getting up to speed:
 
 ## Tech Stack Summary
 
-- **OS:** Ubuntu 22.04 (native install required, no VMs)
+- **OS:** Ubuntu 22.04 — native install OR WSL2 on Windows 11 with WSLg. (VirtualBox/Parallels-class VMs still NOT acceptable.) Apple Silicon Macs are supported for non-sim roles only.
 - **Simulation:** Gazebo Harmonic + PX4 SITL + ROS 2 Humble
-- **LLM runtime:** Ollama, two instances (E2B onboard, E4B at EGS)
+- **LLM runtime:** Ollama, two instances (E2B onboard, E4B at EGS) — runs on Linux/WSL2 (CUDA) or macOS (Metal)
 - **Orchestration:** LangGraph (per-drone agent + EGS coordinator)
-- **Fine-tuning:** Unsloth on xBD dataset (LoRA on vision adapter)
-- **Frontend:** Flutter web dashboard via rosbridge_suite WebSocket
+- **Fine-tuning:** Unsloth on xBD dataset (LoRA on vision adapter) — runs on WSL2+NVIDIA OR rented cloud GPU (Lambda Labs / Paperspace / Runpod)
+- **Frontend:** Flutter web dashboard via rosbridge_suite WebSocket — runs on macOS, Windows, or Linux
 - **Mesh:** ROS 2 topics with namespaced per-drone channels, software dropout
+- **Team hardware floor:** at least one team member must have a Windows 11 machine capable of running WSL2 with WSLg. See [`docs/13-gazebo-setup.md`](docs/13-gazebo-setup.md) for the platform-path selection.
 
 ## Repository Structure (Target)
 

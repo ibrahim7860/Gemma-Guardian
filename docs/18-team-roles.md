@@ -213,11 +213,13 @@ If someone is sick or unavailable for >3 days, we re-plan at the next gate. The 
 
 Before Day 1, verify the team has:
 
-- [ ] At least one person comfortable with Linux + ROS 2 + simulation (Person 1)
-- [ ] A second person comfortable with Linux + basic ROS 2 / Gazebo, willing to pair daily on simulation work (Person 5 — does not need ML, frontend, or LangGraph experience)
-- [ ] At least one person comfortable with Python async + LangGraph **AND** PyTorch / Hugging Face / Unsloth (Person 2 — both skill sets now required in the same seat)
-- [ ] At least one person comfortable with Python async + LangGraph (Person 3)
-- [ ] At least one strong web engineer (Flutter / web frontend) **who can also handle technical writing and basic video editing** (Person 4 — frontend + comms merged)
+- [ ] At least one person comfortable with Linux + ROS 2 + simulation (Person 1) — running on **native Ubuntu OR WSL2 on Windows 11**
+- [ ] A second person comfortable with Linux/WSL2 + basic ROS 2 / Gazebo, willing to pair daily on simulation work (Person 5 — does not need ML, frontend, or LangGraph experience)
+- [ ] At least one person comfortable with Python async + LangGraph **AND** PyTorch / Hugging Face / Unsloth (Person 2 — both skill sets required in the same seat). **Comfortable provisioning a cloud GPU instance** (Lambda Labs / Paperspace / Runpod) if no Windows+NVIDIA machine is available locally.
+- [ ] At least one person comfortable with Python async + LangGraph (Person 3) — can run on macOS, Windows, or Linux with Ollama
+- [ ] At least one strong web engineer (Flutter / web frontend) **who can also handle technical writing and basic video editing** (Person 4 — frontend + comms merged) — any OS
+
+**Hardware floor for the team:** at least one team member must have a **Windows 11 machine capable of running WSL2 with WSLg**. Without this, the simulation stack has no viable path and the project is not feasible. Apple Silicon Macs are NOT a supported sim path.
 
 If any are missing, redistribute work or recruit. Don't start Day 1 with a critical skill gap.
 

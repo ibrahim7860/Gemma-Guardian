@@ -131,8 +131,11 @@ See [`16-mocks-and-cuts.md`](16-mocks-and-cuts.md) for the rationale on each.
 ## Hardware Profile
 
 Required for development:
-- 1× workstation (RTX 3090 / 4080 / 4090 or equivalent, 32+ GB RAM, 100+ GB free disk)
-- Ubuntu 22.04 native install (no VMs)
+- At least one machine running the simulation stack on Ubuntu 22.04 — either **native install** OR **WSL2 on Windows 11** (32+ GB RAM, 100+ GB free disk; NVIDIA GPU strongly preferred for multi-drone scenes).
+- VirtualBox/Parallels-class VMs are NOT acceptable; WSL2 is acceptable because it provides near-native Linux performance with WSLg GUI support.
+- Apple Silicon Macs are acceptable for the agent (Ollama Metal), EGS, and frontend roles, but NOT for the simulation stack.
+- Fine-tuning runs on a Linux+NVIDIA machine (WSL2 with NVIDIA GPU works) OR on a rented cloud GPU instance (Lambda Labs / Paperspace / Runpod). See [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md).
+- Designate one "demo box" by Day 1 — the machine the final video gets recorded from. This must be a stable native-Ubuntu or well-tested WSL2 setup.
 
 Theoretical real-deployment hardware (we cite this in the writeup but don't deploy):
 - Per-drone: NVIDIA Jetson Orin NX (70 TOPS, 10-25W) running Gemma 4 E2B

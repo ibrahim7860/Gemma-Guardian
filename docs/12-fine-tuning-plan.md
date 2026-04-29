@@ -19,6 +19,40 @@ But fine-tuning is also the highest-risk workstream in the project. We isolate i
 
 Because Person 2 has no helper, the Day-2 Unsloth verification gate and the Day-10 GO/NO-GO gate are non-negotiable. If fine-tuning starts pulling Person 2 off the agent loop, **the team invokes NO-GO early rather than reassigning help.** Sunk cost is not a reason to keep the FT workstream alive past the gate.
 
+## Compute Path
+
+Unsloth requires Linux + an NVIDIA CUDA GPU. The team has Mac Silicon and Windows machines (no native Ubuntu). Person 2 picks one of these compute paths:
+
+### Path 1: WSL2 on a Windows + NVIDIA machine (preferred if available)
+
+If anyone on the team has a Windows machine with an NVIDIA RTX 3060 or better, Person 2 (or that team member, if it's not Person 2's own laptop) runs Unsloth inside WSL2 with NVIDIA CUDA passthrough. This works in 2026 with no fuss — install the latest NVIDIA Windows driver, then `nvidia-smi` works inside WSL2 immediately.
+
+Pros: free, fast iteration, no cloud cost.
+Cons: requires the right hardware on the team.
+
+### Path 2: Rented cloud GPU (default fallback)
+
+Rent an A10 or A100 instance from Lambda Labs, Paperspace, or Runpod. Person 2 spins it up for training runs only, shuts it down between runs.
+
+- **Lambda Labs A10:** ~$0.75/hr — sufficient for LoRA on Gemma 4 E2B
+- **Paperspace A4000 / A5000:** ~$0.51–$0.76/hr
+- **Runpod RTX A4000:** ~$0.34/hr (cheapest spot pricing)
+
+Total budget for the 10-day FT window: **~$50–150** if Person 2 is disciplined about shutting down idle instances. Set a billing alert at $100.
+
+Pros: works regardless of team hardware; A100 is faster than any laptop GPU.
+Cons: requires credit card setup; data transfer time; risk of forgetting to shut down.
+
+### Workflow regardless of path
+
+1. xBD download and preprocessing happens on Person 2's local machine (Mac or Windows). Output is the cleaned dataset.
+2. Cleaned dataset uploads to the GPU machine (rsync to WSL2, or scp to cloud instance).
+3. Training runs on the GPU machine.
+4. Adapter weights (~MB scale) download back to Person 2's local machine.
+5. Adapter integrates into the drone agent's Ollama instance, which can be local or running on the demo box.
+
+The Day-2 Unsloth verification gate happens on whichever path Person 2 chooses. If neither path works by end of Day 2, fine-tuning is abandoned per the existing NO-GO criteria.
+
 ## Scope
 
 **Task:** building damage classification from aerial imagery.

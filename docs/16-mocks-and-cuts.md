@@ -92,7 +92,7 @@ These are tempting but cut hard:
 - **Voice operator commands.** Text only. (Stretch only if everything else is done.)
 - **Drone camera live feed in dashboard.** Map view only. (Stretch.)
 - **Mission timeline replay.** Out of scope.
-- **Cross-platform support.** Ubuntu 22.04 only. Windows / macOS not supported.
+- **Cross-platform support beyond the team's dev paths.** The simulation stack runs on Ubuntu 22.04 — native or WSL2 on Windows 11. Apple Silicon Macs are supported for the agent / EGS / frontend roles only. We do NOT support running the full simulation stack on macOS or Windows-native; reproduction docs assume Linux or WSL2.
 
 ## Decision Heuristic
 

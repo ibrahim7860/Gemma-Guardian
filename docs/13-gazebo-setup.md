@@ -8,11 +8,24 @@ If this doesn't work by Day 2, we switch to Gazebo Classic (older, more stable) 
 
 ## Target Stack
 
-- **OS:** Ubuntu 22.04 LTS (native install, NOT a VM)
+- **OS:** Ubuntu 22.04 LTS — native install OR WSL2 on Windows 11 (with WSLg for GUI). VirtualBox/Parallels-class VMs are still NOT acceptable.
 - **ROS 2:** Humble Hawksbill
 - **PX4 Autopilot:** main branch (latest)
 - **Gazebo:** Harmonic (Gz Sim 8.x)
 - **Communication:** Micro XRCE-DDS Agent (PX4 ↔ ROS 2 bridge)
+
+## Platform Path Selection
+
+The project supports two development paths for the simulation stack. The team picks one based on hardware availability:
+
+| Path | When to use | Trade-offs |
+|---|---|---|
+| **Native Ubuntu 22.04** | Anyone with a dedicated Linux machine, or willing to dual-boot | First-class everything; preferred path for the demo recording machine |
+| **WSL2 on Windows 11** | Anyone on Windows (the team's default) | Mature in 2026, well-documented, supports WSLg for Gazebo GUI. NVIDIA GPU passthrough works for both rendering and CUDA |
+
+**Apple Silicon Macs are NOT a supported sim path.** Persons 1 and 5 must use native Ubuntu or WSL2. macOS is fine for Persons 2, 3, and 4 (agent / EGS / frontend), since those components run cross-platform on Ollama (Metal), Python, and Flutter respectively.
+
+**The demo recording must come from a stable, integrated environment** — either native Ubuntu or a well-tested WSL2 setup. Designate one machine as the "demo box" by Day 1 and treat it as critical infrastructure.
 
 ## Hardware Check
 
@@ -32,11 +45,36 @@ nproc
 
 ## Step 1: Install Ubuntu 22.04
 
+### Path A: Native Ubuntu
+
 If you already have Ubuntu 22.04 native, skip. Otherwise:
 - Download Ubuntu 22.04 LTS desktop ISO
 - Create bootable USB
-- Install (dual-boot if needed; do not use a VM)
+- Install (dual-boot if needed; do not use VirtualBox/Parallels)
 - Update: `sudo apt update && sudo apt upgrade -y`
+
+### Path B: WSL2 on Windows 11 (the team's default)
+
+Run in PowerShell (as Administrator):
+```powershell
+wsl --install -d Ubuntu-22.04
+```
+
+Then inside the WSL2 Ubuntu shell:
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+**WSL2 verification checklist:**
+- WSLg is enabled (default on Windows 11) — needed for Gazebo GUI: `echo $WAYLAND_DISPLAY` should return `wayland-0`
+- WSL version is 2: `wsl -l -v` should show VERSION 2 next to your distro
+- If the host has an NVIDIA GPU, install the latest NVIDIA Windows driver — CUDA passthrough works automatically; verify with `nvidia-smi` inside WSL2
+- Clock sync: WSL2 occasionally drifts; if you see weird ROS 2 timing issues, run `sudo hwclock -s`
+
+**WSL2 known caveats:**
+- USB device passthrough (real PX4 hardware) is finicky; we run SITL only, so this doesn't affect us
+- File I/O between Windows and WSL2 is slow; **keep the project repo inside WSL2's home directory (`~/`), NOT under `/mnt/c/`**
+- First boot of WSLg can be slow (~30s); subsequent launches are fast
 
 ## Step 2: Install ROS 2 Humble
 

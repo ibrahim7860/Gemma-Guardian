@@ -96,12 +96,14 @@ bash scripts/run_full_demo.sh
 
 Open the dashboard at `http://localhost:8080`.
 
-## Hardware Requirements
+## Hardware Requirements (for reproduction)
 
-- Ubuntu 22.04 LTS (native install)
-- NVIDIA GPU with 16+ GB VRAM
+- Ubuntu 22.04 LTS — native install OR **WSL2 on Windows 11 with WSLg**
+- NVIDIA GPU with 16+ GB VRAM (passthrough works on WSL2 with current NVIDIA Windows drivers)
 - 32 GB RAM
 - 100 GB free disk
+
+The reproduction docs cover the WSL2 path since that is the team's primary development environment. A native-Ubuntu reproduction works identically; only the initial OS setup step differs.
 
 ## What's Inside
 

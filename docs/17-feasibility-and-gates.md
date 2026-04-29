@@ -18,14 +18,15 @@ Hackathons fail because teams keep building when they should be cutting. This do
 
 **Pass criteria — ALL of these must work:**
 
-- [ ] Ubuntu 22.04 native install on dev machine
+- [ ] Ubuntu 22.04 working on Person 1's and Person 5's machines — **native OR WSL2 on Windows 11 with WSLg**. At least one team member must have a Windows machine capable of WSL2; this is the project's hardware floor.
 - [ ] ROS 2 Humble installed, `ros2 topic list` runs
 - [ ] PX4 Autopilot built successfully
-- [ ] Gazebo Harmonic launches with `make px4_sitl gz_x500_mono_cam`
+- [ ] Gazebo Harmonic launches with `make px4_sitl gz_x500_mono_cam` (GUI renders via native X11 or WSLg)
 - [ ] QGroundControl connects, drone takes off
 - [ ] Camera frame accessible from Python via ROS 2
-- [ ] Ollama installed, Gemma 4 E2B pulled and runs
+- [ ] Ollama installed, Gemma 4 E2B pulled and runs (Linux/WSL2 with CUDA, or macOS with Metal for non-sim roles)
 - [ ] End-to-end test: take a frame, send to Gemma 4, get structured response
+- [ ] **Demo box designated** — the single machine where the final video will be recorded
 
 **If any fail:**
 
@@ -35,7 +36,8 @@ Hackathons fail because teams keep building when they should be cutting. This do
 | PX4 unstable | Switch to AirSim (deprecated but works) |
 | Multi-drone setup unclear | Already plan for 2 drones; defer 3rd to Gate 4 |
 | Ollama / Gemma 4 incompatible | Use llama.cpp directly with quantized weights |
-| Cannot install on dev machine | Use a cloud GPU instance (Vast.ai, Lambda) |
+| WSL2 setup blocked (no Windows 11, no NVIDIA driver, etc.) | Dual-boot Ubuntu on the same machine, OR use a rented cloud Ubuntu instance |
+| No team member has a Linux-capable machine | Rent a dedicated cloud GPU instance (Lambda Labs, Paperspace) and use it as the demo box for Week 3 |
 
 **If all five pivots fail by end of Day 3:** the project as designed is not feasible. Pivot to a simpler use case (single drone, no swarm, indoor environment).
 
