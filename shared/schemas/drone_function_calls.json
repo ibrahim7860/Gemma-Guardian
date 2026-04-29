@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/drone_function_calls.json",
+  "title": "Drone Function Calls (v1, locked 2026-04-29)",
+  "description": "Per-drone agent must call exactly ONE of these per inference cycle. Source of truth: docs/09-function-calling-schema.md.",
+  "oneOf": [
+    {"$ref": "#/$defs/report_finding"},
+    {"$ref": "#/$defs/mark_explored"},
+    {"$ref": "#/$defs/request_assist"},
+    {"$ref": "#/$defs/return_to_base"},
+    {"$ref": "#/$defs/continue_mission"}
+  ],
+  "$defs": {
+    "report_finding": {
+      "type": "object",
+      "required": ["function", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "function": {"const": "report_finding"},
+        "arguments": {
+          "type": "object",
+          "required": ["type", "severity", "gps_lat", "gps_lon", "confidence", "visual_description"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {"enum": ["victim", "fire", "smoke", "damaged_structure", "blocked_route"]},
+            "severity": {"type": "integer", "minimum": 1, "maximum": 5},
+            "gps_lat": {"type": "number"},
+            "gps_lon": {"type": "number"},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "visual_description": {"type": "string", "minLength": 10}
+          }
+        }
+      }
+    },
+    "mark_explored": {
+      "type": "object",
+      "required": ["function", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "function": {"const": "mark_explored"},
+        "arguments": {
+          "type": "object",
+          "required": ["zone_id", "coverage_pct"],
+          "additionalProperties": false,
+          "properties": {
+            "zone_id": {"type": "string", "minLength": 1},
+            "coverage_pct": {"type": "number", "minimum": 0.0, "maximum": 100.0}
+          }
+        }
+      }
+    },
+    "request_assist": {
+      "type": "object",
+      "required": ["function", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "function": {"const": "request_assist"},
+        "arguments": {
+          "type": "object",
+          "required": ["reason", "urgency"],
+          "additionalProperties": false,
+          "properties": {
+            "reason": {"type": "string", "minLength": 10},
+            "urgency": {"enum": ["low", "medium", "high"]},
+            "related_finding_id": {"type": "string"}
+          }
+        }
+      }
+    },
+    "return_to_base": {
+      "type": "object",
+      "required": ["function", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "function": {"const": "return_to_base"},
+        "arguments": {
+          "type": "object",
+          "required": ["reason"],
+          "additionalProperties": false,
+          "properties": {
+            "reason": {"enum": ["low_battery", "mission_complete", "ordered", "mechanical", "weather"]}
+          }
+        }
+      }
+    },
+    "continue_mission": {
+      "type": "object",
+      "required": ["function", "arguments"],
+      "additionalProperties": false,
+      "properties": {
+        "function": {"const": "continue_mission"},
+        "arguments": {"type": "object", "additionalProperties": false}
+      }
+    }
+  }
+}

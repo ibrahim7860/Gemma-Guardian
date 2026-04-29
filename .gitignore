@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ML artifacts (large; kept out of git)
+ml/data/xbd*/
+ml/data/raw/
+ml/adapters/*/
+!ml/adapters/.gitkeep
+!ml/data/.gitkeep
+
+# Logs
+/tmp/fieldagent_logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
