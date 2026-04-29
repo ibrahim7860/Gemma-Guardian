@@ -6,13 +6,24 @@ Runs three checks:
   3. A toy multimodal LoRA forward+backward pass completes (one synthetic batch)
 
 If any check fails, fine-tuning is abandoned. Print results and exit non-zero so CI can gate.
+
+COMPUTE PATH (docs/12 §Compute Path): Unsloth requires Linux + NVIDIA CUDA.
+Run this on WSL2+NVIDIA (Path 1) or a rented cloud GPU instance (Path 2:
+Lambda Labs / Paperspace / Runpod). Will not run on macOS or Windows-native.
 """
 from __future__ import annotations
 
 import json
+import platform
 import sys
 import time
 import traceback
+
+
+if platform.system() == "Darwin":
+    print("This script cannot run on macOS — Unsloth requires Linux + NVIDIA CUDA.")
+    print("See docs/12-fine-tuning-plan.md §Compute Path for WSL2 / cloud GPU setup.")
+    sys.exit(2)
 
 
 def check(name: str, fn):

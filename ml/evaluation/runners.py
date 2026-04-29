@@ -1,6 +1,12 @@
 """Inference runners: base Gemma 4 (via Ollama) vs LoRA-tuned (via Unsloth FastVisionModel).
 
 Both expose: runner(image: PIL.Image) -> {"damage_class": str, "confidence": float, "visual_evidence": str}
+
+PLATFORM:
+  - base_gemma_runner: requires only a running Ollama with gemma-4:e2b. Works on
+    macOS (Metal), Linux/WSL2 (CUDA), or anywhere Ollama runs.
+  - adapter_gemma_runner: requires Unsloth + CUDA. Run on WSL2+NVIDIA or a cloud
+    GPU box; will not work on macOS (see docs/12 §Compute Path).
 """
 from __future__ import annotations
 

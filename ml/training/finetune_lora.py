@@ -7,13 +7,30 @@ Stop criteria (enforced):
   - validation accuracy plateaus 2 epochs
   - validation accuracy decreases 2 consecutive epochs
   - 7 days wall-clock cap
+
+COMPUTE PATH (docs/12 §Compute Path): Run on WSL2+NVIDIA (Path 1) or a rented
+cloud GPU instance (Path 2: Lambda Labs / Paperspace / Runpod). Will not run
+on macOS. Workflow:
+  1. Preprocess xBD locally (Mac/Windows): download_xbd → crop_patches →
+     split_dataset → format_for_gemma. Output goes to ml/data/xbd_gemma/.
+  2. rsync ml/data/xbd_gemma/ to the GPU box.
+  3. Run this script on the GPU box.
+  4. scp the adapter dir back to ml/adapters/<run_name>/ on the demo box.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import platform
+import sys
 import time
 from pathlib import Path
+
+
+if platform.system() == "Darwin":
+    print("This script cannot run on macOS — Unsloth requires Linux + NVIDIA CUDA.")
+    print("See docs/12-fine-tuning-plan.md §Compute Path for WSL2 / cloud GPU setup.")
+    sys.exit(2)
 
 
 def load_split(jsonl: Path) -> list[dict]:
