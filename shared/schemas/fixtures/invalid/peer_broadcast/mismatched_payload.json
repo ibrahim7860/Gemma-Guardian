@@ -1,0 +1,8 @@
+{
+  "broadcast_id": "drone1_bx",
+  "sender_id": "drone1",
+  "sender_position": {"lat": 34.1234, "lon": -118.5678, "alt": 25.0},
+  "timestamp": "2026-05-15T14:23:11.342Z",
+  "broadcast_type": "finding",
+  "payload": {"reason": "bogus shape", "urgency": "low"}
+}

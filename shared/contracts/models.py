@@ -341,3 +341,68 @@ class TaskAssignment(_StrictModel):
     assigned_survey_points: List[_AssignedSurveyPoint]
     priority_override: Optional[PriorityLevel]
     valid_until: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+
+
+# -- Contract 6: peer_broadcast -----------------------------------------------
+
+BroadcastType = Literal[
+    "finding", "assist_request", "task_complete",
+    "entering_standalone_mode", "rejoining_swarm",
+]
+TaskCompleteResult = Literal["success", "partial", "failed"]
+StandaloneTrigger = Literal["lost_egs_link", "lost_peers", "ordered"]
+
+
+class _FindingPayload(_StrictModel):
+    type: FindingType
+    severity: int = Field(ge=1, le=5)
+    gps_lat: float = Field(ge=-90, le=90)
+    gps_lon: float = Field(ge=-180, le=180)
+    confidence: float = Field(ge=0, le=1)
+    visual_description: str = Field(min_length=10)
+
+
+class _AssistRequestPayload(_StrictModel):
+    reason: str = Field(min_length=10)
+    urgency: Urgency
+    related_finding_id: Optional[str] = Field(default=None, pattern=r"^f_drone\d+_\d+$")
+
+
+class _TaskCompletePayload(_StrictModel):
+    task_id: str = Field(min_length=1)
+    result: TaskCompleteResult
+
+
+class _StandalonePayload(_StrictModel):
+    trigger: StandaloneTrigger
+
+
+class _RejoiningPayload(_StrictModel):
+    findings_to_share_count: int = Field(ge=0)
+
+
+_PAYLOAD_BY_BROADCAST_TYPE: dict[str, type[_StrictModel]] = {
+    "finding": _FindingPayload,
+    "assist_request": _AssistRequestPayload,
+    "task_complete": _TaskCompletePayload,
+    "entering_standalone_mode": _StandalonePayload,
+    "rejoining_swarm": _RejoiningPayload,
+}
+
+
+class PeerBroadcast:
+    """Discriminated dispatcher for peer broadcasts.
+
+    parse(payload) returns a tuple (envelope_dict, payload_model). The envelope
+    is just the top-level dict (broadcast_id, sender_id, sender_position,
+    timestamp, broadcast_type) without the payload; the payload is a
+    typed Pydantic model based on broadcast_type. This avoids creating
+    five envelope classes for one shared shape.
+    """
+
+    @staticmethod
+    def parse_payload(broadcast: dict[str, Any]) -> _StrictModel:
+        bt = broadcast.get("broadcast_type")
+        if bt not in _PAYLOAD_BY_BROADCAST_TYPE:
+            raise ValueError(f"unknown broadcast_type: {bt!r}")
+        return _PAYLOAD_BY_BROADCAST_TYPE[bt](**broadcast.get("payload", {}))

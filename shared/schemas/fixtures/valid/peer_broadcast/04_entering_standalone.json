@@ -1,0 +1,8 @@
+{
+  "broadcast_id": "drone3_b001",
+  "sender_id": "drone3",
+  "sender_position": {"lat": 34.1240, "lon": -118.5660, "alt": 30.0},
+  "timestamp": "2026-05-15T14:25:00.000Z",
+  "broadcast_type": "entering_standalone_mode",
+  "payload": {"trigger": "lost_egs_link"}
+}

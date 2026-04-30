@@ -86,3 +86,7 @@ __all__ += ["Finding"]
 from .models import TaskAssignment
 
 __all__ += ["TaskAssignment"]
+
+from .models import PeerBroadcast
+
+__all__ += ["PeerBroadcast"]

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/peer_broadcast.json",
+  "title": "Peer Broadcast (v1, locked 2026-04-30)",
+  "description": "Published on Redis swarm.broadcasts.<id>; mesh sim republishes filtered messages on swarm.<receiver_id>.visible_to.<receiver_id>. Contract 6.",
+  "oneOf": [
+    {"$ref": "#/$defs/finding_broadcast"},
+    {"$ref": "#/$defs/assist_request_broadcast"},
+    {"$ref": "#/$defs/task_complete_broadcast"},
+    {"$ref": "#/$defs/standalone_broadcast"},
+    {"$ref": "#/$defs/rejoining_broadcast"}
+  ],
+  "$defs": {
+    "_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["broadcast_id", "sender_id", "sender_position", "timestamp", "broadcast_type", "payload"],
+      "properties": {
+        "broadcast_id": {"type": "string", "minLength": 1},
+        "sender_id": {"$ref": "_common.json#/$defs/drone_id"},
+        "sender_position": {"$ref": "_common.json#/$defs/position3d"},
+        "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+        "broadcast_type": {"$ref": "_common.json#/$defs/broadcast_type"},
+        "payload": {"type": "object"}
+      }
+    },
+    "finding_broadcast": {
+      "allOf": [
+        {"$ref": "#/$defs/_envelope"},
+        {"properties": {
+          "broadcast_type": {"const": "finding"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "severity", "gps_lat", "gps_lon", "confidence", "visual_description"],
+            "properties": {
+              "type": {"$ref": "_common.json#/$defs/finding_type"},
+              "severity": {"$ref": "_common.json#/$defs/severity"},
+              "gps_lat": {"$ref": "_common.json#/$defs/lat"},
+              "gps_lon": {"$ref": "_common.json#/$defs/lon"},
+              "confidence": {"$ref": "_common.json#/$defs/confidence"},
+              "visual_description": {"type": "string", "minLength": 10}
+            }
+          }
+        }}
+      ]
+    },
+    "assist_request_broadcast": {
+      "allOf": [
+        {"$ref": "#/$defs/_envelope"},
+        {"properties": {
+          "broadcast_type": {"const": "assist_request"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reason", "urgency"],
+            "properties": {
+              "reason": {"type": "string", "minLength": 10},
+              "urgency": {"$ref": "_common.json#/$defs/urgency"},
+              "related_finding_id": {"$ref": "_common.json#/$defs/finding_id"}
+            }
+          }
+        }}
+      ]
+    },
+    "task_complete_broadcast": {
+      "allOf": [
+        {"$ref": "#/$defs/_envelope"},
+        {"properties": {
+          "broadcast_type": {"const": "task_complete"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["task_id", "result"],
+            "properties": {
+              "task_id": {"type": "string", "minLength": 1},
+              "result": {"enum": ["success", "partial", "failed"]}
+            }
+          }
+        }}
+      ]
+    },
+    "standalone_broadcast": {
+      "allOf": [
+        {"$ref": "#/$defs/_envelope"},
+        {"properties": {
+          "broadcast_type": {"const": "entering_standalone_mode"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["trigger"],
+            "properties": {
+              "trigger": {"enum": ["lost_egs_link", "lost_peers", "ordered"]}
+            }
+          }
+        }}
+      ]
+    },
+    "rejoining_broadcast": {
+      "allOf": [
+        {"$ref": "#/$defs/_envelope"},
+        {"properties": {
+          "broadcast_type": {"const": "rejoining_swarm"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["findings_to_share_count"],
+            "properties": {
+              "findings_to_share_count": {"type": "integer", "minimum": 0}
+            }
+          }
+        }}
+      ]
+    }
+  }
+}
