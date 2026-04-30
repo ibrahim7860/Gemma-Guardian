@@ -28,3 +28,21 @@ __all__ = [
     "validate",
     "validate_or_raise",
 ]
+
+from .models import (
+    ContinueMission,
+    DroneFunctionCall,
+    MarkExplored,
+    ReportFinding,
+    RequestAssist,
+    ReturnToBase,
+)
+
+__all__ += [
+    "ContinueMission",
+    "DroneFunctionCall",
+    "MarkExplored",
+    "ReportFinding",
+    "RequestAssist",
+    "ReturnToBase",
+]
