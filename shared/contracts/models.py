@@ -299,3 +299,25 @@ class EGSStateMessage(_StrictModel):
     findings_count_by_type: _FindingsCountByType
     recent_validation_events: List[_RecentValidationEvent]
     active_zone_ids: List[str]
+
+
+# -- Contract 4: finding ------------------------------------------------------
+
+OperatorStatus = Literal["pending", "approved", "dismissed"]
+
+
+class Finding(_StrictModel):
+    finding_id: str = Field(pattern=r"^f_drone\d+_\d+$")
+    source_drone_id: str = Field(pattern=r"^drone\d+$")
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    type: FindingType
+    severity: int = Field(ge=1, le=5)
+    gps_lat: float = Field(ge=-90, le=90)
+    gps_lon: float = Field(ge=-180, le=180)
+    altitude: float
+    confidence: float = Field(ge=0, le=1)
+    visual_description: str = Field(min_length=10)
+    image_path: str = Field(min_length=1)
+    validated: bool
+    validation_retries: int = Field(ge=0, le=3)
+    operator_status: OperatorStatus

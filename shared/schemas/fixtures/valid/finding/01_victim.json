@@ -1,0 +1,16 @@
+{
+  "finding_id": "f_drone1_047",
+  "source_drone_id": "drone1",
+  "timestamp": "2026-05-15T14:23:11.342Z",
+  "type": "victim",
+  "severity": 4,
+  "gps_lat": 34.1234,
+  "gps_lon": -118.5678,
+  "altitude": 0,
+  "confidence": 0.78,
+  "visual_description": "Person prone, partially covered by debris.",
+  "image_path": "/tmp/findings/drone1_047.jpg",
+  "validated": true,
+  "validation_retries": 1,
+  "operator_status": "pending"
+}
