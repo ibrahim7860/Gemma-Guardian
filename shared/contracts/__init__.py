@@ -120,3 +120,7 @@ __all__ += ["RULE_REGISTRY", "RuleID", "RuleSpec"]
 from .adapters import AdapterError, normalize
 
 __all__ += ["AdapterError", "normalize"]
+
+from . import topics
+
+__all__ += ["topics"]
