@@ -50,3 +50,23 @@ __all__ += [
 from .models import AssignSurveyPoints, EGSFunctionCall, ReplanMission
 
 __all__ += ["AssignSurveyPoints", "EGSFunctionCall", "ReplanMission"]
+
+from .models import (
+    ExcludeZone,
+    OperatorCommand,
+    RecallDrone,
+    RestrictZone,
+    SetLanguage,
+    SetPriority,
+    UnknownCommand,
+)
+
+__all__ += [
+    "ExcludeZone",
+    "OperatorCommand",
+    "RecallDrone",
+    "RestrictZone",
+    "SetLanguage",
+    "SetPriority",
+    "UnknownCommand",
+]
