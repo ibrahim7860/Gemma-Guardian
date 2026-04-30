@@ -1,4 +1,4 @@
-"""Unit tests for the validation node — runs without Ollama or ROS 2."""
+"""Unit tests for the validation node — runs without Ollama or Redis."""
 from __future__ import annotations
 
 import time

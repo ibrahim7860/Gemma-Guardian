@@ -2,219 +2,156 @@
 
 ## Goal
 
-Design a Gazebo world that:
-1. Looks like a disaster zone from above
+Design a software-simulated disaster scenario that:
+1. Looks like a disaster zone from above (pre-recorded aerial/satellite imagery)
 2. Contains visually unambiguous targets (victims, fires, damaged buildings, blocked routes)
-3. Is small enough to be surveyed by 2-3 drones in 5-10 minutes
+3. Is small enough to be surveyed by 2-3 drones in 5-10 minutes of simulated time
 4. Provides ground-truth labels for evaluation
-5. Looks credible enough for the demo video without requiring AAA-game-quality assets
+5. Looks credible enough for the demo video without requiring 3D rendering
 
-## Scene Specifications
+## Scenario-Driven Simulation Overview
 
-**Size:** 200m × 200m square area.
+Instead of a Gazebo world file, the disaster scene is defined by a **scenario YAML** at
+`sim/scenarios/<name>.yaml`. The scenario enumerates:
+- Drone home positions (lat/lon/alt)
+- Scripted waypoint tracks per drone
+- Time-keyed frame mappings (which JPEG to serve to which drone at which simulated tick)
+- Scripted events (drone failure at T+45s, fire-spread polygon update at T+60s, etc.)
 
-**Layout:** A grid of 16 building plots (4×4) with the following composition:
-- 6 intact buildings
-- 4 minor-damage buildings (broken windows, scorched walls)
-- 4 major-damage buildings (partial collapse, missing roof)
-- 2 destroyed buildings (rubble piles)
+`sim/waypoint_runner.py` reads the scenario and publishes `drones.<id>.state` on Redis at 2 Hz.
+`sim/frame_server.py` reads the same scenario and publishes `drones.<id>.camera` (raw JPEG bytes)
+at 1 Hz, serving the pre-recorded frame keyed to the current tick.
 
-**Other features:**
-- A grid of roads between buildings (some clear, some blocked)
-- 5-7 victim markers placed in/around damaged buildings
-- 2-3 active fires (rendered via SDF `<particle_emitter>` for smoke + an orange-emissive box/cone visual for visible flame; Gazebo Harmonic does not ship a "plume" system plugin)
-- 3-4 blocked routes (debris meshes, fallen trees)
-- Trees, vehicles for visual realism
+Camera frames are **pre-recorded disaster imagery** — xBD post-disaster crops and public-domain
+aerial/satellite photography — stored under `sim/fixtures/frames/`. No real-time rendering.
 
-## Asset Sources
+## Scenario File Format
 
-We don't build assets from scratch. We use:
+```yaml
+# sim/scenarios/disaster_zone_v1.yaml
+scenario_id: disaster_zone_v1
+origin:
+  lat: 34.0000
+  lon: -118.5000
+area_m: 200          # 200m × 200m notional survey grid
 
-1. **Gazebo built-in models** for basic shapes (buildings, vehicles)
-2. **Gazebo Fuel** (`https://app.gazebosim.org/fuel`) — public model repository with free-to-use assets:
-   - Search "damaged building," "rubble," "destroyed house"
-   - Search "construction debris," "wreckage"
-   - Two ways to consume a Fuel model in SDF:
-     - Inline URI: `<uri>https://fuel.gazebosim.org/1.0/<owner>/models/<name></uri>` (downloaded on first load, cached under `~/.gz/fuel`)
-     - Local: download once, drop under `simulation/worlds/models/<name>/`, export `GZ_SIM_RESOURCE_PATH=$PWD/simulation/worlds/models`, then reference as `<uri>model://<name></uri>`. Prefer this for offline-demo reliability — the demo runs with no internet.
-3. **Custom-modified models** when needed:
-   - Take an intact building mesh, manually distort/rotate parts in Blender for a "damaged" version
-   - Add scorched textures via a single OBJ texture swap
+drones:
+  - drone_id: drone1
+    home: {lat: 34.0001, lon: -118.5001, alt: 0}
+    waypoints:
+      - {id: sp_001, lat: 34.0002, lon: -118.5002, alt: 25}
+      - {id: sp_002, lat: 34.0004, lon: -118.5002, alt: 25}
+      # ... more waypoints ...
+    speed_mps: 5
 
-## Victim Markers
+  - drone_id: drone2
+    home: {lat: 34.0001, lon: -118.4990, alt: 0}
+    waypoints:
+      - {id: sp_010, lat: 34.0002, lon: -118.4991, alt: 25}
+      # ...
+    speed_mps: 5
 
-**Critical decision:** how do we represent victims?
+frame_mappings:
+  # drone_id → list of {tick_range: [start, end], frame_file: <filename in sim/fixtures/frames/>}
+  drone1:
+    - {tick_range: [0, 30],   frame_file: "xbd_hurricane_block_a_01.jpg"}
+    - {tick_range: [31, 60],  frame_file: "xbd_hurricane_block_a_02.jpg"}
+    - {tick_range: [61, 120], frame_file: "xbd_wildfire_structure_01.jpg"}
+  drone2:
+    - {tick_range: [0, 60],   frame_file: "xbd_hurricane_block_b_01.jpg"}
+    - {tick_range: [61, 120], frame_file: "xbd_hurricane_victim_marker_01.jpg"}
 
-**Option A: Realistic mannequins (NOT RECOMMENDED).**
-- Photorealistic but Gemma 4 may not detect them reliably
-- Sim-to-real gap: video-game humans don't look like real disaster victims
+scripted_events:
+  - {t: 45,  type: drone_failure,      drone_id: drone1, detail: "battery_depleted"}
+  - {t: 60,  type: zone_update,        detail: "fire_spread_polygon_expands"}
+  - {t: 300, type: mission_complete}
+```
 
-**Option B: AprilTag markers (RECOMMENDED).**
-- Bright, unambiguous, machine-readable
-- Each tag encodes a unique ID we use for ground-truth evaluation
-- Frame as "real deployment would use thermal imaging or ML detection; for the demo we use AprilTags as deterministic targets"
+The `t` field is simulated seconds from mission start. `sim/waypoint_runner.py` drives the clock;
+time advances in wall-clock real-time at 1× speed by default (configurable).
 
-**Option C: Brightly-colored geometric shapes.**
-- A bright red 1m × 1m square placed on the ground
-- Even simpler than AprilTags
-- Less realistic but reliably detectable
+## Scene Composition
 
-**We use Option B with a fallback to Option C if AprilTag plugins are flaky.**
+**Notional area:** 200m × 200m (matches the ground-truth coordinate space used in the paper).
 
-The demo narrator can say: "Each marker represents a person needing rescue. The drone identifies them and the operator dispatches help." Judges will accept this framing.
+**Frame library targets — what's in `sim/fixtures/frames/`:**
+- 6 frames of intact or lightly-damaged structures (xBD "no-damage" / "minor-damage" crops)
+- 4 frames with clearly damaged or destroyed structures ("major-damage" / "destroyed" crops)
+- 3-4 frames with visible victims or bright victim markers
+- 2-3 frames with fire / smoke (xBD "fire" class, or public wildfire aerials)
+- 2-3 frames with blocked roads or debris
+
+**Visual strategy:** xBD post-disaster satellite/aerial imagery is more visually compelling than
+synthetic 3D rendering, and is the same data the vision fine-tuning pipeline trains on. This
+eliminates sim-to-real gap entirely for the vision task.
+
+## Victim Representation
+
+Because camera frames are real aerial imagery rather than a 3D scene, victim representation
+follows the imagery reality:
+
+**Option A: xBD frames that genuinely show people / rescue markers** (preferred for credibility).
+- Source frames from xBD "building" damage tiles that incidentally capture personnel or markers.
+- Demo narration: "Each highlighted region represents a casualty location derived from post-disaster
+  aerial imagery."
+
+**Option B: Composite frames** — overlay a bright red 1m × 1m square marker on a real base image
+at a known pixel position. Simpler to guarantee detection; less realistic.
+
+**We use Option A when source material is available; fall back to Option B for any victim
+waypoints where Option A frames lack a clear target.** The fallback is documented in the
+`frame_mappings` comment for that tick range.
 
 ## Fire and Smoke
 
-Gazebo Harmonic does **not** ship a "plume" system plugin. Smoke is rendered via the SDF `<particle_emitter>` tag (a visual feature, no extra plugin required beyond the standard sensors/scene-broadcaster systems). Visible flame is faked with an emissive-material cone or box visual placed at the emitter base.
+Use xBD "fire" class tiles or public-domain post-wildfire aerial photographs.
 
-```xml
-<model name="fire_f01">
-  <static>true</static>
-  <pose>50 30 0 0 0 0</pose>
-  <link name="link">
-    <particle_emitter name="smoke" type="point">
-      <emitting>true</emitting>
-      <size>1 1 1</size>
-      <particle_size>0.5 0.5 0.5</particle_size>
-      <lifetime>5</lifetime>
-      <rate>20</rate>
-      <min_velocity>1</min_velocity>
-      <max_velocity>3</max_velocity>
-      <scale_rate>1.5</scale_rate>
-      <material>
-        <diffuse>0.3 0.3 0.3 1</diffuse>
-        <ambient>0.3 0.3 0.3 1</ambient>
-      </material>
-    </particle_emitter>
-    <visual name="flame">
-      <geometry><cone><radius>0.5</radius><length>1.5</length></cone></geometry>
-      <material>
-        <emissive>1.0 0.4 0.0 1</emissive>
-        <diffuse>1.0 0.5 0.0 1</diffuse>
-      </material>
-    </visual>
-  </link>
-</model>
-```
+**Fire spread (scripted event):** at T+60s the scenario emits a `zone_update` event. The EGS
+receives this as a scripted "satellite update" and triggers replanning. The polygon expansion is
+defined in the ground-truth file and referenced from the event field, not rendered visually.
 
-For the demo, 2-3 fires of varying intensity (parameterized by particle `rate`, `max_velocity`, and flame visual scale). The drone classifies them by severity. Validate visibility from 25 m altitude before locking the scene — particle emitters can be subtle from above. **Requires `ogre2` render engine** (set in the sensors plugin below); particle emitters are not rendered by `ogre1`.
-
-**Fire spread (mocked):** at scripted times during the demo, additional fire plumes spawn. The EGS detects this via a separate "satellite update" event and triggers replanning.
-
-## World File Structure
+## Scenario File Structure
 
 ```
-simulation/worlds/
-├── disaster_zone_v1.sdf          # main world file
-├── models/
-│   ├── damaged_building_a/
-│   ├── damaged_building_b/
-│   ├── rubble_pile/
-│   ├── debris_road_block/
-│   └── victim_marker_apriltag/
-├── plugins/                       # custom plugins if needed
-└── README.md                      # how to load this world
-```
-
-## SDF World Sketch
-
-(Full file is too long for this doc — this is the structure.)
-
-```xml
-<?xml version="1.0" ?>
-<sdf version="1.10">
-  <world name="disaster_zone">
-    <physics name="default" default="true" type="ode">
-      <max_step_size>0.001</max_step_size>
-      <real_time_factor>1.0</real_time_factor>
-    </physics>
-    
-    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
-    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
-    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
-    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
-      <render_engine>ogre2</render_engine>
-    </plugin>
-    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
-    <!-- IMU + camera sensors are declared on the PX4 drone model (not here);
-         this world only loads the systems that consume them. See docs/15. -->
-    
-    <!-- Lighting: post-disaster overcast -->
-    <scene>
-      <ambient>0.5 0.5 0.5 1</ambient>
-      <sky>
-        <clouds><speed>0</speed></clouds>
-      </sky>
-    </scene>
-    
-    <!-- Ground -->
-    <include><uri>model://ground_plane</uri></include>
-    
-    <!-- Building grid -->
-    <!-- model:// URIs work after exporting GZ_SIM_RESOURCE_PATH to point at
-         simulation/worlds/models. Direct Fuel URIs
-         (https://fuel.gazebosim.org/1.0/<owner>/models/<name>) also work. -->
-    <include>
-      <name>bldg_a1</name>
-      <uri>model://intact_building_v1</uri>
-      <pose>10 10 0 0 0 0</pose>
-    </include>
-    <include>
-      <name>bldg_a2</name>
-      <uri>model://damaged_building_a</uri>
-      <pose>30 10 0 0 0 0</pose>
-    </include>
-    <!-- ... 14 more buildings ... -->
-    
-    <!-- Victims -->
-    <include>
-      <name>victim_1</name>
-      <uri>model://apriltag_marker</uri>
-      <pose>32 12 0.05 0 0 0</pose>
-    </include>
-    <!-- ... more victims ... -->
-    
-    <!-- Fires (see "Fire and Smoke" section above for the full
-         <particle_emitter> + emissive flame visual pattern). -->
-    <include>
-      <name>fire_f01</name>
-      <uri>model://fire_smoke_v1</uri>
-      <pose>50 30 0 0 0 0</pose>
-    </include>
-    
-    <!-- Blocked routes -->
-    <include>
-      <name>debris_1</name>
-      <uri>model://debris_road_block</uri>
-      <pose>20 25 0 0 0 0</pose>
-    </include>
-    
-    <!-- Drone spawn points: handled by PX4 SITL launch -->
-  </world>
-</sdf>
+sim/
+├── waypoint_runner.py
+├── frame_server.py
+├── scenarios/
+│   ├── disaster_zone_v1.yaml
+│   └── disaster_zone_v1_groundtruth.json
+└── fixtures/
+    └── frames/
+        ├── xbd_hurricane_block_a_01.jpg
+        ├── xbd_hurricane_block_a_02.jpg
+        ├── xbd_hurricane_block_b_01.jpg
+        ├── xbd_wildfire_structure_01.jpg
+        ├── xbd_hurricane_victim_marker_01.jpg
+        └── ...
 ```
 
 ## Ground Truth File
 
-Alongside the world file, we maintain a JSON ground-truth manifest:
-
 ```json
 {
-  "world_name": "disaster_zone_v1",
-  "extents": {"x_min": 0, "x_max": 200, "y_min": 0, "y_max": 200},
+  "scenario_id": "disaster_zone_v1",
+  "extents": {"lat_min": 33.9990, "lat_max": 34.0010, "lon_min": -118.5010, "lon_max": -118.4990},
   "victims": [
-    {"id": "v01", "lat": 34.1232, "lon": -118.5670, "x": 32, "y": 12, "in_or_near": "bldg_a2"},
-    {"id": "v02", "lat": 34.1234, "lon": -118.5675, "x": 70, "y": 35, "in_or_near": "bldg_b3"}
+    {"id": "v01", "lat": 34.0002, "lon": -118.5002, "frame_file": "xbd_hurricane_victim_marker_01.jpg", "in_or_near": "block_a"},
+    {"id": "v02", "lat": 34.0004, "lon": -118.4991, "frame_file": "xbd_hurricane_block_b_01.jpg",      "in_or_near": "block_b"}
   ],
   "fires": [
-    {"id": "f01", "lat": 34.1240, "lon": -118.5680, "x": 50, "y": 30, "intensity": "medium"}
+    {"id": "f01", "lat": 34.0006, "lon": -118.5003, "frame_file": "xbd_wildfire_structure_01.jpg", "intensity": "medium"}
   ],
   "damaged_structures": [
-    {"id": "ds_a2", "lat": ..., "lon": ..., "x": 30, "y": 10, "damage_level": "minor_damage"},
-    {"id": "ds_a3", "lat": ..., "lon": ..., "x": 50, "y": 10, "damage_level": "destroyed"}
+    {"id": "ds_a2", "lat": 34.0002, "lon": -118.5002, "frame_file": "xbd_hurricane_block_a_02.jpg", "damage_level": "major_damage"},
+    {"id": "ds_a3", "lat": 34.0004, "lon": -118.5002, "frame_file": "xbd_hurricane_block_a_02.jpg", "damage_level": "destroyed"}
   ],
   "blocked_routes": [
-    {"id": "br01", "lat": ..., "lon": ..., "x": 20, "y": 25, "blockage_type": "debris"}
+    {"id": "br01", "lat": 34.0003, "lon": -118.5001, "frame_file": "xbd_hurricane_block_a_01.jpg", "blockage_type": "debris"}
+  ],
+  "scripted_events": [
+    {"t": 45,  "type": "drone_failure",  "drone_id": "drone1"},
+    {"t": 60,  "type": "fire_spread",    "new_polygon": [[34.0005, -118.5005], [34.0008, -118.5005], [34.0008, -118.5001], [34.0005, -118.5001]]}
   ]
 }
 ```
@@ -222,71 +159,72 @@ Alongside the world file, we maintain a JSON ground-truth manifest:
 **Used for:**
 - Evaluation: did the drones actually find all the victims?
 - Demo narration: precise counts ("the system identified 5 of 7 victims")
-- Replan triggers: "a new fire spawns at (75, 75)" is a scripted event
+- Replan triggers: the scripted `fire_spread` event at T+60s matches the EGS zone-update event
 
-## GPS Mapping
+## GPS / Coordinate Mapping
 
-PX4 simulates GPS in absolute lat/lon. We pick a fictional location for the demo:
+The scenario uses absolute lat/lon throughout. The origin is `34.0000, -118.5000` (LA area,
+matches the wildfire narrative). Waypoints, findings, and ground-truth entries all use the same
+coordinate space. `sim/waypoint_runner.py` computes drone position by linear interpolation between
+waypoints at the configured speed; there is no flight dynamics simulation.
 
-- Origin: 34.0000, -118.5000 (a coordinate in the LA area, fits the wildfire narrative)
-- 1 meter ≈ 0.0000089 degrees latitude / longitude (rough conversion)
+1 meter ≈ 0.0000089° latitude/longitude (rough conversion, sufficient for a 200m grid).
 
-This is configured in PX4's `PX4_HOME_LAT` / `PX4_HOME_LON` environment variables.
+## Building the Scenario (Person 1 + Person 5, paired daily)
 
-## Building the Scene (Person 1 + Person 5, paired daily)
+Day 1-2:
+- Set up `sim/waypoint_runner.py` and `sim/frame_server.py` skeleton
+- Curate initial frame library from xBD dataset; confirm frames are readable and visually distinct
+- Draft `disaster_zone_v1.yaml` with drone home positions and first waypoint tracks
 
-Day 1-3:
-- Browse Gazebo Fuel for assets
-- Download intact + damaged building models
-- Test loading them in a basic Gazebo world
-
-Day 4-5:
-- Place buildings in 4×4 grid
-- Add roads (just textured ground polygons)
-- Add victims (AprilTags or color markers)
+Day 3-5:
+- Wire frame mappings to waypoints
+- Draft `disaster_zone_v1_groundtruth.json` with victims, fires, damaged structures
+- Smoke-test: Python subscriber prints `drones.<id>.state` and `drones.<id>.camera` messages
 
 Day 6-7:
-- Add fires and smoke
-- Add debris / blocked routes
-- Validate from drone altitude (camera view from 25m up)
-- Generate ground-truth manifest JSON
+- Finalize scripted events (drone failure at T+45s, fire spread at T+60s)
+- Validate that Gemma 4 correctly interprets frames at integration time (Person 2 runs frames
+  through the drone agent manually)
+- Generate final ground-truth manifest JSON
 
 Day 8 onwards:
-- Iterate based on what the drone agent actually identifies
-- Maybe simplify scenes if Gemma 4 struggles
-- Maybe add visual cues if confidence is too low
+- Iterate frame selections based on what the drone agent actually identifies
+- Add fallback composite frames where Gemma 4 struggles on raw xBD imagery
+- Maybe simplify scripted event timing if integration exposes sync issues
 
 ## Validation: Does Gemma 4 See It?
 
-Before integrating with the agent loop, Person 2 manually (using screenshots Person 5 captures from drone-eye view):
-1. Takes 20 screenshots from drone-eye view at 25m altitude
-2. Sends each to Gemma 4 base model with the system prompt
+Before integrating with the full agent loop, Person 2 manually:
+1. Takes 20 frames from `sim/fixtures/frames/` (the same files the frame server will serve)
+2. Sends each to Gemma 4 base model with the system prompt from `shared/prompts/`
 3. Verifies the model identifies the right targets with reasonable confidence
 
-If Gemma 4 base model fails (e.g., misclassifies all rubble piles as intact buildings), the scene is too ambiguous. Add visual cues (e.g., bright red "X" on destroyed buildings) and document that the scene uses **explicit visual markers as a sim-to-real abstraction**.
+If Gemma 4 base model fails (e.g., misclassifies all rubble as intact structures), the frame is
+too ambiguous. Replace it with a clearer xBD tile or add a composite marker overlay and document
+the substitution in the frame mapping comment.
 
 ## What Could Go Wrong
 
 | Failure | Mitigation |
 |---|---|
-| Damaged building meshes look like normal buildings | Add visual markers, exaggerate damage textures |
-| Particle-emitter smoke too subtle from above | Increase `rate` and `max_velocity`, enlarge emissive flame visual, darken smoke material |
-| AprilTags don't render correctly | Fall back to colored squares |
-| Scene too dense, drones collide | Increase building spacing |
-| Scene too sparse, drones run out of survey points | Add more buildings, victims |
-| Gazebo crashes loading complex scene | Reduce mesh complexity, use simpler shapes |
+| xBD frames too low-resolution | Source higher-resolution tiles from the same dataset; supplement with public aerial photography |
+| Gemma 4 misclassifies all frames similarly | Diversify frame library; check prompt framing in `shared/prompts/` |
+| `frame_server.py` clock drifts from `waypoint_runner.py` | Both processes share the simulated-tick counter via Redis key `sim.tick`; frame server reads it on each publish |
+| Scripted events fire at wrong simulated time | Unit-test event scheduling in `waypoint_runner.py` before integration |
+| Frame files missing from `sim/fixtures/frames/` | Fail-fast in `frame_server.py` startup: validate all referenced frame files exist before subscribing |
 
 ## Iterating
 
-The scene is iterative. Don't lock it in Week 1. Adjust based on:
+The scenario is iterative. Don't lock frame mappings in Week 1. Adjust based on:
 - What Gemma 4 reliably identifies
-- How long missions take
-- Whether the demo video looks good
+- How long missions take (adjust waypoint density)
+- Whether the demo video looks good (camera angles, frame diversity)
 
-Lock the final scene by Day 16 (May 14). After that, only fix bugs.
+Lock the final scenario by Day 16 (May 14). After that, only fix bugs.
 
 ## Cross-References
 
-- Multi-drone spawning in this world: [`15-multi-drone-spawning.md`](15-multi-drone-spawning.md)
-- How agents see this scene: [`05-per-drone-agent.md`](05-per-drone-agent.md)
+- Redis channel contracts (camera, state): [`20-integration-contracts.md`](20-integration-contracts.md) Contract 9
+- How agents consume frames: [`05-per-drone-agent.md`](05-per-drone-agent.md)
 - Demo storyboard: [`21-demo-storyboard.md`](21-demo-storyboard.md)

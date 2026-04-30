@@ -41,9 +41,9 @@ Read docs in this order when getting up to speed:
 - [`docs/12-fine-tuning-plan.md`](docs/12-fine-tuning-plan.md) — Unsloth + xBD vision adapter LoRA
 
 ### Simulation
-- [`docs/13-gazebo-setup.md`](docs/13-gazebo-setup.md) — Gazebo + PX4 + ROS 2 install and verification
-- [`docs/14-disaster-scene-design.md`](docs/14-disaster-scene-design.md) — what the simulated world contains
-- [`docs/15-multi-drone-spawning.md`](docs/15-multi-drone-spawning.md) — running 2-3 drones simultaneously
+- [`docs/13-runtime-setup.md`](docs/13-runtime-setup.md) — Redis + Python + Ollama install (cross-platform)
+- [`docs/14-disaster-scene-design.md`](docs/14-disaster-scene-design.md) — pre-recorded imagery and scripted-motion scenarios
+- [`docs/15-multi-drone-spawning.md`](docs/15-multi-drone-spawning.md) — running 2-3 drone agent processes against one Redis broker
 
 ### Risk Management
 - [`docs/16-mocks-and-cuts.md`](docs/16-mocks-and-cuts.md) — what's mocked, why, fallback paths
@@ -70,39 +70,45 @@ Read docs in this order when getting up to speed:
 
 ## Tech Stack Summary
 
-- **OS:** Ubuntu 22.04 — native install OR WSL2 on Windows 11 with WSLg. (VirtualBox/Parallels-class VMs still NOT acceptable.) Apple Silicon Macs are supported for non-sim roles only.
-- **Simulation:** Gazebo Harmonic + PX4 SITL + ROS 2 Humble. Note: this is a non-default Gazebo/ROS 2 pairing — Humble officially ships with Gazebo Fortress, and Harmonic is the official pairing for Jazzy. Harmonic-on-Humble is supported via the `packages.osrfoundation.org` `ros-gz` binaries, which conflict with the stock `ros-humble-ros-gz*` packages. Install path is documented in [`docs/13-gazebo-setup.md`](docs/13-gazebo-setup.md); do not mix the two repos.
-- **LLM runtime:** Ollama, two instances (Gemma 4 E2B onboard, Gemma 4 E4B at EGS) — runs on Linux/WSL2 (CUDA) or macOS (Metal). The exact Ollama tag for each Gemma 4 variant must be pinned in [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) once confirmed against `ollama.com/library` at integration time; do not hard-code a tag elsewhere.
+- **OS:** macOS, Linux, or Windows 11 — all roles run cross-platform. Each developer needs Python 3.11+, Redis (`brew install redis` / `apt install redis-server` / WSL2), and Ollama. No simulator dependencies, no WSL2 requirement, no virtualization gates.
+- **Drone "simulation":** Pure Python — drones move along scripted waypoint tracks at configurable speeds. "Camera frames" are pre-recorded disaster imagery (xBD post-disaster crops, public satellite/aerial photography) served from disk. No Gazebo, no PX4 SITL.
+- **Inter-process messaging:** Redis pub/sub (single local `redis-server`). Channel naming: `drones.<drone_id>.state`, `drones.<drone_id>.findings`, `egs.state`, `swarm.broadcasts.<drone_id>`, etc. See [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) Contract 9.
+- **LLM runtime:** Ollama, two instances (Gemma 4 E2B onboard, Gemma 4 E4B at EGS) — runs on Linux (CUDA), macOS (Metal), or Windows 11 with WSL2/CUDA. The exact Ollama tag for each Gemma 4 variant must be pinned in [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) once confirmed against `ollama.com/library` at integration time; do not hard-code a tag elsewhere.
 - **Orchestration:** LangGraph (per-drone agent + EGS coordinator)
-- **Fine-tuning:** Unsloth on xBD dataset (LoRA on vision adapter) — runs on WSL2+NVIDIA OR rented cloud GPU (Lambda Labs / Paperspace / Runpod)
-- **Frontend:** Flutter web dashboard via rosbridge_suite WebSocket — runs on macOS, Windows, or Linux
-- **Mesh:** ROS 2 topics with namespaced per-drone channels, software dropout
-- **Team hardware floor:** at least one team member must have a Windows 11 machine capable of running WSL2 with WSLg. See [`docs/13-gazebo-setup.md`](docs/13-gazebo-setup.md) for the platform-path selection.
+- **Fine-tuning:** Unsloth on xBD dataset (LoRA on vision adapter) — runs on Linux+NVIDIA, WSL2+NVIDIA, or rented cloud GPU (Lambda Labs / Paperspace / Runpod). Apple Silicon is not viable for the fine-tune itself, but the resulting adapter is loaded on any Ollama-supported platform.
+- **Frontend:** Flutter web dashboard talking directly to a FastAPI WebSocket bridge that mirrors selected Redis channels — runs on macOS, Windows, or Linux. No `rosbridge_suite`.
+- **Mesh:** Software-mocked drone-to-drone broadcasts over Redis pub/sub with Euclidean-distance dropout. Behavior is identical from the agent's perspective to a real WiFi mesh; the abstraction is documented honestly in the writeup.
+- **Team hardware floor:** any modern laptop (8 GB RAM, Python 3.11+, Redis). Fine-tuning (Day 10–13) is the only step that requires a CUDA GPU; that workstream is owned by one person and uses a rented cloud GPU as a fallback.
 
 ## Repository Structure (Target)
 
 ```
-fieldagent/
+gemma-guardian/
 ├── CLAUDE.md                        # this file
 ├── README.md                        # public-facing project description
 ├── docs/                            # all detailed documentation
-├── simulation/
-│   ├── worlds/                      # Gazebo world files (disaster scenes)
-│   ├── px4_patches/                 # PX4 model overrides
-│   └── ros2_ws/                     # ROS 2 workspace with custom packages
+├── sim/                             # software-only drone "simulator"
+│   ├── waypoint_runner.py           # scripted drone motion + GPS feed
+│   ├── frame_server.py              # serves pre-recorded JPEG frames per drone
+│   ├── scenarios/                   # YAML scripts: waypoints, scripted failures, frame mappings
+│   └── fixtures/                    # pre-recorded disaster imagery (xBD crops, public aerials)
 ├── agents/
 │   ├── drone_agent/                 # LangGraph per-drone agent
-│   └── egs_agent/                   # LangGraph EGS coordinator
+│   ├── egs_agent/                   # LangGraph EGS coordinator
+│   └── mesh_simulator/              # Redis-side range-dropout filter on /swarm channels
 ├── shared/
 │   ├── schemas/                     # JSON Schema definitions (locked contracts)
+│   ├── contracts/                   # Python loader, Pydantic mirrors, RuleID, topic constants
 │   └── prompts/                     # All Gemma 4 prompt templates
 ├── frontend/
-│   └── flutter_dashboard/           # Operator UI
+│   ├── flutter_dashboard/           # Operator UI
+│   └── ws_bridge/                   # FastAPI WebSocket bridge (mirrors Redis channels to Flutter)
 ├── ml/
 │   ├── data_prep/                   # xBD preprocessing scripts
 │   ├── training/                    # Unsloth fine-tuning notebooks
 │   └── evaluation/                  # Metrics, baselines
 ├── scripts/
+│   ├── gen_topic_constants.py       # codegen Redis-channel constants for Python and Dart
 │   ├── run_full_demo.sh             # one-command demo launcher
 │   └── run_resilience_scenario.sh   # scripted failure tests
 └── docs_assets/                     # video, screenshots, diagrams

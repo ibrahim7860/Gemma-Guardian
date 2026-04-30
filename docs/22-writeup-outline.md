@@ -106,7 +106,7 @@ Five subsections:
 
 For each, give a concrete example from the system.
 
-**Offline guarantee subsection (5.6):** state the offline claim as a falsifiable property, not a marketing line. Enumerate every network call in the system and show each is either (a) ROS 2 / rosbridge on localhost, or (b) Ollama on localhost. No external hostnames. Reference the airplane-mode demo moment from [`21-demo-storyboard.md`](21-demo-storyboard.md) as evidence.
+**Offline guarantee subsection (5.6):** state the offline claim as a falsifiable property, not a marketing line. Enumerate every network call in the system and show each is either (a) Redis pub/sub on localhost, (b) FastAPI WebSocket bridge on localhost, or (c) Ollama on localhost. No external hostnames. Reference the airplane-mode demo moment from [`21-demo-storyboard.md`](21-demo-storyboard.md) as evidence.
 
 ## Section 6: Validation-and-Retry Loop
 

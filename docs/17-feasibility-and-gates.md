@@ -10,8 +10,8 @@ Dates below are anchored to the recalibrated 16-working-day schedule in [`19-day
 
 | Gate | Date | What's evaluated | If pass | If fail |
 |---|---|---|---|---|
-| Gate 1: Stack | Day 2 (Wed Apr 30) | Single drone flying + Gemma 4 inference | Continue | Switch sim platform OR drop project |
-| Gate 2: Single-loop | Day 7 (Wed May 7) | One drone full agentic loop end-to-end | Continue to multi-drone | Stay on single-drone, drop swarm scope |
+| Gate 1: Stack | Day 2 (Wed Apr 30) | Redis + sim smoke-test + Gemma 4 inference | Continue | Debug setup OR drop project |
+| Gate 2: Single-loop | Day 7 (Wed May 7) | One drone full agentic loop end-to-end on Redis | Continue to multi-drone | Stay on single-drone, drop swarm scope |
 | Gate 3: Fine-tuning | Day 10 (Mon May 12) | LoRA adapter beats base by ≥10pp | Integrate adapter | Drop adapter, base model only |
 | Gate 4: Multi-drone | Day 13 (Thu May 15) | 2-3 drones coordinating cleanly | Continue with 3 | Drop to 2 drones |
 | Gate 5: Submission | Day 16 (Sun May 18) | All artifacts ready, submit by 23:59 UTC | Submit | No-buffer push: submit whatever is working |
@@ -20,41 +20,38 @@ Dates below are anchored to the recalibrated 16-working-day schedule in [`19-day
 
 **Pass criteria — ALL of these must work:**
 
-- [ ] Ubuntu 22.04 working on Person 1's and Person 5's machines — **native OR WSL2 on Windows 11 with WSLg**. At least one team member must have a Windows machine capable of WSL2; this is the project's hardware floor.
-- [ ] ROS 2 Humble installed, `ros2 topic list` runs
-- [ ] PX4 Autopilot built successfully
-- [ ] Gazebo Harmonic launches with `make px4_sitl gz_x500_mono_cam` (GUI renders via native X11 or WSLg)
-- [ ] QGroundControl connects, drone takes off
-- [ ] Camera frame accessible from Python via ROS 2
-- [ ] Ollama installed, Gemma 4 E2B pulled and runs (Linux/WSL2 with CUDA, or macOS with Metal for non-sim roles)
-- [ ] End-to-end test: take a frame, send to Gemma 4, get structured response
+- [ ] `redis-server` running on `localhost:6379`; `redis-cli ping` returns `PONG`
+- [ ] `sim/waypoint_runner.py` publishes `drones.drone1.state` messages; a Python subscriber (`redis-py`) prints them
+- [ ] `sim/frame_server.py` publishes `drones.drone1.camera` (raw JPEG bytes); a Python subscriber receives them
+- [ ] Ollama installed, Gemma 4 E2B pulled and runs (macOS with Metal, Linux with CUDA, or CPU fallback)
+- [ ] End-to-end smoke test: frame bytes from Redis → Gemma 4 → structured response printed
 - [ ] **Demo box designated** — the single machine where the final video will be recorded
+
+**Risk profile vs. previous stack:** The old Gate 1 required Gazebo + PX4 + ROS 2 installed on a specific OS combination. The new Gate 1 requires Python 3.11+, `redis-server`, and Ollama — all cross-platform and installable in under 30 minutes on any modern laptop. The overall risk of Gate 1 failure is significantly lower.
 
 **If any fail:**
 
 | Failure | Pivot |
 |---|---|
-| Gazebo Harmonic broken | Switch to Gazebo Classic 11 (stable, more tutorials) |
-| PX4 unstable | Switch to AirSim (deprecated but works) |
-| Multi-drone setup unclear | Already plan for 2 drones; defer 3rd to Gate 4 |
+| Redis install fails | Use `redis-py`'s bundled `fakeredis` for local smoke-testing; real Redis must work before Day 3 |
+| `waypoint_runner.py` or `frame_server.py` not publishing | Debug Python process; check Redis connection string in `shared/config.yaml` |
 | Ollama / Gemma 4 incompatible | Use llama.cpp directly with quantized weights |
-| WSL2 setup blocked (no Windows 11, no NVIDIA driver, etc.) | Dual-boot Ubuntu on the same machine, OR use a rented cloud Ubuntu instance |
-| No team member has a Linux-capable machine | Rent a dedicated cloud GPU instance (Lambda Labs, Paperspace) and use it as the demo box for Week 3 |
+| Multi-drone setup unclear | Already plan for 2 drones; defer 3rd to Gate 4 |
+| No team member has a machine capable of Ollama inference | Rent a dedicated cloud GPU instance (Lambda Labs, Paperspace) and use it as the demo box |
 
-**If all five pivots fail by end of Day 3:** the project as designed is not feasible. Pivot to a simpler use case (single drone, no swarm, indoor environment).
+**If all pivots fail by end of Day 3:** the project as designed is not feasible. Pivot to a simpler use case (single drone, no swarm).
 
 ## Gate 2: Single-Drone Agentic Loop (Day 7, Wed May 7)
 
 **Pass criteria — the full loop must work end-to-end:**
 
-- [ ] Drone flies a survey path autonomously in Gazebo
-- [ ] Camera frames are sampled at 1 Hz
-- [ ] Frames + state pass to Gemma 4 E2B
+- [ ] Drone agent process subscribes to `drones.drone1.state` and `drones.drone1.camera` on Redis
+- [ ] Camera frames (from `sim/frame_server.py`) are sampled at 1 Hz and passed to Gemma 4 E2B
 - [ ] Gemma 4 returns valid function call from the schema
 - [ ] Validation node catches at least one engineered failure case
-- [ ] Action node publishes the function call result via ROS 2
-- [ ] EGS receives the publish and updates shared state
-- [ ] Flutter dashboard shows the finding live
+- [ ] Action node publishes the function call result on `drones.drone1.findings` (Redis)
+- [ ] EGS agent process receives the finding from Redis and updates shared state on `egs.state`
+- [ ] Flutter dashboard shows the finding live via the FastAPI WebSocket bridge
 
 **Plus measurable thresholds:**
 
@@ -104,16 +101,16 @@ See [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md) for the detailed plan.
 
 **Pass criteria — 3-drone simulation must:**
 
-- [ ] All three drones fly stably for 5+ minutes without crashes
+- [ ] All three drone agent processes run stably for 5+ simulated minutes without crashes
 - [ ] Each drone's agent loop runs at ≥0.5 Hz throughput
-- [ ] Mesh broadcasts deliver between drones in range, drop out of range
-- [ ] EGS replanning successfully reassigns survey points after triggered drone failure
+- [ ] `agents/mesh_simulator/main.py` delivers broadcasts between drones in range, drops them out of range (per `shared/config.yaml` `mesh.range_meters`)
+- [ ] EGS replanning successfully reassigns survey points after scripted drone failure event
 - [ ] At least one resilience scenario completes successfully (drone failure OR EGS dropout)
 
 **Plus performance:**
 
 - Memory usage stays below available VRAM
-- No drone exhibits erratic flight behavior
+- No drone agent process exits unexpectedly
 - Validation events visible on dashboard
 
 **If pass:** continue with 3 drones, polish the resilience scenarios for the demo.
@@ -189,7 +186,7 @@ These are the irreducible minimums:
 - **Real Gemma 4 inference doing real work.** No mocking the LLM itself.
 - **The validation-and-retry loop.** This is the technical innovation. It must be in the demo.
 - **The offline / on-device claim demonstrated, not asserted.** Terminal showing no internet at some point.
-- **At least one working drone in real Gazebo simulation.**
+- **At least one working drone agent loop on Redis with real Gemma 4 driving decisions.**
 - **A submission by May 18, 23:59 UTC.**
 
 Everything else is negotiable.

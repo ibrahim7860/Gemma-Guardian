@@ -82,7 +82,7 @@ This is the EGS's primary agentic task, faithful to the paper's Algorithm 1.
 
 5. Retry up to 3 times. If still failing, fall back to a deterministic round-robin assignment and log the LLM failure.
 
-6. Once validated, transmit assignments to drones via `/drones/<id>/tasks`.
+6. Once validated, transmit assignments to drones via `drones.<id>.tasks` (Redis publish).
 
 **This is the single most important code in the EGS.** The validation-loop catch-and-correct moment from this task is the core technical demo of the project.
 
@@ -133,16 +133,16 @@ If the operator text doesn't match a command structure, Gemma 4 returns an `unkn
 
 Drones independently emit findings. The EGS:
 
-1. Receives all findings via `/drones/<id>/findings` topic subscriptions
+1. Receives all findings via `drones.*.findings` (Redis pattern subscribe `PSUBSCRIBE drones.*.findings`)
 2. Deduplicates: if two findings have the same type and GPS within 10 meters and within 60 seconds, merge them (take the higher confidence, append both visual descriptions)
 3. Prioritizes: maintain a priority queue ordered by `severity × confidence`
-4. Pushes to operator UI via WebSocket
+4. Pushes to operator UI via WebSocket bridge
 
 **No LLM needed here** — pure rule-based logic.
 
 ## Task 7: Telemetry Monitoring
 
-The EGS subscribes to `/drones/<id>/state` from each drone and watches for:
+The EGS subscribes to `drones.*.state` (Redis pattern subscribe `PSUBSCRIBE drones.*.state`) from each drone and watches for:
 
 - **Heartbeat loss:** no state update for 10 seconds → mark drone as failed, trigger replanning
 - **Low battery:** below 20% → suggest recall to operator
@@ -164,8 +164,8 @@ The EGS maintains a single shared state object:
     ...
   ],
   "drones": {
-    "drone1": {<state from /drones/1/state>},
-    "drone2": {<state from /drones/2/state>}
+    "drone1": {<state from drones.drone1.state Redis channel>},
+    "drone2": {<state from drones.drone2.state Redis channel>}
   },
   "findings": [<deduplicated findings, priority-sorted>],
   "validation_events": [
@@ -176,15 +176,15 @@ The EGS maintains a single shared state object:
 }
 ```
 
-This state is published in full to the WebSocket bridge every 1 second. Flutter renders from it.
+This state is published in full to the FastAPI WebSocket bridge (`frontend/ws_bridge/main.py`) every 1 second via the `egs.state` Redis channel. Flutter renders from it.
 
 ## Implementation Notes
 
 - The EGS is a single Python process using FastAPI + asyncio + LangGraph
 - LangGraph layout: a coordinator graph with task nodes (assignment, command translation, replanning) plus deterministic nodes (point generation, finding dedup, telemetry monitor). The `langgraph-supervisor` `create_supervisor` primitive is the right fit if we split into specialized sub-agents; otherwise a single `StateGraph` with conditional edges is simpler and sufficient for the demo.
-- ROS 2 connection via `rclpy`
+- Redis connection via `redis-py` async client; pattern-subscribes to `drones.*.state`, `drones.*.findings`, `swarm.broadcasts.*`. Publishes to `drones.<id>.tasks` and `egs.state`.
 - Ollama call to Gemma 4 E4B via the local HTTP API (`POST http://localhost:11434/api/chat`). Pass `format: <JSON Schema>` to force structured output for the function-calling schema in [`09-function-calling-schema.md`](09-function-calling-schema.md), or use `tools` for native tool-calling — pick one and stay consistent across calls. `stream: false` for assignment-style calls so we can validate the full response before retrying.
-- WebSocket via FastAPI's built-in support OR rosbridge_suite (we use rosbridge for ROS-native compatibility)
+- WebSocket to Flutter via the FastAPI bridge at `frontend/ws_bridge/main.py` (`ws://localhost:9090`); the bridge mirrors Redis channels to connected Flutter clients.
 - All validation code is unit-tested separately from LLM calls
 
 ## Performance Notes

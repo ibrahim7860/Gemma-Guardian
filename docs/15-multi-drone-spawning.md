@@ -2,280 +2,139 @@
 
 ## Goal
 
-Spawn 2-3 drones in the disaster scene, each with its own:
-- MAVLink system ID
-- ROS 2 namespace
-- PX4 SITL instance
-- Gazebo model instance
-- Camera topic
+Run 2-3 drone agent processes simultaneously, each subscribing to and publishing on the shared Redis broker. One waypoint runner and one frame server feed simulated state to all drone agents. One EGS process coordinates the swarm.
 
-This is the foundation for the swarm demo. PX4 has built-in multi-vehicle support; we use it.
+## Process Layout
 
-## Reference Documentation
+For a 3-drone swarm, launch these processes (each in its own terminal or tmux pane):
 
-- PX4 multi-vehicle Gazebo guide: https://docs.px4.io/main/en/sim_gazebo_gz/multi_vehicle_simulation.html
-- PX4 uXRCE-DDS namespace customization: https://docs.px4.io/main/en/middleware/uxrce_dds.html#customizing-the-namespace
-- Working community example: https://github.com/SathanBERNARD/PX4-ROS2-Gazebo-Drone-Simulation-Template
+| # | Process | Command |
+|---|---|---|
+| 1 | Redis broker | `redis-server` (or already running as a system service) |
+| 2 | Waypoint runner | `python sim/waypoint_runner.py --scenario disaster_zone_v1` |
+| 3 | Frame server | `python sim/frame_server.py --scenario disaster_zone_v1` |
+| 4 | EGS agent | `python agents/egs_agent/main.py` |
+| 5 | Drone agent 1 | `python agents/drone_agent/main.py --drone-id drone1` |
+| 6 | Drone agent 2 | `python agents/drone_agent/main.py --drone-id drone2` |
+| 7 | Drone agent 3 | `python agents/drone_agent/main.py --drone-id drone3` |
+| 8 | Mesh simulator | `python agents/mesh_simulator/main.py` |
+| 9 | WebSocket bridge | `python frontend/ws_bridge/main.py` |
 
-## How PX4 Multi-Vehicle Works
+**Waypoint runner** reads the scenario YAML and publishes `drones.<id>.state` (JSON, 2 Hz) for every drone listed in the scenario, with simulated position, heading, altitude, and battery decay.
 
-PX4 SITL runs as multiple separate processes, each:
-- A unique `-i <instance>` argument (1, 2, 3, ...). The instance number drives the MAVLink system ID and offsets the simulator/MAVLink UDP ports (remote ports start at 14541 and increment per instance).
-- Distinct Gazebo model name (PX4 appends an index suffix to `PX4_SIM_MODEL`'s spawned model — e.g. `x500_mono_cam_0`, `x500_mono_cam_1`, …).
-- A unique uXRCE-DDS topic namespace (set per process via `PX4_UXRCE_DDS_NS`).
+**Frame server** reads the scenario's `frames` mapping and publishes `drones.<id>.camera` (raw JPEG bytes, not JSON) to Redis at the configured frame rate. Each drone agent subscribes to its own camera channel and passes frames to Gemma 4.
 
-The first instance starts the Gazebo server (gz-server). Subsequent instances must set `PX4_GZ_STANDALONE=1` so they connect to the already-running server instead of trying to launch their own.
+**Mesh simulator** pattern-subscribes to `swarm.broadcasts.*`, filters messages by Euclidean distance using live drone state, and republishes accepted messages to `swarm.<receiver_id>.inbox`. See Contract 9 in `docs/20-integration-contracts.md` for the full channel registry.
 
-## Launch Pattern
-
-Terminal 1 — XRCE Agent (a single agent on port 8888 serves the entire swarm; per-drone isolation is handled via `PX4_UXRCE_DDS_NS` on the PX4 side, not by running multiple agents):
-```bash
-MicroXRCEAgent udp4 -p 8888
-```
-
-Terminal 2 — Drone 1 (also starts Gazebo with the disaster world):
-```bash
-cd ~/PX4-Autopilot
-PX4_UXRCE_DDS_NS=drone1 \
-PX4_GZ_WORLD=disaster_zone_v1 \
-PX4_GZ_MODEL_POSE="0,0,0.1,0,0,0" \
-PX4_SIM_MODEL=gz_x500_mono_cam \
-PX4_SYS_AUTOSTART=4001 \
-./build/px4_sitl_default/bin/px4 -i 1
-```
-
-Terminal 3 — Drone 2 (standalone, connects to running gz-server):
-```bash
-cd ~/PX4-Autopilot
-PX4_UXRCE_DDS_NS=drone2 \
-PX4_GZ_STANDALONE=1 \
-PX4_GZ_MODEL_POSE="5,0,0.1,0,0,0" \
-PX4_SIM_MODEL=gz_x500_mono_cam \
-PX4_SYS_AUTOSTART=4001 \
-./build/px4_sitl_default/bin/px4 -i 2
-```
-
-Terminal 4 — Drone 3 (same pattern):
-```bash
-cd ~/PX4-Autopilot
-PX4_UXRCE_DDS_NS=drone3 \
-PX4_GZ_STANDALONE=1 \
-PX4_GZ_MODEL_POSE="10,0,0.1,0,0,0" \
-PX4_SIM_MODEL=gz_x500_mono_cam \
-PX4_SYS_AUTOSTART=4001 \
-./build/px4_sitl_default/bin/px4 -i 3
-```
-
-Each drone gets:
-- A unique MAVLink system ID derived from `-i N` (PX4 uses the instance number; ID 1 is reserved on the network so for real-world deployments we'd offset, but for SITL the instance number is fine).
-- A unique Gazebo model name: `x500_mono_cam_0`, `x500_mono_cam_1`, `x500_mono_cam_2` (PX4 zero-indexes the suffix even though `-i` is 1-indexed).
-- A unique ROS 2 topic prefix: `/drone1/fmu/...`, `/drone2/fmu/...`, `/drone3/fmu/...` via `PX4_UXRCE_DDS_NS`.
-- A different starting pose.
-
-> Note on autostart: `4001` is the canonical "Quadrotor X" airframe used by every `gz_x500*` SITL build (see `ROMFS/px4fmu_common/init.d/airframes/`). Do not invent autostart numbers — only IDs that exist in that directory will boot.
-
-## ROS 2 Topic Namespacing
-
-By default, PX4's uXRCE-DDS client publishes uORB messages under `/fmu/in/...` and `/fmu/out/...` with no per-vehicle prefix, which collides immediately under multi-vehicle. We solve this with the official PX4 mechanism: the `PX4_UXRCE_DDS_NS` environment variable (or `uxrce_dds_client start -n <ns>`).
-
-With `PX4_UXRCE_DDS_NS=drone1` set on the PX4 process, that vehicle's topics appear as:
-
-```
-/drone1/fmu/out/vehicle_status
-/drone1/fmu/out/vehicle_local_position
-/drone1/fmu/in/trajectory_setpoint
-/drone1/fmu/in/vehicle_command
-...
-```
-
-Verify with:
-
-```bash
-ros2 topic list | grep fmu
-```
-
-A single `MicroXRCEAgent udp4 -p 8888` handles all three PX4 clients; the namespace is applied client-side, so the agent does not need any per-drone flags. The drone name used in `PX4_UXRCE_DDS_NS` matches the `<id>` segment of the topic structure documented in [`08-mesh-communication.md`](08-mesh-communication.md) (`/drones/<id>/...`); we re-publish from `/<id>/fmu/...` to `/drones/<id>/...` inside the per-drone agent.
+**WebSocket bridge** subscribes to `egs.state`, `drones.*.state`, and `drones.*.findings`, then forwards a merged envelope to all connected Flutter dashboard clients at 1 Hz. Operator commands flow back through the same WebSocket.
 
 ## Launch Script
 
-We bundle this into a single script for the demo:
-
-`scripts/launch_swarm.sh`:
+`scripts/launch_swarm.sh` starts the full stack in a tmux session, one pane per process. Each process logs to `/tmp/gemma_guardian_logs/<process>.log`.
 
 ```bash
 #!/bin/bash
-# Launch the FieldAgent simulation: 3 drones in disaster_zone_v1
+# scripts/launch_swarm.sh
+# Requires: tmux, redis-server on PATH, python in .venv or system
 
 set -e
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_DIR="/tmp/gemma_guardian_logs"
+mkdir -p "$LOG_DIR"
 
-# Single XRCE agent for the whole swarm; per-drone isolation comes from PX4_UXRCE_DDS_NS
-MicroXRCEAgent udp4 -p 8888 > /tmp/xrce.log 2>&1 &
-XRCE=$!
+SCENARIO="${1:-disaster_zone_v1}"
 
-sleep 2
+# Start redis-server only if not already running
+if ! redis-cli ping > /dev/null 2>&1; then
+  redis-server --daemonize yes --logfile "$LOG_DIR/redis.log"
+  echo "Started redis-server"
+else
+  echo "redis-server already running — skipping"
+fi
 
-# Start drone 1 (also launches Gazebo)
-cd ~/PX4-Autopilot
-PX4_HOME_LAT=34.0000 PX4_HOME_LON=-118.5000 PX4_HOME_ALT=0 \
-PX4_UXRCE_DDS_NS=drone1 \
-PX4_GZ_WORLD=disaster_zone_v1 \
-PX4_GZ_MODEL_POSE="0,0,0.1,0,0,0" \
-PX4_SIM_MODEL=gz_x500_mono_cam \
-PX4_SYS_AUTOSTART=4001 \
-./build/px4_sitl_default/bin/px4 -i 1 > /tmp/drone1.log 2>&1 &
-DRONE1=$!
+tmux new-session -d -s fieldagent -n waypoint
+tmux send-keys -t fieldagent:waypoint \
+  "cd $REPO_ROOT && python sim/waypoint_runner.py --scenario $SCENARIO 2>&1 | tee $LOG_DIR/waypoint_runner.log" Enter
 
-sleep 8  # wait for Gazebo to be ready
+tmux new-window -t fieldagent -n frames
+tmux send-keys -t fieldagent:frames \
+  "cd $REPO_ROOT && python sim/frame_server.py --scenario $SCENARIO 2>&1 | tee $LOG_DIR/frame_server.log" Enter
 
-# Start drone 2
-PX4_HOME_LAT=34.0000 PX4_HOME_LON=-118.5000 PX4_HOME_ALT=0 \
-PX4_UXRCE_DDS_NS=drone2 \
-PX4_GZ_STANDALONE=1 \
-PX4_GZ_MODEL_POSE="10,0,0.1,0,0,0" \
-PX4_SIM_MODEL=gz_x500_mono_cam \
-PX4_SYS_AUTOSTART=4001 \
-./build/px4_sitl_default/bin/px4 -i 2 > /tmp/drone2.log 2>&1 &
-DRONE2=$!
+tmux new-window -t fieldagent -n egs
+tmux send-keys -t fieldagent:egs \
+  "cd $REPO_ROOT && python agents/egs_agent/main.py 2>&1 | tee $LOG_DIR/egs.log" Enter
 
-sleep 4
+# Launch one drone agent per ID in the scenario (default: drone1, drone2, drone3)
+for ID in drone1 drone2 drone3; do
+  tmux new-window -t fieldagent -n "$ID"
+  tmux send-keys -t "fieldagent:$ID" \
+    "cd $REPO_ROOT && python agents/drone_agent/main.py --drone-id $ID 2>&1 | tee $LOG_DIR/$ID.log" Enter
+done
 
-# Start drone 3
-PX4_HOME_LAT=34.0000 PX4_HOME_LON=-118.5000 PX4_HOME_ALT=0 \
-PX4_UXRCE_DDS_NS=drone3 \
-PX4_GZ_STANDALONE=1 \
-PX4_GZ_MODEL_POSE="20,0,0.1,0,0,0" \
-PX4_SIM_MODEL=gz_x500_mono_cam \
-PX4_SYS_AUTOSTART=4001 \
-./build/px4_sitl_default/bin/px4 -i 3 > /tmp/drone3.log 2>&1 &
-DRONE3=$!
+tmux new-window -t fieldagent -n mesh
+tmux send-keys -t fieldagent:mesh \
+  "cd $REPO_ROOT && python agents/mesh_simulator/main.py 2>&1 | tee $LOG_DIR/mesh.log" Enter
 
-echo "Swarm launched. PIDs: $XRCE $DRONE1 $DRONE2 $DRONE3"
-echo "Run 'kill $XRCE $DRONE1 $DRONE2 $DRONE3' to stop."
-echo $XRCE $DRONE1 $DRONE2 $DRONE3 > /tmp/fieldagent_swarm.pids
+tmux new-window -t fieldagent -n ws_bridge
+tmux send-keys -t fieldagent:ws_bridge \
+  "cd $REPO_ROOT && python frontend/ws_bridge/main.py 2>&1 | tee $LOG_DIR/ws_bridge.log" Enter
+
+echo ""
+echo "FieldAgent swarm running in tmux session 'fieldagent'."
+echo "Attach with: tmux attach -t fieldagent"
+echo "Logs at: $LOG_DIR/"
+echo "Flutter dashboard connects to: ws://localhost:9090"
 ```
 
-## Launching the Agents
+If you prefer `honcho` or `overmind` over tmux, define a `Procfile` at the repo root mirroring the same process list. The only constraint is that each process writes its stdout/stderr to its own log file under `/tmp/gemma_guardian_logs/`.
 
-After the swarm is up, launch the agent processes:
-
-`scripts/launch_agents.sh`:
+## Stopping
 
 ```bash
+# scripts/stop_demo.sh
 #!/bin/bash
-# Launch the per-drone agents and the EGS
+tmux kill-session -t fieldagent 2>/dev/null || true
 
-cd ~/fieldagent
+# Kill any stray processes by name
+pkill -f "waypoint_runner.py" || true
+pkill -f "frame_server.py"    || true
+pkill -f "egs_agent/main.py"  || true
+pkill -f "drone_agent/main.py" || true
+pkill -f "mesh_simulator"     || true
+pkill -f "ws_bridge/main.py"  || true
 
-# Drone agents (all share the single XRCE agent on 8888; per-drone topics are
-# distinguished by the uXRCE-DDS namespace, which matches --drone_id)
-python3 -m agents.drone_agent --drone_id=drone1 > /tmp/agent_drone1.log 2>&1 &
-python3 -m agents.drone_agent --drone_id=drone2 > /tmp/agent_drone2.log 2>&1 &
-python3 -m agents.drone_agent --drone_id=drone3 > /tmp/agent_drone3.log 2>&1 &
+# Only stop redis-server if we started it (don't kill a system service)
+# Check whether it was launched by our user's daemonize call above:
+if redis-cli config get daemonize 2>/dev/null | grep -q yes; then
+  redis-cli shutdown nosave 2>/dev/null || true
+fi
 
-# EGS
-python3 -m agents.egs_agent > /tmp/egs.log 2>&1 &
-
-# Mesh simulator
-python3 -m agents.mesh_simulator > /tmp/mesh.log 2>&1 &
-
-# rosbridge for the Flutter dashboard
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml > /tmp/rosbridge.log 2>&1 &
+echo "FieldAgent stopped."
 ```
 
-## Single-Command Demo Launcher
+## Scaling 2 to 3 Drones
 
-For the demo recording session:
+No new installs required. Two edits:
 
-`scripts/run_full_demo.sh`:
+1. In `shared/config.yaml`, set `mission.drone_count: 3`.
+2. In `sim/scenarios/disaster_zone_v1.yaml`, add the third drone's `home_position`, `waypoint_track`, and `frames` entries.
 
-```bash
-#!/bin/bash
-# Full demo launcher: simulation + agents + dashboard
+Restart the swarm. The waypoint runner and frame server auto-read `drone_count` from the scenario file; the extra `agents/drone_agent/main.py --drone-id drone3` process in the launch script is already present.
 
-bash scripts/launch_swarm.sh
-sleep 15  # wait for Gazebo and PX4 to fully initialize
-bash scripts/launch_agents.sh
-sleep 5
-echo "FieldAgent demo running. Open the Flutter dashboard at http://localhost:8080"
-```
+To drop back to 2 drones for the demo, set `mission.drone_count: 2` and remove or comment out the `drone3` pane from the launch script.
 
-And a stop script:
+## Failure Modes
 
-`scripts/stop_demo.sh`:
+**Redis is down.** All pub/sub calls raise `redis.exceptions.ConnectionError`. Fix: confirm `redis-cli ping` returns PONG. If you used `--daemonize yes`, check `$LOG_DIR/redis.log`. Restart with `redis-server --daemonize yes`.
 
-```bash
-#!/bin/bash
-pkill -f MicroXRCEAgent
-pkill -f px4
-pkill -f drone_agent
-pkill -f egs_agent
-pkill -f mesh_simulator
-pkill -f rosbridge
-killall gz
-```
+**Ollama is down or the model isn't pulled.** The drone agent and EGS agent fail on their first Gemma 4 call with a connection refused or 404. Fix: `ollama serve` in a separate terminal and confirm `ollama list` shows the pinned model tags from `docs/20-integration-contracts.md`. Pull if missing: `ollama pull gemma4:e2b`.
 
-## Camera Topics with Multi-Vehicle
+**Scenario YAML is malformed.** The waypoint runner exits immediately with a YAML parse error printed to stdout. Fix: validate the file with `python -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" sim/scenarios/disaster_zone_v1.yaml`. Check indentation, missing colons, or non-ASCII characters in paths.
 
-Each drone gets its own Gazebo Harmonic camera topic. The pattern is (note: PX4 zero-indexes the spawned model name even though `-i` is 1-indexed):
-
-```
-/world/disaster_zone_v1/model/x500_mono_cam_0/link/camera_link/sensor/imager/image  # drone 1 (-i 1)
-/world/disaster_zone_v1/model/x500_mono_cam_1/link/camera_link/sensor/imager/image  # drone 2 (-i 2)
-/world/disaster_zone_v1/model/x500_mono_cam_2/link/camera_link/sensor/imager/image  # drone 3 (-i 3)
-```
-
-These are Gazebo Transport topics. We need a `ros_gz_bridge` to access them as ROS 2 `sensor_msgs/Image`. The Harmonic-era spec is `<gz-topic>@<ros-msg>[<gz-msg>` (with `[` meaning gz→ros only):
-
-```bash
-ros2 run ros_gz_bridge parameter_bridge \
-  /world/disaster_zone_v1/model/x500_mono_cam_0/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
-  /world/disaster_zone_v1/model/x500_mono_cam_1/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
-  /world/disaster_zone_v1/model/x500_mono_cam_2/link/camera_link/sensor/imager/image@sensor_msgs/msg/Image[gz.msgs.Image \
-  --ros-args -r /world/disaster_zone_v1/model/x500_mono_cam_0/link/camera_link/sensor/imager/image:=/drones/drone1/camera/image_raw \
-             -r /world/disaster_zone_v1/model/x500_mono_cam_1/link/camera_link/sensor/imager/image:=/drones/drone2/camera/image_raw \
-             -r /world/disaster_zone_v1/model/x500_mono_cam_2/link/camera_link/sensor/imager/image:=/drones/drone3/camera/image_raw
-```
-
-This remaps the verbose Gazebo topic names onto the `/drones/<id>/camera/image_raw` topic structure locked in [`08-mesh-communication.md`](08-mesh-communication.md). Verify the bridge is alive with `ros2 topic hz /drones/drone1/camera/image_raw`.
-
-## Performance Notes
-
-Multi-drone simulation is GPU- and CPU-intensive. With 3 drones each rendering a camera at 30 Hz:
-
-- GPU usage: 60-80% on RTX 4090 (Gazebo + Ollama compete)
-- CPU usage: 4-6 cores active
-- RAM: 8-12 GB
-
-If your dev machine struggles:
-- Reduce camera FPS in the SDF model (drop to 10 Hz from 30 Hz)
-- Reduce camera resolution (640×480 from 1280×720)
-- Drop to 2 drones for the demo
-
-The agent loop only samples 1 frame per second per drone, so high camera FPS is wasted.
-
-## What Could Go Wrong
-
-| Failure | Mitigation |
-|---|---|
-| Second drone doesn't spawn | Check `PX4_GZ_STANDALONE=1` is set on instances 2/3; check Gazebo server is up (`gz topic -l`) |
-| Cameras have name collisions | Verify each drone's model name has a unique suffix (`_0`, `_1`, `_2`) |
-| ROS 2 `/fmu/...` topics from all drones collide | Confirm `PX4_UXRCE_DDS_NS=droneN` is set on every PX4 process; `ros2 topic list \| grep fmu` should show `/drone1/fmu/...`, `/drone2/fmu/...`, `/drone3/fmu/...` |
-| Drones flicker / disappear | GPU memory exhaustion; reduce camera resolution |
-| One drone's PX4 crashes | Use the `--restart` pattern in launch script; isolate the issue |
-| MAVLink IDs collide in QGroundControl | Each drone needs a unique `-i N`; verify with `ros2 topic list` |
-
-## Fallback: 2 Drones Instead of 3
-
-If 3 drones is unstable, drop to 2. The demo still works:
-- Drone 1: surveys western half
-- Drone 2: surveys eastern half
-- One drone fails mid-mission; the other takes over
-
-This is a perfectly fine demo scenario, and the architecture argument is unchanged.
+**Port conflict on 9090 (WebSocket bridge).** The FastAPI process fails to bind. Fix: `lsof -i :9090` to find the conflicting process, kill it, or override the port with `WS_BRIDGE_PORT=9091 python frontend/ws_bridge/main.py` and update the Flutter dashboard's WebSocket URL accordingly.
 
 ## Cross-References
 
-- Gazebo install and single-drone setup: [`13-gazebo-setup.md`](13-gazebo-setup.md)
-- The disaster scene used: [`14-disaster-scene-design.md`](14-disaster-scene-design.md)
-- Mesh simulation: [`08-mesh-communication.md`](08-mesh-communication.md)
-- Demo capture: [`21-demo-storyboard.md`](21-demo-storyboard.md)
+- Dev environment setup: [`docs/13-runtime-setup.md`](13-runtime-setup.md)
+- Scenario YAML format and disaster scene layout: [`docs/14-disaster-scene-design.md`](14-disaster-scene-design.md)
+- Redis channel names and JSON schemas: [`docs/20-integration-contracts.md`](20-integration-contracts.md) Contract 9

@@ -6,20 +6,24 @@
 
 ## Goal
 
-Lock every cross-component contract on Day 1 so five people can build in parallel without integration thrash. Produce machine-checkable artifacts (JSON Schemas, Python validators, generated topic constants, fixture round-trip tests) that fail CI when any contract drifts.
+Lock every cross-component contract on Day 1 so five people can build in parallel without integration thrash. Produce machine-checkable artifacts (JSON Schemas, Python validators, generated channel constants, fixture round-trip tests) that fail CI when any contract drifts.
+
+## Transport (locked April 30, 2026)
+
+Inter-process messaging is **Redis pub/sub** on `localhost:6379`. There is no ROS 2, no Gazebo, no PX4 SITL. Channels follow dot-notation (`drones.<id>.state`, `swarm.broadcasts.<id>`, `egs.state`) so `PSUBSCRIBE 'drones.*.state'` works as a glob. The Flutter dashboard talks to a small FastAPI WebSocket bridge that mirrors a fixed list of Redis channels — no `rosbridge_suite`. See [`docs/20-integration-contracts.md`](../../20-integration-contracts.md) Contract 9.
 
 ## Non-goals
 
 - Schema evolution beyond v1 (policy is "don't change; bump and update everywhere same day").
 - Flutter unit tests beyond import-compile of generated constants.
-- ROS 2 custom-message generation. Wire format is `std_msgs/String` carrying validated JSON, per Contract 9.
+- The Redis broker itself, or the `redis-py` connection lifecycle. Those are runtime concerns, not contract concerns.
 
 ## Decisions (locked)
 
 1. **Scope:** Full lock-in — JSON Schemas + shared Python contracts package + Dart-side generated constants + fixture round-trip tests + version-stamping checks.
 2. **Source of truth for Python types:** JSON Schema is authoritative for the wire shape; hand-written Pydantic v2 models mirror them for ergonomics; tests assert parity over fixtures.
 3. **Schema strictness:** Structural-only in JSON Schema (`additionalProperties: false`, types/enums/ranges, `$ref` into `_common.json`). Semantic and stateful rules stay in Python validators, every failure tagged with a stable `RuleID` enum value (rule IDs become the failure_reason field across the system).
-4. **ROS 2 topic registry:** `shared/contracts/topics.yaml` is the single source of truth; `scripts/gen_topic_constants.py` generates `shared/contracts/topics.py` and `frontend/flutter_dashboard/lib/generated/topics.dart`. CI fails on stale generated files.
+4. **Redis channel registry:** `shared/contracts/topics.yaml` is the single source of truth; `scripts/gen_topic_constants.py` generates `shared/contracts/topics.py` and `frontend/flutter_dashboard/lib/generated/topics.dart`. CI fails on stale generated files. The codegen output is dot-notation channel names suitable for `redis-py` (`pubsub.subscribe(channel)`) and pattern subscription (`pubsub.psubscribe("drones.*.state")`).
 5. **Versioning:** `shared/VERSION = "1.0.0"`; every JSON Schema `$id` contains `/v1/`; `shared/config.yaml` and every WebSocket envelope carry `contract_version`. CI asserts all three agree.
 6. **Schema modularity:** One file per contract category mirroring doc 20. Common shapes live in `shared/schemas/_common.json` and are `$ref`-d.
 7. **Finding ID format:** `^f_drone\d+_\d+$`. Per-drone monotonic counter persisted via `agents/drone_agent/memory.py`.
@@ -37,7 +41,7 @@ Lock every cross-component contract on Day 1 so five people can build in paralle
 | Wire shape (structural) | `shared/schemas/*.json` (JSON Schema Draft 2020-12) |
 | Semantic + stateful rules | `agents/drone_agent/validation.py` and `agents/egs_agent/*` validators, tagged with `RuleID` |
 | Rule ID enum + descriptions | `shared/contracts/rules.py` |
-| Topic names | `shared/contracts/topics.yaml` (codegen target for Python and Dart) |
+| Channel names | `shared/contracts/topics.yaml` (codegen target for Python and Dart) |
 | Mission config | `shared/config.yaml` |
 | Contract version | `shared/VERSION` |
 
@@ -68,9 +72,9 @@ shared/
 │   ├── models.py                        # Pydantic v2 mirrors of every schema
 │   ├── rules.py                         # RuleID enum + RULE_REGISTRY
 │   ├── topics.py                        # GENERATED — do not hand-edit
-│   ├── topics.yaml                      # source of truth for topic registry
+│   ├── topics.yaml                      # source of truth for channel registry
 │   ├── config.py                        # typed loader for shared/config.yaml
-│   └── logging.py                       # /tmp/fieldagent_logs/ setup + ValidationEventLogger
+│   └── logging.py                       # /tmp/gemma_guardian_logs/ setup + ValidationEventLogger
 ├── prompts/                             # already exists, no change
 └── tests/
     ├── test_fixtures_roundtrip.py
@@ -157,7 +161,7 @@ Already correct in shape. Refinements:
 
 ### `egs_function_calls.json` (NEW)
 
-> **Lifecycle note:** Layer-2 schemas validate Gemma 4 output *only*. The EGS coordinator never publishes `assign_survey_points` or `replan_mission` directly on a ROS topic — it parses them, runs them through `agents/egs_agent/validation.py`, then *translates* them into `task_assignment.json` payloads on `/drones/<id>/tasks`. This is internal to the EGS process.
+> **Lifecycle note:** Layer-2 schemas validate Gemma 4 output *only*. The EGS coordinator never publishes `assign_survey_points` or `replan_mission` directly on a Redis channel — it parses them, runs them through `agents/egs_agent/validation.py`, then *translates* them into `task_assignment.json` payloads on `drones.<id>.tasks`. This is internal to the EGS process.
 
 `oneOf` over:
 
@@ -220,11 +224,11 @@ Discriminated union on `type`. Five cases:
 - `operator_command_dispatch` (Flutter → EGS): `{ type, command_id, contract_version }`.
 - `finding_approval` (Flutter → EGS): `{ type, command_id, finding_id, action: "approve" | "dismiss", contract_version }`.
 
-**`contract_version` ownership:** rosbridge_suite does not natively wrap messages with a version tag. The EGS-side bridge stamps `contract_version` from `shared.VERSION` on every outbound message before publish. The Flutter client compares against `frontend/.../generated/contract_version.dart`; on mismatch, it logs a console warning, drops the message, and surfaces a banner ("Server contract X.Y.Z, client X.Y'.Z' — refresh required"). Inbound messages from Flutter are stamped on the Flutter side and validated by EGS the same way.
+**`contract_version` ownership:** the FastAPI WebSocket bridge stamps `contract_version` from `shared.VERSION` on every outbound message before forwarding to Flutter. The Flutter client compares against `frontend/.../generated/contract_version.dart`; on mismatch, it logs a console warning, drops the message, and surfaces a banner ("Server contract X.Y.Z, client X.Y'.Z' — refresh required"). Inbound messages from Flutter are stamped on the Flutter side and validated by the bridge the same way before republishing onto Redis.
 
 ### `validation_event.json` (Contract 11)
 
-Schema for one line of `/tmp/fieldagent_logs/validation_events.jsonl`:
+Schema for one line of `/tmp/gemma_guardian_logs/validation_events.jsonl`:
 
 ```
 {
@@ -247,7 +251,7 @@ This is the writeup's quantitative substrate.
 
 ### `__init__.py`
 
-Public API only. Re-exports `validate`, `validate_or_raise`, `schema`, `all_schemas`, every Pydantic model, `RuleID`, `RULE_REGISTRY`, `RuleSpec`, every topic constant, every topic helper, and `VERSION` (read from `shared/VERSION`).
+Public API only. Re-exports `validate`, `validate_or_raise`, `schema`, `all_schemas`, every Pydantic model, `RuleID`, `RULE_REGISTRY`, `RuleSpec`, every Redis-channel constant, every channel helper (e.g. `per_drone_state_channel`), and `VERSION` (read from `shared/VERSION`).
 
 ### `schemas.py`
 
@@ -311,22 +315,22 @@ RULE_REGISTRY: dict[RuleID, RuleSpec] = { ... }
 
 ```yaml
 contract_version_floor: "1.0"
-ros2:
+redis:
   per_drone:
-    state:    { topic: "/drones/{drone_id}/state",    type: "std_msgs/String", json_schema: "drone_state" }
-    tasks:    { topic: "/drones/{drone_id}/tasks",    type: "std_msgs/String", json_schema: "task_assignment" }
-    findings: { topic: "/drones/{drone_id}/findings", type: "std_msgs/String", json_schema: "finding" }
-    camera:   { topic: "/drones/{drone_id}/camera",   type: "sensor_msgs/Image" }
-    cmd:      { topic: "/drones/{drone_id}/cmd",      type: "std_msgs/String", json_schema: null }   # PX4-internal flight commands; not a Gemma-driven contract
+    state:    { channel: "drones.{drone_id}.state",    payload: "json", json_schema: "drone_state" }
+    tasks:    { channel: "drones.{drone_id}.tasks",    payload: "json", json_schema: "task_assignment" }
+    findings: { channel: "drones.{drone_id}.findings", payload: "json", json_schema: "finding" }
+    camera:   { channel: "drones.{drone_id}.camera",   payload: "jpeg_bytes" }
+    cmd:      { channel: "drones.{drone_id}.cmd",      payload: "json", json_schema: null }   # sim-internal motion commands; not a Gemma-driven contract
   swarm:
-    broadcast:        { topic: "/swarm/broadcasts/{drone_id}",            type: "std_msgs/String", json_schema: "peer_broadcast" }
-    visible_to:       { topic: "/swarm/{drone_id}/visible_to_{drone_id}", type: "std_msgs/String", json_schema: "peer_broadcast" }
-    operator_alerts:  { topic: "/swarm/operator_alerts",                  type: "std_msgs/String", json_schema: null }
+    broadcast:        { channel: "swarm.broadcasts.{drone_id}",            payload: "json", json_schema: "peer_broadcast" }
+    visible_to:       { channel: "swarm.{drone_id}.visible_to.{drone_id}", payload: "json", json_schema: "peer_broadcast" }
+    operator_alerts:  { channel: "swarm.operator_alerts",                  payload: "json", json_schema: null }
   egs:
-    state:          { topic: "/egs/state",          type: "std_msgs/String", json_schema: "egs_state" }
-    replan_events:  { topic: "/egs/replan_events",  type: "std_msgs/String", json_schema: null }
+    state:          { channel: "egs.state",          payload: "json", json_schema: "egs_state" }
+    replan_events:  { channel: "egs.replan_events",  payload: "json", json_schema: null }
   mesh:
-    adjacency:      { topic: "/mesh/adjacency_matrix", type: "std_msgs/String", json_schema: null }
+    adjacency:      { channel: "mesh.adjacency_matrix", payload: "json", json_schema: null }
 websocket:
   endpoint: "ws://localhost:9090"
   schema:   "websocket_messages"
@@ -334,7 +338,7 @@ websocket:
 
 ### `topics.py` (generated)
 
-Constants for every fixed topic; helpers `drone_state_topic("drone1")` etc. Header line: `# GENERATED by scripts/gen_topic_constants.py — do not edit. Source: shared/contracts/topics.yaml`.
+Constants for every fixed channel; helpers `per_drone_state_channel("drone1")` etc. Header line: `# GENERATED by scripts/gen_topic_constants.py — do not edit. Source: shared/contracts/topics.yaml`.
 
 ### `config.py`
 
@@ -342,8 +346,8 @@ Pydantic-validated loader for `shared/config.yaml`. Fails loudly on missing keys
 
 ### `logging.py`
 
-- `setup_logging(component_name)` — creates `/tmp/fieldagent_logs/<component>.log`, configures a Python logger, returns it.
-- `ValidationEventLogger` — writes one `validation_event.json`-shaped line per call into `/tmp/fieldagent_logs/validation_events.jsonl`. All five agents share this logger; the file is append-only. No rotation (a 20-day hackathon doesn't generate enough events to matter).
+- `setup_logging(component_name)` — creates `/tmp/gemma_guardian_logs/<component>.log`, configures a Python logger, returns it.
+- `ValidationEventLogger` — writes one `validation_event.json`-shaped line per call into `/tmp/gemma_guardian_logs/validation_events.jsonl`. All five agents share this logger; the file is append-only. No rotation (a 20-day hackathon doesn't generate enough events to matter).
 
 ## Generated Dart constants
 
@@ -353,12 +357,12 @@ Pydantic-validated loader for `shared/config.yaml`. Fails loudly on missing keys
 
 ```dart
 // GENERATED by scripts/gen_topic_constants.py — do not edit.
-class Topics {
+class Channels {
   static const wsEndpoint = "ws://localhost:9090";
   static const wsSchema = "websocket_messages";
-  static const egsState = "/egs/state";
-  static String droneState(String droneId) => "/drones/$droneId/state";
-  static String droneFindings(String droneId) => "/drones/$droneId/findings";
+  static const egsState = "egs.state";
+  static String droneState(String droneId) => "drones.$droneId.state";
+  static String droneFindings(String droneId) => "drones.$droneId.findings";
   // ...
 }
 ```
@@ -430,4 +434,4 @@ A new `shared/tests/` package, runnable via `pytest`:
 - Real Ollama connectivity test (lives in agent integration tests, not contract tests).
 - Flutter unit tests beyond the generated `topics.dart` and `contract_version.dart` import-compiles check.
 - Schema-evolution policy beyond v1.
-- ROS 2 message generation (we ride on `std_msgs/String` per Contract 9).
+- ROS 2 / Gazebo / PX4. We use Redis pub/sub plus a software-only sim per Contract 9 and `docs/13-runtime-setup.md`.

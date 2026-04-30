@@ -4,7 +4,7 @@
 
 **Goal:** Land every artifact required to lock the v1.0.0 integration contracts so all five team members can build in parallel against fixed interfaces.
 
-**Architecture:** JSON Schemas (Draft 2020-12) are authoritative for wire shape. Hand-written Pydantic v2 models mirror them for Python ergonomics. Semantic and stateful rules live in Python validators, every failure tagged with a `RuleID` enum value. ROS 2 topic names live in a single YAML registry, codegen'd to Python and Dart. `shared/VERSION` + `shared/config.yaml.contract_version` + `frontend/.../contract_version.dart` must agree. CI fails on any drift.
+**Architecture:** JSON Schemas (Draft 2020-12) are authoritative for wire shape. Hand-written Pydantic v2 models mirror them for Python ergonomics. Semantic and stateful rules live in Python validators, every failure tagged with a `RuleID` enum value. Redis pub/sub channel names live in a single YAML registry, codegen'd to Python and Dart. `shared/VERSION` + `shared/config.yaml.contract_version` + `frontend/.../contract_version.dart` must agree. CI fails on any drift. **Transport:** Redis pub/sub on `localhost:6379` (no ROS 2, no Gazebo, no PX4 SITL).
 
 **Tech Stack:** Python 3.11+, `jsonschema` 4.18+, `referencing` library, Pydantic v2, PyYAML, pytest, Dart (consumer side, codegen target only).
 
@@ -1441,7 +1441,7 @@ git commit -m "feat: add Layer 3 operator command schema, fixtures, and Pydantic
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/drone_state.json",
   "title": "Per-Drone State Message (v1, locked 2026-04-30)",
-  "description": "Published on /drones/<id>/state at 2 Hz. Contract 2 in docs/20-integration-contracts.md.",
+  "description": "Published on Redis channel drones.<id>.state at 2 Hz. Contract 2 in docs/20-integration-contracts.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -2394,7 +2394,7 @@ git commit -m "feat: add Ollama-to-canonical adapter with round-trip and rejecti
 
 ---
 
-## Task 16: Topic registry — `topics.yaml`, codegen script, generated files
+## Task 16: Channel registry — `topics.yaml`, codegen script, generated files
 
 **Files:**
 - Create: `shared/contracts/topics.yaml`
@@ -2405,27 +2405,29 @@ git commit -m "feat: add Ollama-to-canonical adapter with round-trip and rejecti
 - Create: `frontend/flutter_dashboard/lib/generated/contract_version.dart`
 - Create: `shared/tests/test_topics_codegen_fresh.py`
 
-- [ ] **Step 1: Write the topics registry**
+The transport is Redis pub/sub. The `topics.yaml` lists every channel name, its payload kind (`json` for everything except the camera channel which is `jpeg_bytes`), and the JSON Schema name for validation when `payload: json`. Channel names use dot-notation so `redis-cli PSUBSCRIBE 'drones.*.state'` works as a glob.
+
+- [ ] **Step 1: Write the channel registry**
 
 `shared/contracts/topics.yaml`:
 ```yaml
 contract_version_floor: "1.0"
-ros2:
+redis:
   per_drone:
-    state:    {topic: "/drones/{drone_id}/state",    type: "std_msgs/String", json_schema: "drone_state"}
-    tasks:    {topic: "/drones/{drone_id}/tasks",    type: "std_msgs/String", json_schema: "task_assignment"}
-    findings: {topic: "/drones/{drone_id}/findings", type: "std_msgs/String", json_schema: "finding"}
-    camera:   {topic: "/drones/{drone_id}/camera",   type: "sensor_msgs/Image"}
-    cmd:      {topic: "/drones/{drone_id}/cmd",      type: "std_msgs/String", json_schema: null}
+    state:    {channel: "drones.{drone_id}.state",    payload: "json",       json_schema: "drone_state"}
+    tasks:    {channel: "drones.{drone_id}.tasks",    payload: "json",       json_schema: "task_assignment"}
+    findings: {channel: "drones.{drone_id}.findings", payload: "json",       json_schema: "finding"}
+    camera:   {channel: "drones.{drone_id}.camera",   payload: "jpeg_bytes"}
+    cmd:      {channel: "drones.{drone_id}.cmd",      payload: "json",       json_schema: null}
   swarm:
-    broadcast:       {topic: "/swarm/broadcasts/{drone_id}",            type: "std_msgs/String", json_schema: "peer_broadcast"}
-    visible_to:      {topic: "/swarm/{drone_id}/visible_to_{drone_id}", type: "std_msgs/String", json_schema: "peer_broadcast"}
-    operator_alerts: {topic: "/swarm/operator_alerts",                  type: "std_msgs/String", json_schema: null}
+    broadcast:       {channel: "swarm.broadcasts.{drone_id}",            payload: "json", json_schema: "peer_broadcast"}
+    visible_to:      {channel: "swarm.{drone_id}.visible_to.{drone_id}", payload: "json", json_schema: "peer_broadcast"}
+    operator_alerts: {channel: "swarm.operator_alerts",                  payload: "json", json_schema: null}
   egs:
-    state:         {topic: "/egs/state",         type: "std_msgs/String", json_schema: "egs_state"}
-    replan_events: {topic: "/egs/replan_events", type: "std_msgs/String", json_schema: null}
+    state:         {channel: "egs.state",         payload: "json", json_schema: "egs_state"}
+    replan_events: {channel: "egs.replan_events", payload: "json", json_schema: null}
   mesh:
-    adjacency: {topic: "/mesh/adjacency_matrix", type: "std_msgs/String", json_schema: null}
+    adjacency: {channel: "mesh.adjacency_matrix", payload: "json", json_schema: null}
 websocket:
   endpoint: "ws://localhost:9090"
   schema:   "websocket_messages"
@@ -2434,7 +2436,7 @@ websocket:
 - [ ] **Step 2: Implement `scripts/gen_topic_constants.py`**
 
 ```python
-"""Generate Python and Dart topic constants from shared/contracts/topics.yaml.
+"""Generate Python and Dart channel constants from shared/contracts/topics.yaml.
 
 Usage:
     python -m scripts.gen_topic_constants            # write files
@@ -2482,13 +2484,13 @@ def _python(reg: dict, version: str) -> str:
     out.append(f'WS_SCHEMA = "{reg["websocket"]["schema"]}"\n\n')
 
     helpers: list[str] = []
-    for group_name, entries in reg["ros2"].items():
+    for group_name, entries in reg["redis"].items():
         for key, entry in entries.items():
             const = _py_const_name(group_name, key)
-            topic = entry["topic"]
-            out.append(f'{const} = "{topic}"\n')
-            if "{drone_id}" in topic:
-                fn = f"{group_name}_{key}_topic"
+            channel = entry["channel"]
+            out.append(f'{const} = "{channel}"\n')
+            if "{drone_id}" in channel:
+                fn = f"{group_name}_{key}_channel"
                 helpers.append(
                     f"def {fn}(drone_id: str) -> str:\n"
                     f'    return {const}.replace("{{drone_id}}", drone_id)\n\n'
@@ -2499,20 +2501,20 @@ def _python(reg: dict, version: str) -> str:
 
 
 def _dart(reg: dict, version: str) -> tuple[str, str]:
-    topics = [DART_HEADER, "class Topics {\n"]
+    topics = [DART_HEADER, "class Channels {\n"]
     topics.append(f'  static const wsEndpoint = "{reg["websocket"]["endpoint"]}";\n')
     topics.append(f'  static const wsSchema = "{reg["websocket"]["schema"]}";\n\n')
-    for group_name, entries in reg["ros2"].items():
+    for group_name, entries in reg["redis"].items():
         for key, entry in entries.items():
-            topic = entry["topic"]
+            channel = entry["channel"]
             camel = "".join(p.capitalize() for p in f"{group_name}_{key}".split("_"))
             camel = camel[0].lower() + camel[1:]
-            if "{drone_id}" in topic:
+            if "{drone_id}" in channel:
                 # Dart uses ${} interpolation
-                dart_template = topic.replace("{drone_id}", "$droneId")
+                dart_template = channel.replace("{drone_id}", "$droneId")
                 topics.append(f'  static String {camel}(String droneId) => "{dart_template}";\n')
             else:
-                topics.append(f'  static const {camel} = "{topic}";\n')
+                topics.append(f'  static const {camel} = "{channel}";\n')
     topics.append("}\n")
 
     version_dart = f'{DART_HEADER}const contractVersion = "{version}";\n'
@@ -2596,14 +2598,14 @@ def test_codegen_is_fresh():
 
 
 def test_per_drone_helpers_substitute_drone_id():
-    assert topics.per_drone_state_topic("drone1") == "/drones/drone1/state"
-    assert topics.per_drone_findings_topic("drone7") == "/drones/drone7/findings"
-    assert topics.swarm_broadcast_topic("drone2") == "/swarm/broadcasts/drone2"
-    assert topics.swarm_visible_to_topic("drone3") == "/swarm/drone3/visible_to_drone3"
+    assert topics.per_drone_state_channel("drone1") == "drones.drone1.state"
+    assert topics.per_drone_findings_channel("drone7") == "drones.drone7.findings"
+    assert topics.swarm_broadcast_channel("drone2") == "swarm.broadcasts.drone2"
+    assert topics.swarm_visible_to_channel("drone3") == "swarm.drone3.visible_to.drone3"
 
 
 def test_egs_constants_are_correct():
-    assert topics.EGS_STATE == "/egs/state"
+    assert topics.EGS_STATE == "egs.state"
     assert topics.WS_ENDPOINT == "ws://localhost:9090"
     assert topics.WS_SCHEMA == "websocket_messages"
 ```
@@ -2613,7 +2615,7 @@ def test_egs_constants_are_correct():
 Run: `pytest shared/tests/test_topics_codegen_fresh.py -v` (Expected: PASS).
 ```bash
 git add shared/contracts/topics.yaml scripts/__init__.py scripts/gen_topic_constants.py shared/contracts/topics.py shared/contracts/__init__.py frontend/flutter_dashboard/lib/generated/topics.dart frontend/flutter_dashboard/lib/generated/contract_version.dart shared/tests/test_topics_codegen_fresh.py
-git commit -m "feat: codegen ROS topic registry to Python and Dart from topics.yaml"
+git commit -m "feat: codegen Redis channel registry to Python and Dart from topics.yaml"
 ```
 
 ---
@@ -2633,7 +2635,11 @@ contract_version: "1.0.0"
 
 mission:
   drone_count: 3
-  zone_id: "disaster_zone_v1"
+  scenario_id: "disaster_zone_v1"
+
+transport:
+  redis_url: "redis://localhost:6379/0"
+  channel_prefix: ""                  # if non-empty, prefixed to every channel for test isolation
 
 inference:
   drone_model: "gemma-4:e2b"
@@ -2655,7 +2661,7 @@ validation:
   max_retries: 3
 
 logging:
-  base_dir: "/tmp/fieldagent_logs"
+  base_dir: "/tmp/gemma_guardian_logs"
   level: "INFO"
 ```
 
@@ -2686,7 +2692,13 @@ CONFIG_PATH = ROOT / "config.yaml"
 class _MissionCfg(BaseModel):
     model_config = ConfigDict(extra="forbid")
     drone_count: int = Field(ge=1)
-    zone_id: str = Field(min_length=1)
+    scenario_id: str = Field(min_length=1)
+
+
+class _TransportCfg(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    redis_url: str = Field(pattern=r"^redis(s)?://")
+    channel_prefix: str = ""
 
 
 class _FunctionCallPathCfg(BaseModel):
@@ -2728,6 +2740,7 @@ class FieldAgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     contract_version: str
     mission: _MissionCfg
+    transport: _TransportCfg
     inference: _InferenceCfg
     mesh: _MeshCfg
     validation: _ValidationCfg
@@ -2856,8 +2869,8 @@ Run: `pytest shared/tests/test_validation_event_logger.py -v` (Expected: ImportE
 ```python
 """Component logger setup and ValidationEventLogger.
 
-Per Contract 11: every agent logs to /tmp/fieldagent_logs/<component>.log
-and every validation event lands in /tmp/fieldagent_logs/validation_events.jsonl
+Per Contract 11: every agent logs to /tmp/gemma_guardian_logs/<component>.log
+and every validation event lands in /tmp/gemma_guardian_logs/validation_events.jsonl
 in the shape of shared/schemas/validation_event.json.
 """
 from __future__ import annotations
@@ -2874,7 +2887,7 @@ Layer = Literal["drone", "egs", "operator"]
 Outcome = Literal["success_first_try", "corrected_after_retry", "failed_after_retries", "in_progress"]
 
 
-def setup_logging(component_name: str, base_dir: Path | str = "/tmp/fieldagent_logs") -> logging.Logger:
+def setup_logging(component_name: str, base_dir: Path | str = "/tmp/gemma_guardian_logs") -> logging.Logger:
     base = Path(base_dir)
     base.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(component_name)
@@ -2893,7 +2906,7 @@ def _now_iso_ms() -> str:
 
 
 class ValidationEventLogger:
-    def __init__(self, path: Path | str = "/tmp/fieldagent_logs/validation_events.jsonl"):
+    def __init__(self, path: Path | str = "/tmp/gemma_guardian_logs/validation_events.jsonl"):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -3898,7 +3911,7 @@ git tag contracts-v1.0.0
 
 **Type consistency:** `RuleID` enum members used in tests match those defined in Task 14. `validate(name, payload)` signature is consistent across all tests. `ValidationOutcome` and `ValidationResult` are distinct types (the former is structural-only from `shared.contracts.schemas`; the latter is the per-validator result that includes `RuleID`). `DroneFunctionCall.parse(payload)` and `EGSFunctionCall.parse(payload)` and `OperatorCommand.parse(payload)` use consistent dispatcher pattern.
 
-**Out of scope (explicit, deferred):** EGS coordinator/command-translator/replanning logic (Person 3), Flutter widget code (Person 4), real Ollama integration tests, `/drones/<id>/cmd` payload schema (PX4-internal), `/swarm/operator_alerts` and `/egs/replan_events` payloads (no v1 consumer).
+**Out of scope (explicit, deferred):** EGS coordinator/command-translator/replanning logic (Person 3), Flutter widget code (Person 4), real Ollama integration tests, `drones.<id>.cmd` payload schema (sim-internal motion commands), `swarm.operator_alerts` and `egs.replan_events` payloads (no v1 consumer).
 
 ---
 

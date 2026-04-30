@@ -32,7 +32,7 @@ The GitHub repo at submission time:
 - [ ] `CLAUDE.md` — left in for context (optional but recommended)
 
 ### Code organization
-- [ ] `simulation/` — Gazebo world files, PX4 patches, ROS 2 workspace
+- [ ] `simulation/` — software sim world definitions, scripted waypoint motion
 - [ ] `agents/drone_agent/` — drone agent code
 - [ ] `agents/egs_agent/` — EGS coordinator code
 - [ ] `agents/mesh_simulator/` — mesh dropout simulator
@@ -102,16 +102,14 @@ Open the dashboard at `http://localhost:8080`.
 
 ## Hardware Requirements (for reproduction)
 
-- Ubuntu 22.04 LTS — native install OR **WSL2 on Windows 11 with WSLg**
-- NVIDIA GPU with 16+ GB VRAM (passthrough works on WSL2 with current NVIDIA Windows drivers)
-- 32 GB RAM
-- 100 GB free disk
-
-The reproduction docs cover the WSL2 path since that is the team's primary development environment. A native-Ubuntu reproduction works identically; only the initial OS setup step differs.
+- Cross-platform: macOS, Linux, or Windows (native or WSL2)
+- 16 GB RAM minimum (32 GB recommended for running two Ollama instances simultaneously)
+- 50 GB free disk
+- NVIDIA GPU optional; Ollama runs on CPU, Metal (macOS), or CUDA
 
 ## What's Inside
 
-- Gazebo Harmonic + PX4 SITL multi-drone simulation
+- Software-only Python multi-drone simulation (Redis pub/sub, scripted waypoint motion)
 - Per-drone agents running Gemma 4 E2B via Ollama
 - Edge Ground Station running Gemma 4 E4B
 - Flutter web dashboard with multilingual operator commands

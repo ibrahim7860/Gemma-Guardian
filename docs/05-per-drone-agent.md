@@ -34,19 +34,20 @@ The Coordination module from the paper is partly inside Reasoning (deciding how 
 ## Node 1: Perception
 
 **Inputs:**
-- Camera frame from `/drone<id>/camera/image_raw` (sampled at 1 Hz, downsampled to 512×512)
-- Drone state: GPS, altitude, heading, battery percentage
+- Camera frame from `drones.<id>.camera` Redis channel (JPEG bytes published by `sim/frame_server.py`; sampled at 1 Hz, downsampled to 512×512)
+- Drone state: GPS, altitude, heading, battery percentage (from `drones.<id>.state` Redis channel, published by `sim/waypoint_runner.py`)
 - Currently assigned task and survey points
-- Recent peer broadcasts (from Memory)
+- Recent peer broadcasts (from Memory; arrived on `swarm.<id>.visible_to.<id>`)
 - Recent operator commands relevant to this drone
 
 **Outputs:**
 - A structured perception bundle for the Reasoning node
 
 **Implementation notes:**
-- Use OpenCV for frame downsampling
-- Subscribe to ROS 2 topics asynchronously
+- Use `redis-py` async client to subscribe to `drones.<id>.camera` and `drones.<id>.state`
+- Use OpenCV for frame downsampling after decoding JPEG bytes
 - Don't do object detection here — Gemma 4 handles that. Perception just structures the inputs.
+- Channel names are generated constants from `shared/contracts/topics.py`; see [`20-integration-contracts.md`](20-integration-contracts.md).
 
 ## Node 2: Reasoning
 
@@ -104,24 +105,24 @@ Cap at 3 retries. If still failing, fall back to `continue_mission()` and log th
 
 ## Node 4: Action
 
-Translates the validated function call into ROS 2 commands and broadcasts.
+Translates the validated function call into Redis publishes. All channel names are sourced from `shared/contracts/topics.py` (see [`20-integration-contracts.md`](20-integration-contracts.md)).
 
 **For `report_finding`:**
-- Publish on `/swarm/broadcasts/drone<id>` (peers receive)
-- Publish on `/drones/<id>/findings` (EGS receives)
+- Publish on `swarm.broadcasts.<id>` (mesh simulator redistributes to in-range peers)
+- Publish on `drones.<id>.findings` (EGS receives)
 - Continue current flight task
 
 **For `mark_explored`:**
 - Update local task state
-- Publish on `/drones/<id>/state` (EGS will assign next survey point)
+- Publish updated state on `drones.<id>.state` (EGS will assign next survey point)
 
 **For `request_assist`:**
-- Publish on `/swarm/broadcasts/drone<id>` with a special priority flag
+- Publish on `swarm.broadcasts.<id>` with a special priority flag
 - Continue current flight task while waiting for response
 
 **For `return_to_base`:**
-- Send PX4 a command to fly back to the launch GPS coordinate
-- Update task state to "returning"
+- Update task state to "returning"; `sim/waypoint_runner.py` observes state and navigates back to launch coordinate
+- Publish updated state on `drones.<id>.state`
 
 **For `continue_mission`:**
 - No action; next loop iteration
@@ -182,7 +183,7 @@ If 1 Hz × 3 drones (= 3 inferences/sec) saturates the GPU, drop to 0.5 Hz per d
 
 ## State Schema
 
-Each drone's state is published on `/drones/<id>/state` at 2 Hz:
+Each drone's state is published on `drones.<id>.state` (Redis) at 2 Hz by `sim/waypoint_runner.py` and kept current by the agent:
 
 ```json
 {
@@ -208,6 +209,6 @@ Each drone's state is published on `/drones/<id>/state` at 2 Hz:
 | Ollama hangs / OOM | Restart script. Single Ollama instance is the single point of failure; document this. |
 | Gemma 4 outputs malformed JSON | Validation catches it, retry with corrective prompt |
 | Gemma 4 hallucinates GPS outside zone | Validation catches via geofence check |
-| Camera topic unavailable | Perception node uses last known frame and lowers confidence |
-| ROS 2 lag spikes | Set 0.5 Hz sampling, document |
-| Network drop in simulation | Mesh dropout simulation; expected and demonstrable feature |
+| Redis channel unavailable / frame_server not running | Perception node uses last known frame and lowers confidence |
+| Redis pub/sub lag | Set 0.5 Hz sampling, document |
+| Network drop in simulation | Mesh dropout simulation via mesh_simulator; expected and demonstrable feature |
