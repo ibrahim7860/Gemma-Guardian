@@ -112,3 +112,7 @@ __all__ += [
 from .models import ValidationEvent
 
 __all__ += ["ValidationEvent"]
+
+from .rules import RULE_REGISTRY, RuleID, RuleSpec
+
+__all__ += ["RULE_REGISTRY", "RuleID", "RuleSpec"]
