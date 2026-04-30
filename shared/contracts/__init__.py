@@ -74,3 +74,7 @@ __all__ += [
 from .models import DroneStateMessage
 
 __all__ += ["DroneStateMessage"]
+
+from .models import EGSStateMessage
+
+__all__ += ["EGSStateMessage"]

@@ -6,7 +6,7 @@ Python construction side. Parity is enforced by tests in shared/tests/.
 """
 from __future__ import annotations
 
-from typing import Any, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -250,3 +250,52 @@ class DroneStateMessage(_StrictModel):
     findings_count: int = Field(ge=0)
     in_mesh_range_of: List[str]
     agent_status: AgentStatus
+
+
+# -- Contract 3: egs_state ----------------------------------------------------
+
+MissionStatus = Literal["idle", "active", "paused", "aborted", "complete"]
+SurveyPointStatus = Literal["unassigned", "assigned", "completed", "failed"]
+FindingsOutcome = Literal["success_first_try", "corrected_after_retry", "failed_after_retries"]
+
+
+class _SurveyPoint(_StrictModel):
+    id: str = Field(min_length=1)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    assigned_to: Optional[str] = Field(default=None, pattern=r"^drone\d+$")
+    status: SurveyPointStatus
+    priority: Optional[PriorityLevel] = None
+
+
+class _DroneSummary(_StrictModel):
+    status: AgentStatus
+    battery: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+class _FindingsCountByType(_StrictModel):
+    victim: int = Field(ge=0)
+    fire: int = Field(ge=0)
+    smoke: int = Field(ge=0)
+    damaged_structure: int = Field(ge=0)
+    blocked_route: int = Field(ge=0)
+
+
+class _RecentValidationEvent(_StrictModel):
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    agent: str
+    task: str = Field(min_length=1)
+    outcome: FindingsOutcome
+    issue: Optional[str] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{2,}$")
+
+
+class EGSStateMessage(_StrictModel):
+    mission_id: str = Field(min_length=1)
+    mission_status: MissionStatus
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    zone_polygon: List[List[float]] = Field(min_length=3)
+    survey_points: List[_SurveyPoint]
+    drones_summary: Dict[str, _DroneSummary]
+    findings_count_by_type: _FindingsCountByType
+    recent_validation_events: List[_RecentValidationEvent]
+    active_zone_ids: List[str]

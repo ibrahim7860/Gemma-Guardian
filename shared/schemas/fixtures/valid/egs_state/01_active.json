@@ -1,0 +1,33 @@
+{
+  "mission_id": "demo_run_5",
+  "mission_status": "active",
+  "timestamp": "2026-05-15T14:23:11.342Z",
+  "zone_polygon": [
+    [34.1230, -118.5680],
+    [34.1240, -118.5680],
+    [34.1240, -118.5670],
+    [34.1230, -118.5670]
+  ],
+  "survey_points": [
+    {"id": "sp_001", "lat": 34.1232, "lon": -118.5675, "assigned_to": "drone1", "status": "completed"},
+    {"id": "sp_002", "lat": 34.1234, "lon": -118.5673, "assigned_to": null, "status": "unassigned", "priority": "normal"}
+  ],
+  "drones_summary": {
+    "drone1": {"status": "active", "battery": 87},
+    "drone2": {"status": "active", "battery": 65},
+    "drone3": {"status": "offline", "battery": null}
+  },
+  "findings_count_by_type": {
+    "victim": 4, "fire": 2, "smoke": 3, "damaged_structure": 8, "blocked_route": 1
+  },
+  "recent_validation_events": [
+    {
+      "timestamp": "2026-05-15T14:22:55.000Z",
+      "agent": "drone1",
+      "task": "report_finding",
+      "outcome": "corrected_after_retry",
+      "issue": "DUPLICATE_FINDING"
+    }
+  ],
+  "active_zone_ids": ["zone_a", "zone_b"]
+}
