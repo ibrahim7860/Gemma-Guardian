@@ -474,3 +474,25 @@ class WebSocketMessage:
         if t not in _WS_MSG_BY_TYPE:
             raise ValueError(f"unknown WebSocket message type: {t!r}")
         return _WS_MSG_BY_TYPE[t](**payload)
+
+
+# -- Contract 11: validation_event --------------------------------------------
+
+ValidationLayer = Literal["drone", "egs", "operator"]
+ValidationOutcomeKind = Literal[
+    "success_first_try", "corrected_after_retry",
+    "failed_after_retries", "in_progress",
+]
+
+
+class ValidationEvent(_StrictModel):
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    agent_id: str  # drone_id pattern OR "egs" — schema enforces; pydantic stays loose
+    layer: ValidationLayer
+    function_or_command: str = Field(min_length=1)
+    attempt: int = Field(ge=1)
+    valid: bool
+    rule_id: Optional[str] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{2,}$")
+    outcome: ValidationOutcomeKind
+    raw_call: Optional[Dict[str, Any]]
+    contract_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")

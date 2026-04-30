@@ -108,3 +108,7 @@ __all__ += [
     "StateUpdateMessage",
     "WebSocketMessage",
 ]
+
+from .models import ValidationEvent
+
+__all__ += ["ValidationEvent"]
