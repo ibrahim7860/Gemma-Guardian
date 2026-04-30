@@ -51,7 +51,7 @@ def _img_to_b64(img: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def base_gemma_runner(endpoint: str = "http://localhost:11434", model: str = "gemma-4:e2b") -> Callable:
+def base_gemma_runner(endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b") -> Callable:
     def run(img: Image.Image) -> dict:
         b64 = _img_to_b64(img)
         r = httpx.post(

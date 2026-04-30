@@ -39,10 +39,10 @@ def _log_validation_event(drone_id: str, task: str, attempt: int, result, call: 
 
 
 class DroneAgent:
-    def __init__(self, drone_id: str, ollama_endpoint: str = "http://localhost:11434", model: str = "gemma-4:e2b", max_retries: int = 3):
+    def __init__(self, drone_id: str, ollama_endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b", max_retries: int = 3, send_image: bool = True, extra_options: dict | None = None):
         self.drone_id = drone_id
         self.perception = PerceptionNode()
-        self.reasoning = ReasoningNode(model=model, endpoint=ollama_endpoint)
+        self.reasoning = ReasoningNode(model=model, endpoint=ollama_endpoint, send_image=send_image, extra_options=extra_options)
         self.validation = ValidationNode()
         self.action = ActionNode(drone_id=drone_id, publisher=StdoutPublisher())
         self.memory = MemoryStore(drone_id=drone_id)

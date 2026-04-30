@@ -131,10 +131,12 @@ def _summarize_operator_commands(cmds: list) -> str:
 
 
 class ReasoningNode:
-    def __init__(self, model: str = "gemma-4:e2b", endpoint: str = "http://localhost:11434", timeout_s: float = 30.0):
+    def __init__(self, model: str = "gemma4:e2b", endpoint: str = "http://localhost:11434", timeout_s: float = 30.0, send_image: bool = True, extra_options: dict | None = None):
         self.model = model
         self.endpoint = endpoint.rstrip("/")
         self.timeout_s = timeout_s
+        self.send_image = send_image
+        self.extra_options = extra_options or {}
         self.system_prompt = load_system_prompt()
 
     async def call(self, bundle: PerceptionBundle, conversation: list[dict] | None = None) -> dict[str, Any]:
@@ -142,25 +144,25 @@ class ReasoningNode:
         if conversation is None:
             conversation = self._initial_messages(bundle)
 
+        body = {
+            "model": self.model,
+            "messages": conversation,
+            "tools": DRONE_TOOLS,
+            "stream": False,
+            "options": {"temperature": 0.2, **self.extra_options},
+        }
         async with httpx.AsyncClient(timeout=self.timeout_s) as client:
-            r = await client.post(
-                f"{self.endpoint}/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": conversation,
-                    "tools": DRONE_TOOLS,
-                    "stream": False,
-                    "options": {"temperature": 0.2},
-                },
-            )
+            r = await client.post(f"{self.endpoint}/api/chat", json=body)
             r.raise_for_status()
             return r.json()
 
     def _initial_messages(self, bundle: PerceptionBundle) -> list[dict]:
-        b64 = base64.b64encode(bundle.frame_jpeg).decode("ascii")
+        user = {"role": "user", "content": render_user_message(bundle)}
+        if self.send_image:
+            user["images"] = [base64.b64encode(bundle.frame_jpeg).decode("ascii")]
         return [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": render_user_message(bundle), "images": [b64]},
+            user,
         ]
 
     @staticmethod
