@@ -8,4 +8,23 @@ from pathlib import Path
 
 VERSION = (Path(__file__).parent.parent / "VERSION").read_text().strip()
 
-__all__ = ["VERSION"]
+from .schemas import (
+    ContractError,
+    StructuralError,
+    ValidationOutcome,
+    all_schemas,
+    schema,
+    validate,
+    validate_or_raise,
+)
+
+__all__ = [
+    "VERSION",
+    "ContractError",
+    "StructuralError",
+    "ValidationOutcome",
+    "all_schemas",
+    "schema",
+    "validate",
+    "validate_or_raise",
+]
