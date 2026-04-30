@@ -308,7 +308,9 @@ class ValidationOutcome:
     errors: list[StructuralError] = field(default_factory=list)
 
 
+@lru_cache(maxsize=1)
 def _load_all() -> dict[str, dict[str, Any]]:
+    """Read and parse every shared/schemas/*.json file once per process."""
     out: dict[str, dict[str, Any]] = {}
     for p in sorted(_SCHEMAS_DIR.glob("*.json")):
         out[p.stem] = json.loads(p.read_text())
@@ -2581,6 +2583,8 @@ __all__ += ["topics"]
 import subprocess
 import sys
 
+from shared.contracts import topics
+
 
 def test_codegen_is_fresh():
     result = subprocess.run(
@@ -2589,6 +2593,19 @@ def test_codegen_is_fresh():
         text=True,
     )
     assert result.returncode == 0, f"stale generated files:\n{result.stderr}"
+
+
+def test_per_drone_helpers_substitute_drone_id():
+    assert topics.per_drone_state_topic("drone1") == "/drones/drone1/state"
+    assert topics.per_drone_findings_topic("drone7") == "/drones/drone7/findings"
+    assert topics.swarm_broadcast_topic("drone2") == "/swarm/broadcasts/drone2"
+    assert topics.swarm_visible_to_topic("drone3") == "/swarm/drone3/visible_to_drone3"
+
+
+def test_egs_constants_are_correct():
+    assert topics.EGS_STATE == "/egs/state"
+    assert topics.WS_ENDPOINT == "ws://localhost:9090"
+    assert topics.WS_SCHEMA == "websocket_messages"
 ```
 
 - [ ] **Step 7: Run, commit**
@@ -2933,13 +2950,34 @@ git commit -m "feat: add ValidationEventLogger and component log setup"
 - Modify: `agents/drone_agent/validation.py`
 - Modify: `agents/drone_agent/tests/test_validation.py` (assertions now check RuleID enum values, not strings)
 
-- [ ] **Step 1: Read the existing validation tests**
+- [ ] **Step 1: Enumerate the failure_reason assertions to update**
 
-Run: `cat agents/drone_agent/tests/test_validation.py | head -80`
+Run: `grep -n 'failure_reason' agents/drone_agent/tests/test_validation.py`
 
-- [ ] **Step 2: Update the existing tests to expect RuleID**
+For every line returned, plan the replacement using this mapping (lower-snake → `RuleID`):
 
-In `agents/drone_agent/tests/test_validation.py`, anywhere the test asserts `failure_reason == "duplicate_finding"`, change to `failure_reason == RuleID.DUPLICATE_FINDING`. Add this import to the top:
+| Current string | Replacement |
+|---|---|
+| `"prose_instead_of_function"` | `RuleID.PROSE_INSTEAD_OF_FUNCTION` |
+| `"invalid_function_name"` | `RuleID.INVALID_FUNCTION_NAME` |
+| `"invalid_finding_type"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"invalid_argument_type"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"severity_out_of_range"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"confidence_out_of_range"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"visual_description_too_short"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"severity_confidence_mismatch"` | `RuleID.SEVERITY_CONFIDENCE_MISMATCH` |
+| `"gps_outside_zone"` | `RuleID.GPS_OUTSIDE_ZONE` |
+| `"duplicate_finding"` | `RuleID.DUPLICATE_FINDING` |
+| `"invalid_zone_id"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"coverage_out_of_range"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"coverage_decreased"` | `RuleID.COVERAGE_DECREASED` |
+| `"reason_too_short"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"invalid_urgency"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"invalid_rtb_reason"` | `RuleID.STRUCTURAL_VALIDATION_FAILED` *(now schema-caught)* |
+| `"return_to_base_low_battery_invalid"` | `RuleID.RTB_LOW_BATTERY_INVALID` |
+| `"return_to_base_mission_complete_invalid"` | `RuleID.RTB_MISSION_COMPLETE_INVALID` |
+
+Add at the top of the test file:
 ```python
 from shared.contracts import RuleID
 ```
@@ -3357,6 +3395,31 @@ def test_same_drone_not_caught_here():
     b["timestamp"] = "2026-05-15T14:00:05.000Z"
     assert node.validate_finding(a).valid
     assert node.validate_finding(b).valid  # EGS does NOT dedup same-drone
+
+
+def test_layer2_structural_delegation():
+    node = EGSValidationNode()
+    valid = {
+        "function": "assign_survey_points",
+        "arguments": {
+            "assignments": [{"drone_id": "drone1", "survey_point_ids": ["sp_001"]}]
+        },
+    }
+    invalid = {"function": "assign_survey_points", "arguments": {"assignments": []}}
+    assert node.validate_egs_function_call(valid).valid is True
+    bad = node.validate_egs_function_call(invalid)
+    assert bad.valid is False
+    assert bad.failure_reason == RuleID.STRUCTURAL_VALIDATION_FAILED
+
+
+def test_layer3_structural_delegation():
+    node = EGSValidationNode()
+    valid = {"command": "set_language", "args": {"lang_code": "en"}}
+    invalid = {"command": "set_language", "args": {"lang_code": "ENGLISH"}}
+    assert node.validate_operator_command(valid).valid is True
+    bad = node.validate_operator_command(invalid)
+    assert bad.valid is False
+    assert bad.failure_reason == RuleID.STRUCTURAL_VALIDATION_FAILED
 ```
 
 - [ ] **Step 2: Run, fail**
@@ -3384,7 +3447,7 @@ command_translator.py, and replanning.py on top.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 

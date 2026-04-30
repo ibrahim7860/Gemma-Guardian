@@ -305,6 +305,8 @@ RULE_REGISTRY: dict[RuleID, RuleSpec] = { ... }
 
 `STRUCTURAL_VALIDATION_FAILED` is the umbrella code for any plain JSON-Schema failure; the `validation_event` records the field path so we still see exactly which field was wrong.
 
+**`corrective_template` usage convention.** For v1, validators construct corrective prompts inline using local context (battery percentage, prior coverage value, etc.) rather than reading from `RULE_REGISTRY[id].corrective_template`. The templates in `rules.py` are the canonical reference for the writeup and serve as docs for future template-driven prompt assembly; they intentionally duplicate (and can drift from) the inline strings. Tests assert templates are present and well-formed, not that they match the inline prompts. If we ever need centralized template assembly (e.g., per-language operator prompts), the registry is already there.
+
 ### `topics.yaml` (registry source of truth)
 
 ```yaml
