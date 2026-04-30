@@ -128,3 +128,7 @@ __all__ += ["topics"]
 from .config import CONFIG, FieldAgentConfig, load_config
 
 __all__ += ["CONFIG", "FieldAgentConfig", "load_config"]
+
+from .logging import ValidationEventLogger, setup_logging
+
+__all__ += ["ValidationEventLogger", "setup_logging"]
