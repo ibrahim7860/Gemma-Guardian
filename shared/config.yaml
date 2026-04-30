@@ -1,0 +1,32 @@
+contract_version: "1.0.0"
+
+mission:
+  drone_count: 3
+  scenario_id: "disaster_zone_v1"
+
+transport:
+  redis_url: "redis://localhost:6379/0"
+  channel_prefix: ""                  # if non-empty, prefixed to every channel for test isolation
+
+inference:
+  drone_model: "gemma-4:e2b"
+  egs_model: "gemma-4:e4b"
+  drone_sampling_hz: 1.0
+  ollama_drone_endpoint: "http://localhost:11434"
+  ollama_egs_endpoint: "http://localhost:11435"
+  function_call_path:
+    egs: "native_tools"
+    drone: "structured_output"
+    fallback: "structured_output"
+
+mesh:
+  range_meters: 200
+  egs_link_range_meters: 500
+  heartbeat_timeout_seconds: 10
+
+validation:
+  max_retries: 3
+
+logging:
+  base_dir: "/tmp/gemma_guardian_logs"
+  level: "INFO"

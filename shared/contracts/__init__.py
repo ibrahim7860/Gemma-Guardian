@@ -124,3 +124,7 @@ __all__ += ["AdapterError", "normalize"]
 from . import topics
 
 __all__ += ["topics"]
+
+from .config import CONFIG, FieldAgentConfig, load_config
+
+__all__ += ["CONFIG", "FieldAgentConfig", "load_config"]
