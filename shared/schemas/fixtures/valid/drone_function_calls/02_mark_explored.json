@@ -1,0 +1,4 @@
+{
+  "function": "mark_explored",
+  "arguments": {"zone_id": "zone_a", "coverage_pct": 87.5}
+}

@@ -1,0 +1,11 @@
+{
+  "function": "report_finding",
+  "arguments": {
+    "type": "victim",
+    "severity": 4,
+    "gps_lat": 34.1234,
+    "gps_lon": -118.5678,
+    "confidence": 0.78,
+    "visual_description": "Person prone, partially covered by debris."
+  }
+}
