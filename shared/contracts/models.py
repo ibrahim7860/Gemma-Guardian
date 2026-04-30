@@ -6,7 +6,7 @@ Python construction side. Parity is enforced by tests in shared/tests/.
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -95,3 +95,49 @@ class DroneFunctionCall:
         if name not in _LAYER1_BY_NAME:
             raise ValueError(f"unknown drone function: {name!r}")
         return _LAYER1_BY_NAME[name](**payload.get("arguments", {}))
+
+
+# -- Layer 2 -----------------------------------------------------------------
+
+ReplanTrigger = Literal["drone_failure", "zone_change", "operator_command", "fire_spread"]
+
+
+class _AssignmentItem(_StrictModel):
+    drone_id: str = Field(pattern=r"^drone\d+$")
+    survey_point_ids: List[str]
+
+
+class AssignSurveyPointsArgs(_StrictModel):
+    assignments: List[_AssignmentItem] = Field(min_length=1)
+
+
+class ReplanMissionArgs(_StrictModel):
+    trigger: ReplanTrigger
+    new_zone_polygon: List[List[float]] = Field(min_length=3)
+    excluded_drones: List[str]
+    excluded_survey_points: List[str]
+
+
+class AssignSurveyPoints(AssignSurveyPointsArgs):
+    def to_call(self) -> dict[str, Any]:
+        return {"function": "assign_survey_points", "arguments": self.model_dump()}
+
+
+class ReplanMission(ReplanMissionArgs):
+    def to_call(self) -> dict[str, Any]:
+        return {"function": "replan_mission", "arguments": self.model_dump()}
+
+
+_LAYER2_BY_NAME: dict[str, type[_StrictModel]] = {
+    "assign_survey_points": AssignSurveyPoints,
+    "replan_mission": ReplanMission,
+}
+
+
+class EGSFunctionCall:
+    @staticmethod
+    def parse(payload: dict[str, Any]) -> _StrictModel:
+        name = payload.get("function")
+        if name not in _LAYER2_BY_NAME:
+            raise ValueError(f"unknown EGS function: {name!r}")
+        return _LAYER2_BY_NAME[name](**payload.get("arguments", {}))

@@ -46,3 +46,7 @@ __all__ += [
     "RequestAssist",
     "ReturnToBase",
 ]
+
+from .models import AssignSurveyPoints, EGSFunctionCall, ReplanMission
+
+__all__ += ["AssignSurveyPoints", "EGSFunctionCall", "ReplanMission"]

@@ -1,0 +1,9 @@
+{
+  "function": "assign_survey_points",
+  "arguments": {
+    "assignments": [
+      {"drone_id": "drone1", "survey_point_ids": ["sp_001", "sp_002"]},
+      {"drone_id": "drone2", "survey_point_ids": ["sp_003", "sp_004"]}
+    ]
+  }
+}
