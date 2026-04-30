@@ -70,3 +70,7 @@ __all__ += [
     "SetPriority",
     "UnknownCommand",
 ]
+
+from .models import DroneStateMessage
+
+__all__ += ["DroneStateMessage"]

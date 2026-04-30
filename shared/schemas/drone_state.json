@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/drone_state.json",
+  "title": "Per-Drone State Message (v1, locked 2026-04-30)",
+  "description": "Published on Redis channel drones.<id>.state at 2 Hz. Contract 2 in docs/20-integration-contracts.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "drone_id", "timestamp", "position", "velocity", "battery_pct", "heading_deg",
+    "current_task", "current_waypoint_id", "assigned_survey_points_remaining",
+    "last_action", "last_action_timestamp", "validation_failures_total",
+    "findings_count", "in_mesh_range_of", "agent_status"
+  ],
+  "properties": {
+    "drone_id": {"$ref": "_common.json#/$defs/drone_id"},
+    "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "position": {"$ref": "_common.json#/$defs/position3d"},
+    "velocity": {"$ref": "_common.json#/$defs/velocity3d"},
+    "battery_pct": {"type": "integer", "minimum": 0, "maximum": 100},
+    "heading_deg": {"type": "number", "minimum": 0, "maximum": 360},
+    "current_task": {
+      "oneOf": [
+        {"$ref": "_common.json#/$defs/task_type"},
+        {"type": "null"}
+      ]
+    },
+    "current_waypoint_id": {
+      "oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]
+    },
+    "assigned_survey_points_remaining": {"type": "integer", "minimum": 0},
+    "last_action": {
+      "enum": ["report_finding", "mark_explored", "request_assist", "return_to_base", "continue_mission", "none"]
+    },
+    "last_action_timestamp": {
+      "oneOf": [{"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"}, {"type": "null"}]
+    },
+    "validation_failures_total": {"type": "integer", "minimum": 0},
+    "findings_count": {"type": "integer", "minimum": 0},
+    "in_mesh_range_of": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"$ref": "_common.json#/$defs/drone_id"},
+          {"const": "egs"}
+        ]
+      }
+    },
+    "agent_status": {"$ref": "_common.json#/$defs/agent_status"}
+  }
+}

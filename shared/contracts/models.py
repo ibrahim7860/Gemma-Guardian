@@ -208,3 +208,45 @@ class OperatorCommand:
         if name not in _LAYER3_BY_NAME:
             raise ValueError(f"unknown operator command: {name!r}")
         return _LAYER3_BY_NAME[name](**payload.get("args", {}))
+
+
+# -- Contract 2: drone_state --------------------------------------------------
+
+LastAction = Literal[
+    "report_finding", "mark_explored", "request_assist",
+    "return_to_base", "continue_mission", "none",
+]
+TaskType = Literal["survey", "investigate_finding", "return_to_base", "hold_position"]
+AgentStatus = Literal["active", "standalone", "returning", "offline", "error"]
+
+
+class _Position3D(_StrictModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    alt: float = Field(ge=0)
+
+
+class _Velocity3D(_StrictModel):
+    vx: float
+    vy: float
+    vz: float
+
+
+class DroneStateMessage(_StrictModel):
+    drone_id: str = Field(pattern=r"^drone\d+$")
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    position: _Position3D
+    velocity: _Velocity3D
+    battery_pct: int = Field(ge=0, le=100)
+    heading_deg: float = Field(ge=0, le=360)
+    current_task: Optional[TaskType]
+    current_waypoint_id: Optional[str]
+    assigned_survey_points_remaining: int = Field(ge=0)
+    last_action: LastAction
+    last_action_timestamp: Optional[str] = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"
+    )
+    validation_failures_total: int = Field(ge=0)
+    findings_count: int = Field(ge=0)
+    in_mesh_range_of: List[str]
+    agent_status: AgentStatus
