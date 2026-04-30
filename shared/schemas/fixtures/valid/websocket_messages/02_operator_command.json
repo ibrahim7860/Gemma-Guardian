@@ -1,0 +1,7 @@
+{
+  "type": "operator_command",
+  "command_id": "cmd_42",
+  "language": "es",
+  "raw_text": "concéntrate en la zona este",
+  "contract_version": "1.0.0"
+}

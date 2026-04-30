@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/websocket_messages.json",
+  "title": "WebSocket Messages (v1, locked 2026-04-30)",
+  "description": "Bidirectional WS envelope between Flutter dashboard and FastAPI bridge. Contracts 7+8 in docs/20-integration-contracts.md.",
+  "oneOf": [
+    {"$ref": "#/$defs/state_update"},
+    {"$ref": "#/$defs/operator_command"},
+    {"$ref": "#/$defs/command_translation"},
+    {"$ref": "#/$defs/operator_command_dispatch"},
+    {"$ref": "#/$defs/finding_approval"}
+  ],
+  "$defs": {
+    "state_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "timestamp", "contract_version", "egs_state", "active_findings", "active_drones"],
+      "properties": {
+        "type": {"const": "state_update"},
+        "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+        "egs_state": {"$ref": "egs_state.json"},
+        "active_findings": {"type": "array", "items": {"$ref": "finding.json"}},
+        "active_drones": {"type": "array", "items": {"$ref": "drone_state.json"}}
+      }
+    },
+    "operator_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "command_id", "language", "raw_text", "contract_version"],
+      "properties": {
+        "type": {"const": "operator_command"},
+        "command_id": {"type": "string", "minLength": 1},
+        "language": {"$ref": "_common.json#/$defs/iso_lang_code"},
+        "raw_text": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    },
+    "command_translation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "command_id", "structured", "valid", "preview_text", "preview_text_in_operator_language", "contract_version"],
+      "properties": {
+        "type": {"const": "command_translation"},
+        "command_id": {"type": "string", "minLength": 1},
+        "structured": {"$ref": "operator_commands.json"},
+        "valid": {"type": "boolean"},
+        "preview_text": {"type": "string", "minLength": 1},
+        "preview_text_in_operator_language": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    },
+    "operator_command_dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "command_id", "contract_version"],
+      "properties": {
+        "type": {"const": "operator_command_dispatch"},
+        "command_id": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    },
+    "finding_approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "command_id", "finding_id", "action", "contract_version"],
+      "properties": {
+        "type": {"const": "finding_approval"},
+        "command_id": {"type": "string", "minLength": 1},
+        "finding_id": {"$ref": "_common.json#/$defs/finding_id"},
+        "action": {"enum": ["approve", "dismiss"]},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    }
+  }
+}

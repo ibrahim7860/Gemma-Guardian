@@ -406,3 +406,71 @@ class PeerBroadcast:
         if bt not in _PAYLOAD_BY_BROADCAST_TYPE:
             raise ValueError(f"unknown broadcast_type: {bt!r}")
         return _PAYLOAD_BY_BROADCAST_TYPE[bt](**broadcast.get("payload", {}))
+
+
+# -- Contracts 7+8: websocket_messages ----------------------------------------
+
+WebSocketMessageType = Literal[
+    "state_update", "operator_command", "command_translation",
+    "operator_command_dispatch", "finding_approval",
+]
+FindingApprovalAction = Literal["approve", "dismiss"]
+
+
+class StateUpdateMessage(_StrictModel):
+    type: Literal["state_update"] = "state_update"
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    contract_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+    egs_state: Dict[str, Any]              # opaque embed; jsonschema enforces shape
+    active_findings: List[Dict[str, Any]]  # opaque embeds
+    active_drones: List[Dict[str, Any]]
+
+
+class OperatorCommandMessage(_StrictModel):
+    type: Literal["operator_command"] = "operator_command"
+    command_id: str = Field(min_length=1)
+    language: str = Field(pattern=r"^[a-z]{2}$")
+    raw_text: str = Field(min_length=1)
+    contract_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+
+
+class CommandTranslationMessage(_StrictModel):
+    type: Literal["command_translation"] = "command_translation"
+    command_id: str = Field(min_length=1)
+    structured: Dict[str, Any]             # opaque (operator_commands shape)
+    valid: bool
+    preview_text: str = Field(min_length=1)
+    preview_text_in_operator_language: str = Field(min_length=1)
+    contract_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+
+
+class OperatorCommandDispatchMessage(_StrictModel):
+    type: Literal["operator_command_dispatch"] = "operator_command_dispatch"
+    command_id: str = Field(min_length=1)
+    contract_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+
+
+class FindingApprovalMessage(_StrictModel):
+    type: Literal["finding_approval"] = "finding_approval"
+    command_id: str = Field(min_length=1)
+    finding_id: str = Field(pattern=r"^f_drone\d+_\d+$")
+    action: FindingApprovalAction
+    contract_version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+
+
+_WS_MSG_BY_TYPE: Dict[str, type] = {
+    "state_update": StateUpdateMessage,
+    "operator_command": OperatorCommandMessage,
+    "command_translation": CommandTranslationMessage,
+    "operator_command_dispatch": OperatorCommandDispatchMessage,
+    "finding_approval": FindingApprovalMessage,
+}
+
+
+class WebSocketMessage:
+    @staticmethod
+    def parse(payload: Dict[str, Any]) -> _StrictModel:
+        t = payload.get("type")
+        if t not in _WS_MSG_BY_TYPE:
+            raise ValueError(f"unknown WebSocket message type: {t!r}")
+        return _WS_MSG_BY_TYPE[t](**payload)
