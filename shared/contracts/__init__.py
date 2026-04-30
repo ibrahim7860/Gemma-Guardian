@@ -116,3 +116,7 @@ __all__ += ["ValidationEvent"]
 from .rules import RULE_REGISTRY, RuleID, RuleSpec
 
 __all__ += ["RULE_REGISTRY", "RuleID", "RuleSpec"]
+
+from .adapters import AdapterError, normalize
+
+__all__ += ["AdapterError", "normalize"]
