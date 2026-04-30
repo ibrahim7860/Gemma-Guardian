@@ -24,7 +24,7 @@ For a 3-drone swarm, launch these processes (each in its own terminal or tmux pa
 
 **Frame server** reads the scenario's `frames` mapping and publishes `drones.<id>.camera` (raw JPEG bytes, not JSON) to Redis at the configured frame rate. Each drone agent subscribes to its own camera channel and passes frames to Gemma 4.
 
-**Mesh simulator** pattern-subscribes to `swarm.broadcasts.*`, filters messages by Euclidean distance using live drone state, and republishes accepted messages to `swarm.<receiver_id>.inbox`. See Contract 9 in `docs/20-integration-contracts.md` for the full channel registry.
+**Mesh simulator** pattern-subscribes to `swarm.broadcasts.*`, filters messages by Euclidean distance using live drone state, and republishes accepted messages to `swarm.<receiver_id>.visible_to.<receiver_id>`. See Contract 9 in `docs/20-integration-contracts.md` for the full channel registry.
 
 **WebSocket bridge** subscribes to `egs.state`, `drones.*.state`, and `drones.*.findings`, then forwards a merged envelope to all connected Flutter dashboard clients at 1 Hz. Operator commands flow back through the same WebSocket.
 

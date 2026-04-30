@@ -127,7 +127,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 ## Contract 4: Findings Schema
 
-**Channel:** `drones.<id>.findings` (drone publishes), `egs.findings` (EGS aggregates)
+**Channel:** `drones.<id>.findings` (drone publishes). EGS aggregates findings into the `egs.state` envelope's `findings_count_by_type` and surfaces individual findings to Flutter via the `state_update` WebSocket message; there is no separate `egs.findings` channel in v1.
 
 ```json
 {

@@ -75,6 +75,7 @@ jsonschema>=4.18
 referencing>=0.30
 pydantic>=2.5
 PyYAML>=6.0
+redis>=5.0
 pytest>=8.0
 ```
 

@@ -199,8 +199,6 @@ The plan compresses to 16 working days so submission lands on May 18 with buffer
 | 15 | Sat May 17 | Lock day + cold-run reproduce |
 | 16 | Sun May 18 | **GATE 5 + SUBMIT** by 23:59 UTC |
 
-Note: docs/17 currently lists earlier dates for these gates (e.g., Gate 2 May 5, Gate 5 May 16). The dates in this table are the ones the team executes against; docs/17's gate table will be reconciled to match in a follow-up edit.
-
 ## Friday Dress Rehearsal Schedule
 
 | Date | What we rehearse |

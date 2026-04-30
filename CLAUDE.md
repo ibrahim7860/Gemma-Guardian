@@ -95,7 +95,7 @@ gemma-guardian/
 ├── agents/
 │   ├── drone_agent/                 # LangGraph per-drone agent
 │   ├── egs_agent/                   # LangGraph EGS coordinator
-│   └── mesh_simulator/              # Redis-side range-dropout filter on /swarm channels
+│   └── mesh_simulator/              # Redis-side range-dropout filter on swarm.* channels
 ├── shared/
 │   ├── schemas/                     # JSON Schema definitions (locked contracts)
 │   ├── contracts/                   # Python loader, Pydantic mirrors, RuleID, topic constants

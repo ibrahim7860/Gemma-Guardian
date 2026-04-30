@@ -64,13 +64,13 @@ class ActionNode:
         self.publisher.publish(f"swarm.broadcasts.{self.drone_id}", broadcast)
 
     def _act_mark_explored(self, args: dict, sender_position: dict) -> None:
-        self.publisher.publish(f"drones.{self.drone_id}.state_event", {
-            "drone_id": self.drone_id,
-            "timestamp": _now_iso(),
-            "event": "mark_explored",
-            "zone_id": args["zone_id"],
-            "coverage_pct": args["coverage_pct"],
-        })
+        # mark_explored is an internal state update only. The drone agent's
+        # validation node tracks last_coverage_by_zone, and the next
+        # drones.<id>.state publish will carry the updated current_task /
+        # findings_count fields. No dedicated channel per Contract 9; the
+        # validation_events.jsonl entry produced by the validation node is
+        # the cross-process record of this call.
+        return
 
     def _act_request_assist(self, args: dict, sender_position: dict) -> None:
         broadcast = {
