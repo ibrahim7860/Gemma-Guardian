@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/task_assignment.json",
+  "title": "Task Assignment (v1, locked 2026-04-30)",
+  "description": "Published on Redis channel drones.<id>.tasks. Contract 5 in docs/20-integration-contracts.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id", "drone_id", "issued_at", "task_type",
+    "assigned_survey_points", "priority_override", "valid_until"
+  ],
+  "properties": {
+    "task_id": {"type": "string", "minLength": 1},
+    "drone_id": {"$ref": "_common.json#/$defs/drone_id"},
+    "issued_at": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "task_type": {"$ref": "_common.json#/$defs/task_type"},
+    "assigned_survey_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "lat", "lon"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "lat": {"$ref": "_common.json#/$defs/lat"},
+          "lon": {"$ref": "_common.json#/$defs/lon"},
+          "priority": {"$ref": "_common.json#/$defs/priority_level"}
+        }
+      }
+    },
+    "priority_override": {
+      "oneOf": [{"$ref": "_common.json#/$defs/priority_level"}, {"type": "null"}]
+    },
+    "valid_until": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"}
+  }
+}

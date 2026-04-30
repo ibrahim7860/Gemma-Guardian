@@ -321,3 +321,23 @@ class Finding(_StrictModel):
     validated: bool
     validation_retries: int = Field(ge=0, le=3)
     operator_status: OperatorStatus
+
+
+# -- Contract 5: task_assignment ----------------------------------------------
+
+
+class _AssignedSurveyPoint(_StrictModel):
+    id: str = Field(min_length=1)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    priority: Optional[PriorityLevel] = None
+
+
+class TaskAssignment(_StrictModel):
+    task_id: str = Field(min_length=1)
+    drone_id: str = Field(pattern=r"^drone\d+$")
+    issued_at: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    task_type: TaskType
+    assigned_survey_points: List[_AssignedSurveyPoint]
+    priority_override: Optional[PriorityLevel]
+    valid_until: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")

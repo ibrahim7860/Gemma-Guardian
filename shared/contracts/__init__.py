@@ -82,3 +82,7 @@ __all__ += ["EGSStateMessage"]
 from .models import Finding
 
 __all__ += ["Finding"]
+
+from .models import TaskAssignment
+
+__all__ += ["TaskAssignment"]
