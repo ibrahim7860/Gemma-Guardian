@@ -41,8 +41,8 @@ _HEADING_TO_SCHEMA = {
     "set_priority": "operator_commands",
     "set_language": "operator_commands",
     "unknown_command": "operator_commands",
-    # Contract 2 intentionally omitted (drone_state — schema drift)
-    # Contract 3 intentionally omitted (egs_state — schema drift)
+    "Contract 2": "drone_state",
+    "Contract 3": "egs_state",
     "Contract 4": "finding",
     "Contract 5": "task_assignment",
     "Contract 6": "peer_broadcast",

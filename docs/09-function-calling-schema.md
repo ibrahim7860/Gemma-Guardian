@@ -236,6 +236,18 @@ The EGS translates operator natural language into these structured commands. **E
 - For `set_language`, `lang_code` must be ISO 639-1 (en, es, ar, etc.)
 - `unknown_command` is the safe fallback when the EGS cannot map operator text to one of the other five — it never executes, only prompts the operator for clarification
 
+### Layer 3 semantic / stateful rules
+
+The structural rules above are enforced by `shared/schemas/operator_commands.json`. Additional semantic rules live in `agents/egs_agent/validation.py` (and Person 3's `command_translator.py` once that ships) and are tagged with these `RuleID` values from `shared/contracts/rules.py`:
+
+| RuleID | Trigger |
+|---|---|
+| `RECALL_DRONE_NOT_ACTIVE` | `recall_drone.args.drone_id` references a drone whose latest state has `agent_status` != `active` |
+| `SET_LANGUAGE_INVALID_CODE` | `set_language.args.lang_code` is not in our supported language set (the `iso_lang_code` pattern matches but we do not have a translator for that code) |
+| `OPERATOR_COMMAND_UNKNOWN` | EGS could not map operator text to one of the six commands; emits `unknown_command` with a clarifying suggestion |
+
+The full enum and corrective-prompt templates live in [`shared/contracts/rules.py`](../shared/contracts/rules.py).
+
 ## How Gemma 4 Calls These
 
 We invoke Gemma 4 through Ollama's `/api/chat` endpoint. Two paths are available and we use both depending on the call site:

@@ -60,7 +60,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
   },
   "battery_pct": 87,
   "heading_deg": 135,
-  "current_task": "survey_zone_a",
+  "current_task": "survey",
   "current_waypoint_id": "sp_005",
   "assigned_survey_points_remaining": 12,
   "last_action": "report_finding",
@@ -118,7 +118,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
       "agent": "drone1",
       "task": "report_finding",
       "outcome": "corrected_after_retry",
-      "issue": "duplicate_finding"
+      "issue": "DUPLICATE_FINDING"
     }
   ],
   "active_zone_ids": ["zone_a", "zone_b"]
@@ -405,6 +405,29 @@ logging:
 ```
 
 All processes read from this config. Changes here propagate everywhere. Don't hardcode values that should be config. Mismatched `contract_version` aborts startup with a clear error.
+
+## Authoritative artifacts
+
+These are the machine-checked sources of truth for the contracts above. If any of these disagrees with this doc, **the artifact wins**; update this doc.
+
+| Concern | Path |
+|---|---|
+| Wire shapes | [`shared/schemas/*.json`](../shared/schemas/) |
+| Shared `$defs` | [`shared/schemas/_common.json`](../shared/schemas/_common.json) |
+| Python validators | [`shared/contracts/schemas.py`](../shared/contracts/schemas.py) |
+| Pydantic mirrors | [`shared/contracts/models.py`](../shared/contracts/models.py) |
+| Rule IDs and corrective templates | [`shared/contracts/rules.py`](../shared/contracts/rules.py) |
+| Ollama → canonical adapter | [`shared/contracts/adapters.py`](../shared/contracts/adapters.py) |
+| Channel registry (Python) | [`shared/contracts/topics.py`](../shared/contracts/topics.py) (generated) |
+| Channel registry (Dart) | [`frontend/flutter_dashboard/lib/generated/topics.dart`](../frontend/flutter_dashboard/lib/generated/topics.dart) (generated) |
+| Channel registry source | [`shared/contracts/topics.yaml`](../shared/contracts/topics.yaml) |
+| Mission config | [`shared/config.yaml`](../shared/config.yaml) |
+| Config loader | [`shared/contracts/config.py`](../shared/contracts/config.py) |
+| Contract version constant | [`shared/VERSION`](../shared/VERSION) |
+| Validation event log shape | [`shared/schemas/validation_event.json`](../shared/schemas/validation_event.json) |
+| Validation event logger | [`shared/contracts/logging.py`](../shared/contracts/logging.py) |
+
+CI fails when `shared/VERSION`, `shared/config.yaml.contract_version`, and `frontend/.../contract_version.dart` disagree, and when generated `topics.py` / `topics.dart` are stale relative to `topics.yaml`. See [`shared/tests/test_version_consistency.py`](../shared/tests/test_version_consistency.py) and [`shared/tests/test_topics_codegen_fresh.py`](../shared/tests/test_topics_codegen_fresh.py).
 
 ## Versioning
 
