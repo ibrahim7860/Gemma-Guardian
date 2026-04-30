@@ -13,7 +13,7 @@ PERSIST_INTERVAL_S = 10.0
 
 
 class MemoryStore:
-    def __init__(self, drone_id: str, persist_dir: str | Path = "/tmp/fieldagent_logs"):
+    def __init__(self, drone_id: str, persist_dir: str | Path = "/tmp/gemma_guardian_logs"):
         self.drone_id = drone_id
         self.persist_path = Path(persist_dir) / f"{drone_id}_memory.jsonl"
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
