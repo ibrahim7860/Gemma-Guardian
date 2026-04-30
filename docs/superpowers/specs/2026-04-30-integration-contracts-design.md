@@ -90,6 +90,29 @@ frontend/flutter_dashboard/
     └── contract_version.dart            # GENERATED
 ```
 
+## Discriminated-union convention
+
+Every `oneOf` discriminated union in this spec puts a `const` on the discriminator field inside each branch (`{"function": {"const": "report_finding"}}`, `{"command": {"const": "restrict_zone"}}`, `{"type": {"const": "state_update"}}`, `{"broadcast_type": {"const": "finding"}}`). This is the pattern `jsonschema` heuristically uses to produce branch-specific error messages instead of the generic "must match exactly one schema" — without it, validation failures on these unions are useless to debug.
+
+## Adapter contract (Ollama → canonical form)
+
+Doc 09 supports two paths into Gemma 4: the native `tools[]` path (Ollama emits `response.message.tool_calls[]`) and the structured-output `format` path (Ollama emits a JSON-string-shaped `message.content`). Both must normalize to the canonical wire shape:
+
+```json
+{ "function": "<name>", "arguments": { ... } }
+```
+
+The adapter contract:
+
+| Input path | Input shape | Adapter responsibility |
+|---|---|---|
+| `tools[]` | `[{"function": {"name": str, "arguments": dict}}, …]` | Take `tool_calls[0]`, hoist `name` to `function`, pass `arguments` through. Reject (`STRUCTURAL_VALIDATION_FAILED`) if `len(tool_calls) != 1`. |
+| `format=<schema>` | `message.content: str` containing JSON | Parse JSON. If parse fails → `STRUCTURAL_VALIDATION_FAILED`. If parsed object already matches canonical form, pass through. If it matches Ollama's `tool_calls[0]` shape, hoist as above. |
+
+For Layer 3 operator commands, the canonical shape is `{ "command": "<name>", "args": { ... } }` instead, but the adapter logic is identical.
+
+The adapter lives in `agents/drone_agent/reasoning.py` (Layer 1) and `agents/egs_agent/validation.py` (Layers 2 + 3). Both implementations import a shared helper from `shared.contracts.adapters` so the normalization logic exists in exactly one place. A test (`test_adapter_canonical.py`) round-trips every valid fixture through both input shapes and asserts the canonical output is byte-identical.
+
 ## Schemas (file by file)
 
 ### `_common.json`
@@ -133,6 +156,8 @@ Already correct in shape. Refinements:
 - Keep `additionalProperties: false` at every object level.
 
 ### `egs_function_calls.json` (NEW)
+
+> **Lifecycle note:** Layer-2 schemas validate Gemma 4 output *only*. The EGS coordinator never publishes `assign_survey_points` or `replan_mission` directly on a ROS topic — it parses them, runs them through `agents/egs_agent/validation.py`, then *translates* them into `task_assignment.json` payloads on `/drones/<id>/tasks`. This is internal to the EGS process.
 
 `oneOf` over:
 
@@ -195,6 +220,8 @@ Discriminated union on `type`. Five cases:
 - `operator_command_dispatch` (Flutter → EGS): `{ type, command_id, contract_version }`.
 - `finding_approval` (Flutter → EGS): `{ type, command_id, finding_id, action: "approve" | "dismiss", contract_version }`.
 
+**`contract_version` ownership:** rosbridge_suite does not natively wrap messages with a version tag. The EGS-side bridge stamps `contract_version` from `shared.VERSION` on every outbound message before publish. The Flutter client compares against `frontend/.../generated/contract_version.dart`; on mismatch, it logs a console warning, drops the message, and surfaces a banner ("Server contract X.Y.Z, client X.Y'.Z' — refresh required"). Inbound messages from Flutter are stamped on the Flutter side and validated by EGS the same way.
+
 ### `validation_event.json` (Contract 11)
 
 Schema for one line of `/tmp/fieldagent_logs/validation_events.jsonl`:
@@ -224,7 +251,7 @@ Public API only. Re-exports `validate`, `validate_or_raise`, `schema`, `all_sche
 
 ### `schemas.py`
 
-Loads each `shared/schemas/*.json` once at import time, builds a `jsonschema.Draft202012Validator` with a registry that resolves `_common.json` `$ref`s. Public API:
+Loads each `shared/schemas/*.json` once at import time. Cross-file `$ref`s into `_common.json` are resolved via the `referencing` library (`referencing.Registry().with_resource(...)`), which is the post-`jsonschema-4.18` API for non-bundled refs. Builds one `jsonschema.Draft202012Validator` per contract, sharing the registry. Public API:
 
 - `validate(name: str, payload: dict) -> ValidationOutcome` — `ValidationOutcome(valid: bool, errors: list[StructuralError])`. Each `StructuralError` carries the failing field path and `rule_id="STRUCTURAL_VALIDATION_FAILED"`.
 - `validate_or_raise(name, payload)` — convenience for tests/dev; raises `ContractError`.
@@ -260,6 +287,7 @@ class RuleID(StrEnum):
     REPLAN_POLYGON_INVALID = "REPLAN_POLYGON_INVALID"
     REPLAN_EXCLUDED_DRONE_NOT_IN_FLEET = "REPLAN_EXCLUDED_DRONE_NOT_IN_FLEET"
     REPLAN_EXCLUDED_POINT_NOT_IN_PREVIOUS = "REPLAN_EXCLUDED_POINT_NOT_IN_PREVIOUS"
+    EGS_DUPLICATE_FINDING = "EGS_DUPLICATE_FINDING"
     # Layer 3 — operator commands
     OPERATOR_COMMAND_UNKNOWN = "OPERATOR_COMMAND_UNKNOWN"
     RECALL_DRONE_NOT_ACTIVE = "RECALL_DRONE_NOT_ACTIVE"
@@ -287,7 +315,7 @@ ros2:
     tasks:    { topic: "/drones/{drone_id}/tasks",    type: "std_msgs/String", json_schema: "task_assignment" }
     findings: { topic: "/drones/{drone_id}/findings", type: "std_msgs/String", json_schema: "finding" }
     camera:   { topic: "/drones/{drone_id}/camera",   type: "sensor_msgs/Image" }
-    cmd:      { topic: "/drones/{drone_id}/cmd",      type: "std_msgs/String", json_schema: null }
+    cmd:      { topic: "/drones/{drone_id}/cmd",      type: "std_msgs/String", json_schema: null }   # PX4-internal flight commands; not a Gemma-driven contract
   swarm:
     broadcast:        { topic: "/swarm/broadcasts/{drone_id}",            type: "std_msgs/String", json_schema: "peer_broadcast" }
     visible_to:       { topic: "/swarm/{drone_id}/visible_to_{drone_id}", type: "std_msgs/String", json_schema: "peer_broadcast" }
@@ -349,7 +377,9 @@ CI guard: `scripts/gen_topic_constants.py --check` regenerates into a tempdir an
 
 - **`agents/drone_agent/validation.py`** — every `ValidationResult.failure_reason` becomes a `RuleID` value. Structural pieces (`severity_out_of_range`, `confidence_out_of_range`, `visual_description_too_short`, `invalid_argument_type`) are removed from Python and delegated to `shared.contracts.schemas.validate("drone_function_calls", call)` at the top of `validate()`; structural failure returns `RuleID.STRUCTURAL_VALIDATION_FAILED` with the field path so the corrective prompt can still cite the bad field. Stateful checks (duplicates, coverage, GPS-in-zone, RTB battery/mission gates) stay in Python.
 - **`agents/drone_agent/reasoning.py`** — after Ollama returns, normalize tool-call shape and `format`-output shape into the canonical `{"function": ..., "arguments": ...}` form, then construct the matching Pydantic model. Construction failure = `RuleID.STRUCTURAL_VALIDATION_FAILED`.
-- **`agents/egs_agent/`** — new `coordinator.py` and `command_translator.py` use shared models for outbound calls. Validation node mirrors the drone-side: structural via jsonschema, semantic/stateful in Python, every failure tagged with a Layer-2 or Layer-3 `RuleID`.
+- **`agents/egs_agent/`** — this plan only creates `__init__.py` plus a thin `validation.py` that imports from `shared.contracts` and exposes `validate(call, state) -> ValidationResult` for both Layer-2 and Layer-3 calls (structural via jsonschema, semantic/stateful in Python, every failure tagged with a `RuleID`). `coordinator.py`, `command_translator.py`, and `replanning.py` are Person 3's territory per `docs/18-team-roles.md` and are explicitly out of scope for the contracts plan; Person 3 builds them on top of the locked `shared.contracts` API.
+
+  `agents/egs_agent/validation.py` owns the cross-drone dedup rule `EGS_DUPLICATE_FINDING`: when an incoming finding from one drone has the same `type` within 10m and 30s of an already-validated finding from a *different* drone, mark it as a duplicate (same thresholds as the per-drone rule). Findings are accepted on first-seen-wins; duplicates are dropped and a validation event is logged.
 - **`agents/drone_agent/memory.py`** — owns the per-drone `finding_id` counter. `next_finding_id() -> str` returns `f_{drone_id}_{count}` where `count` is monotonic.
 - **`agents/drone_agent/perception.py`** — no contract change.
 
@@ -364,6 +394,15 @@ A new `shared/tests/` package, runnable via `pytest`:
 5. **`test_version_consistency.py`** — every schema's `$id` contains `/v<major>/` matching `shared/VERSION`'s major; `shared/VERSION` matches `shared/config.yaml.contract_version` matches the constant in `frontend/.../contract_version.dart`.
 6. **`test_examples_in_docs.py`** — extracts every fenced JSON block from `docs/09` and `docs/20` (skipping blocks with `<placeholder>` markers) and validates them against the matching schema.
 7. **`test_validation_node_rule_ids.py`** — drives the existing `agents/drone_agent/validation.py` and the new EGS validator through synthetic inputs; asserts the emitted `failure_reason` is a real `RuleID` value.
+8. **`test_adapter_canonical.py`** — for every valid Layer-1, Layer-2, and Layer-3 fixture, build both the Ollama `tool_calls[]` shape and the structured-output content-string shape, run both through `shared.contracts.adapters.normalize`, assert the output equals the canonical fixture byte-for-byte. Then test rejection paths: `len(tool_calls) != 1`, malformed JSON in content, and a non-canonical-non-ollama dict.
+9. **Small-test backfills** —
+   - `validate("nonexistent_schema_name", {})` raises a clear `KeyError`.
+   - `Model(**fixture).to_payload()` round-trips on every valid fixture.
+   - Every `topic_helper(drone_id)` returns the expected concrete topic string.
+   - Every `RuleSpec.description` is non-empty and ≤ 200 chars; every `RuleSpec.corrective_template` is non-empty.
+   - `ValidationEventLogger.log(event)` appends a `validation_event.json`-valid line.
+   - When `schemas.validate` rejects a Layer-1 call, the corrective prompt cites the failing field path.
+   - `EGS_DUPLICATE_FINDING` triggers when two distinct drones report same-`type` within 10m and 30s; first-seen-wins; second is dropped with a logged validation event.
 
 **Acceptance criterion for "contracts locked":** `pytest shared/ agents/ -q` returns 0 with all seven test files green.
 
