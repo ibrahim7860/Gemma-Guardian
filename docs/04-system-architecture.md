@@ -87,7 +87,7 @@ In real deployment this is WiFi mesh; in simulation we use namespaced ROS 2 with
 This walks through a finding from camera frame to operator approval:
 
 ```
-1. Drone 1's PX4 publishes camera frame on /drone1/camera
+1. Drone 1's PX4 publishes camera frame on /drones/1/camera
 2. Drone 1's Perception node samples one frame at 1 Hz
 3. Perception passes (frame, current state, peer broadcasts) to Reasoning
 4. Reasoning calls Gemma 4 E2B with structured prompt

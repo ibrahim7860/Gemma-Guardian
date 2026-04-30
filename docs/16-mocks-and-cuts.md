@@ -6,6 +6,12 @@ Hackathon timelines are unforgiving. Every "we'll just add this real quick" is a
 
 The principle: **build what makes the demo unforgettable; mock what doesn't move the needle for judges.**
 
+## The One Thing We Never Mock
+
+**Gemma 4 itself is never mocked.** No stubbed LLM responses, no canned function-call JSON returned from a fixture, no "if demo mode then return hardcoded plan" branches. Every agentic decision in the system must come from a real Gemma 4 call (E2B onboard, E4B at EGS) running through Ollama on the dev workstation. If Gemma 4 isn't visibly the brain, the project has no submission. This rule overrides everything else in this doc — if a "mock" you're considering would replace a Gemma 4 call, stop and rescope.
+
+The Plan C path in the hallucination demo (below) is the only adjacent edge case: it injects a *validation* failure on a real Gemma 4 output, not a mocked LLM response. The model is still doing the work.
+
 ## Things We Mock (And Why That's Fine)
 
 ### Wildfire / Zone Segmentation

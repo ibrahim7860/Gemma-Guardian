@@ -49,7 +49,7 @@ When a judge watches the 90-second video, they should see:
 - **Technically correct use of Gemma 4.** Vision, reasoning, function calling, multilingual, on-device — all used naturally, none bolted on.
 - **Emotionally resonant.** Disasters are universal. Cell towers failing is universal.
 - **Falsifiable claims.** Coverage rate, mission completion time, hallucination catch rate, multilingual fidelity — measurable against the paper's baseline.
-- **Open and reproducible.** Apache 2.0 stack from top to bottom. Anyone with a laptop and the open weights can deploy this.
+- **Open and reproducible.** Permissively licensed open stack throughout (Gazebo, ROS 2, LangGraph, Ollama, Flutter, PX4) with Gemma 4 weights under Google's permissive Gemma Terms of Use. Anyone with a laptop and the open weights can deploy this.
 
 ## Out of Scope (Intentionally)
 

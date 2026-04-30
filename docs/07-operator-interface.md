@@ -12,11 +12,12 @@ Critically, the dashboard is also our **demo storytelling surface**. The video u
 
 ## Tech Stack
 
-- **Flutter web** (single-page app)
-- **rosbridge_suite** for WebSocket connection to ROS 2
-- **flutter_map** or `google_maps_flutter` for map rendering
-- **`web_socket_channel`** Flutter package for the WebSocket
-- Hosted locally (served from the same dev machine for the demo)
+- **Flutter web** (single-page app), default `canvaskit` renderer. Do **not** opt into the WebAssembly (`skwasm`) build for the hackathon — it adds packaging complexity and the demo doesn't need it. Lock the renderer at `_flutter.loader.load({config: {renderer: "canvaskit"}})` in `web/index.html` so behaviour is deterministic across browsers.
+- **rosbridge_suite** (`rosbridge_websocket` node) on the EGS host, exposing ROS 2 topics/services as JSON ops over WebSocket on port 9090.
+- **`web_socket_channel`** Flutter package for the raw socket. We speak rosbridge protocol directly (`{op: "subscribe", topic, type}`, `{op: "publish", topic, msg}`) — there is no maintained first-party Dart equivalent of roslibjs, and writing a thin client against a handful of topics is faster than vendoring one.
+- **State management:** `Provider` (or plain `ChangeNotifier` + `InheritedWidget`). No Bloc/Riverpod — we have one global mission state stream and four panels reading from it; anything heavier is over-engineering for 20 days.
+- **flutter_map** for the map layer (OSM tiles disabled — we use a static base image, see Panel 1). `google_maps_flutter` is rejected because it requires an API key + internet and we are explicitly an offline system.
+- Hosted locally (served from the same dev machine as rosbridge_websocket for the demo).
 
 ## Layout
 
@@ -140,6 +141,15 @@ The video makes a point of showing Gemma 4 correctly translating each.
 
 ## WebSocket Message Schema
 
+These are **app-level** payloads carried inside rosbridge `publish`/`subscribe` ops, not raw rosbridge envelopes. Flutter subscribes to a fixed set of ROS 2 topics owned by the EGS:
+
+- `/fieldagent/state` (`std_msgs/String` carrying the JSON below) — pushed by EGS at 1 Hz
+- `/fieldagent/operator_command` (`std_msgs/String`) — published by Flutter
+- `/fieldagent/command_translation` (`std_msgs/String`) — pushed by EGS in response
+- `/fieldagent/operator_command_dispatch` (`std_msgs/String`) — published by Flutter on approval
+
+We use `std_msgs/String` with a JSON payload (rather than custom `.msg` files) so the contract lives in `shared/schemas/` and doesn't require rebuilding the ROS 2 workspace every time we tweak it. See [`20-integration-contracts.md`](20-integration-contracts.md) for the locked field list.
+
 The EGS pushes state to Flutter every 1 second:
 
 ```json
@@ -207,7 +217,7 @@ These are nice-to-haves. Don't build them unless the rest is solid by Day 16.
 
 | Failure | Mitigation |
 |---|---|
-| WebSocket disconnects | Auto-reconnect with last-known state cached client-side |
+| WebSocket disconnects | Auto-reconnect with exponential backoff (1s, 2s, 4s, capped at 10s); cache last-known state client-side and re-subscribe to all four topics on reconnect |
 | Map renders slowly | Use static base layer, don't fetch tiles |
 | Command translation slow | Show "translating..." spinner; cap timeout at 15 seconds |
 | Multilingual fails | Fall back to English-only for the demo, document limitation |

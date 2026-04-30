@@ -61,7 +61,8 @@ The Coordination module from the paper is partly inside Reasoning (deciding how 
 **Outputs:** a tentative function call (see [`09-function-calling-schema.md`](09-function-calling-schema.md))
 
 **Implementation notes:**
-- Use LangGraph's `ChatOllama` integration (or equivalent direct Ollama API call)
+- Use `ChatOllama` from `langchain-ollama` (or call the Ollama Python client `ollama.chat(...)` directly with `format=<json-schema>` for structured output, and `images=[...]` for the camera frame on a vision-capable Gemma 4 tag).
+- Confirm the exact Ollama tag for the Gemma 4 E2B (effective-2B) variant once Gemma 4 ships on Ollama; pin the tag in `shared/prompts/` config and the `docker-compose`/launch script. Until then, treat the model name as a config string, not a hardcoded literal.
 - The reasoning prompt is the most performance-sensitive part of the system. Iterate on it heavily during Week 2.
 - If Gemma 4 returns invalid JSON or doesn't call a function, treat as a validation failure (will retry).
 
@@ -165,17 +166,17 @@ async def agent_loop(drone_id):
         await asyncio.sleep(1.0)  # 1 Hz sampling
 ```
 
-In production this loop has more structure (LangGraph manages the state machine), but conceptually that's it.
+In production this loop has more structure (LangGraph manages the state machine via `StateGraph` with `add_node` / `add_edge` / `add_conditional_edges`, with the Validation→Reasoning retry expressed as a conditional edge gated by retry count in state), but conceptually that's it.
 
 ## Inference Sharing Across Drones
 
 Real deployment has one Jetson per drone. Our simulation has one machine. With 2-3 drones each calling Gemma 4 E2B at 1 Hz, we have a single Ollama E2B instance serving all drones via a request queue.
 
 **Implementation:**
-- One Ollama instance running Gemma 4 E2B
+- One Ollama instance running Gemma 4 E2B (HTTP API at `http://localhost:11434/api/chat`)
 - All drone agents make HTTP calls to that instance
-- Calls are queued automatically by Ollama
-- Effective throughput: ~1-3 inferences/second on an RTX 4090
+- Calls are serialized by Ollama per-model (concurrent requests queue against the loaded model)
+- Effective throughput: ~1-3 inferences/second on an RTX 4090 — confirm with a smoke test once the actual Gemma 4 E2B tag is published; treat the number as a planning estimate, not a measured guarantee.
 
 If 1 Hz × 3 drones (= 3 inferences/sec) saturates the GPU, drop to 0.5 Hz per drone (= 1.5/sec) and frame as "tactical sampling cadence" in the writeup.
 

@@ -6,15 +6,17 @@ Hackathons fail because teams keep building when they should be cutting. This do
 
 ## The Five Gates
 
+Dates below are anchored to the recalibrated 16-working-day schedule in [`19-day-by-day-plan.md`](19-day-by-day-plan.md), which terminates at the May 18, 23:59 UTC submission deadline.
+
 | Gate | Date | What's evaluated | If pass | If fail |
 |---|---|---|---|---|
-| Gate 1: Stack | Day 2 (Apr 30) | Single drone flying + Gemma 4 inference | Continue | Switch sim platform OR drop project |
-| Gate 2: Single-loop | Day 7 (May 5) | One drone full agentic loop end-to-end | Continue to multi-drone | Stay on single-drone, drop swarm scope |
-| Gate 3: Fine-tuning | Day 10 (May 8) | LoRA adapter beats base by ≥10pp | Integrate adapter | Drop adapter, base model only |
-| Gate 4: Multi-drone | Day 13 (May 11) | 2-3 drones coordinating cleanly | Continue with 3 | Drop to 2 drones |
-| Gate 5: Submission | Day 18 (May 16) | All artifacts ready | Submit early | Final 48-hour push |
+| Gate 1: Stack | Day 2 (Wed Apr 30) | Single drone flying + Gemma 4 inference | Continue | Switch sim platform OR drop project |
+| Gate 2: Single-loop | Day 7 (Wed May 7) | One drone full agentic loop end-to-end | Continue to multi-drone | Stay on single-drone, drop swarm scope |
+| Gate 3: Fine-tuning | Day 10 (Mon May 12) | LoRA adapter beats base by ≥10pp | Integrate adapter | Drop adapter, base model only |
+| Gate 4: Multi-drone | Day 13 (Thu May 15) | 2-3 drones coordinating cleanly | Continue with 3 | Drop to 2 drones |
+| Gate 5: Submission | Day 16 (Sun May 18) | All artifacts ready, submit by 23:59 UTC | Submit | No-buffer push: submit whatever is working |
 
-## Gate 1: Stack Verification (Day 2, April 30)
+## Gate 1: Stack Verification (Day 2, Wed Apr 30)
 
 **Pass criteria — ALL of these must work:**
 
@@ -41,7 +43,7 @@ Hackathons fail because teams keep building when they should be cutting. This do
 
 **If all five pivots fail by end of Day 3:** the project as designed is not feasible. Pivot to a simpler use case (single drone, no swarm, indoor environment).
 
-## Gate 2: Single-Drone Agentic Loop (Day 7, May 5)
+## Gate 2: Single-Drone Agentic Loop (Day 7, Wed May 7)
 
 **Pass criteria — the full loop must work end-to-end:**
 
@@ -71,7 +73,7 @@ Hackathons fail because teams keep building when they should be cutting. This do
 
 This is still a winning submission. The previous Gemma 3n hackathon's first place was a single-device project. Scope discipline beats ambition.
 
-## Gate 3: Fine-Tuning Go/No-Go (Day 10, May 8)
+## Gate 3: Fine-Tuning Go/No-Go (Day 10, Mon May 12)
 
 **Pass criteria — LoRA adapter must:**
 
@@ -98,7 +100,7 @@ This is still a winning submission. The previous Gemma 3n hackathon's first plac
 
 See [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md) for the detailed plan.
 
-## Gate 4: Multi-Drone Coordination (Day 13, May 11)
+## Gate 4: Multi-Drone Coordination (Day 13, Thu May 15)
 
 **Pass criteria — 3-drone simulation must:**
 
@@ -125,20 +127,20 @@ See [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md) for the detailed plan.
 
 A polished 2-drone demo absolutely beats a flaky 3-drone demo. There's no shame in this.
 
-## Gate 5: Submission Readiness (Day 18, May 16)
+## Gate 5: Submission Readiness (Day 16, Sun May 18)
 
 **Pass criteria — ALL deliverables ready:**
 
 - [ ] GitHub repo public, README complete, all code committed
-- [ ] Reproduction instructions tested by someone who didn't write them
+- [ ] Reproduction instructions tested by someone who didn't write them (cold-test was Day 15 / Sat May 17)
 - [ ] 90-second demo video edited and reviewed
 - [ ] Technical writeup completed (~2000-3000 words)
 - [ ] Kaggle submission form filled out
 - [ ] Backup of everything on at least 2 separate machines
 
-**If pass:** submit on Day 18 (two days early). Don't wait. Submit, then polish if time allows.
+**If pass:** submit on Day 16 (Sun May 18) **before 23:59 UTC**. Aim to upload by 18:00 UTC to leave a 6-hour buffer for upload failures, Kaggle outages, or last-minute corrections. Submit, then polish only if Kaggle allows post-deadline edits.
 
-**If fail:** 48-hour final push. Lock the team into the project for the remaining time. No new features. Only fixing what's broken in the deliverables.
+**If fail:** there is no Day 17. Submit whatever is working by 23:59 UTC with an honest writeup describing what shipped and what didn't. Do not miss the deadline trying to fix one more thing.
 
 ## Risk-Adjusted Outcome Tree
 

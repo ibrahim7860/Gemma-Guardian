@@ -22,7 +22,7 @@ Design a Gazebo world that:
 **Other features:**
 - A grid of roads between buildings (some clear, some blocked)
 - 5-7 victim markers placed in/around damaged buildings
-- 2-3 active fires (Gazebo plume plugin)
+- 2-3 active fires (rendered via SDF `<particle_emitter>` for smoke + an orange-emissive box/cone visual for visible flame; Gazebo Harmonic does not ship a "plume" system plugin)
 - 3-4 blocked routes (debris meshes, fallen trees)
 - Trees, vehicles for visual realism
 
@@ -34,6 +34,9 @@ We don't build assets from scratch. We use:
 2. **Gazebo Fuel** (`https://app.gazebosim.org/fuel`) — public model repository with free-to-use assets:
    - Search "damaged building," "rubble," "destroyed house"
    - Search "construction debris," "wreckage"
+   - Two ways to consume a Fuel model in SDF:
+     - Inline URI: `<uri>https://fuel.gazebosim.org/1.0/<owner>/models/<name></uri>` (downloaded on first load, cached under `~/.gz/fuel`)
+     - Local: download once, drop under `simulation/worlds/models/<name>/`, export `GZ_SIM_RESOURCE_PATH=$PWD/simulation/worlds/models`, then reference as `<uri>model://<name></uri>`. Prefer this for offline-demo reliability — the demo runs with no internet.
 3. **Custom-modified models** when needed:
    - Take an intact building mesh, manually distort/rotate parts in Blender for a "damaged" version
    - Add scorched textures via a single OBJ texture swap
@@ -62,16 +65,39 @@ The demo narrator can say: "Each marker represents a person needing rescue. The 
 
 ## Fire and Smoke
 
-Gazebo's built-in plume plugin produces visible smoke/fire effects from above.
+Gazebo Harmonic does **not** ship a "plume" system plugin. Smoke is rendered via the SDF `<particle_emitter>` tag (a visual feature, no extra plugin required beyond the standard sensors/scene-broadcaster systems). Visible flame is faked with an emissive-material cone or box visual placed at the emitter base.
 
 ```xml
-<plugin name="gz::sim::systems::Plume" filename="gz-sim-plume-system">
-  <position>50 30 0</position>
-  <intensity>medium</intensity>
-</plugin>
+<model name="fire_f01">
+  <static>true</static>
+  <pose>50 30 0 0 0 0</pose>
+  <link name="link">
+    <particle_emitter name="smoke" type="point">
+      <emitting>true</emitting>
+      <size>1 1 1</size>
+      <particle_size>0.5 0.5 0.5</particle_size>
+      <lifetime>5</lifetime>
+      <rate>20</rate>
+      <min_velocity>1</min_velocity>
+      <max_velocity>3</max_velocity>
+      <scale_rate>1.5</scale_rate>
+      <material>
+        <diffuse>0.3 0.3 0.3 1</diffuse>
+        <ambient>0.3 0.3 0.3 1</ambient>
+      </material>
+    </particle_emitter>
+    <visual name="flame">
+      <geometry><cone><radius>0.5</radius><length>1.5</length></cone></geometry>
+      <material>
+        <emissive>1.0 0.4 0.0 1</emissive>
+        <diffuse>1.0 0.5 0.0 1</diffuse>
+      </material>
+    </visual>
+  </link>
+</model>
 ```
 
-For the demo, 2-3 fires of varying intensity. The drone classifies them by severity.
+For the demo, 2-3 fires of varying intensity (parameterized by particle `rate`, `max_velocity`, and flame visual scale). The drone classifies them by severity. Validate visibility from 25 m altitude before locking the scene — particle emitters can be subtle from above. **Requires `ogre2` render engine** (set in the sensors plugin below); particle emitters are not rendered by `ogre1`.
 
 **Fire spread (mocked):** at scripted times during the demo, additional fire plumes spawn. The EGS detects this via a separate "satellite update" event and triggers replanning.
 
@@ -103,9 +129,15 @@ simulation/worlds/
       <real_time_factor>1.0</real_time_factor>
     </physics>
     
-    <plugin filename="gz-sim-physics-system" .../>
-    <plugin filename="gz-sim-sensors-system" .../>
-    <plugin filename="gz-sim-scene-broadcaster-system" .../>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <!-- IMU + camera sensors are declared on the PX4 drone model (not here);
+         this world only loads the systems that consume them. See docs/15. -->
     
     <!-- Lighting: post-disaster overcast -->
     <scene>
@@ -119,31 +151,40 @@ simulation/worlds/
     <include><uri>model://ground_plane</uri></include>
     
     <!-- Building grid -->
-    <include name="bldg_a1">
+    <!-- model:// URIs work after exporting GZ_SIM_RESOURCE_PATH to point at
+         simulation/worlds/models. Direct Fuel URIs
+         (https://fuel.gazebosim.org/1.0/<owner>/models/<name>) also work. -->
+    <include>
+      <name>bldg_a1</name>
       <uri>model://intact_building_v1</uri>
       <pose>10 10 0 0 0 0</pose>
     </include>
-    <include name="bldg_a2">
+    <include>
+      <name>bldg_a2</name>
       <uri>model://damaged_building_a</uri>
       <pose>30 10 0 0 0 0</pose>
     </include>
     <!-- ... 14 more buildings ... -->
     
     <!-- Victims -->
-    <include name="victim_1">
+    <include>
+      <name>victim_1</name>
       <uri>model://apriltag_marker</uri>
       <pose>32 12 0.05 0 0 0</pose>
     </include>
     <!-- ... more victims ... -->
     
-    <!-- Fires -->
-    <plugin filename="gz-sim-plume-system">
-      <position>50 30 0</position>
-      <intensity>0.7</intensity>
-    </plugin>
+    <!-- Fires (see "Fire and Smoke" section above for the full
+         <particle_emitter> + emissive flame visual pattern). -->
+    <include>
+      <name>fire_f01</name>
+      <uri>model://fire_smoke_v1</uri>
+      <pose>50 30 0 0 0 0</pose>
+    </include>
     
     <!-- Blocked routes -->
-    <include name="debris_1">
+    <include>
+      <name>debris_1</name>
       <uri>model://debris_road_block</uri>
       <pose>20 25 0 0 0 0</pose>
     </include>
@@ -229,7 +270,7 @@ If Gemma 4 base model fails (e.g., misclassifies all rubble piles as intact buil
 | Failure | Mitigation |
 |---|---|
 | Damaged building meshes look like normal buildings | Add visual markers, exaggerate damage textures |
-| Fire plumes too subtle from above | Increase intensity, add visible flames at base |
+| Particle-emitter smoke too subtle from above | Increase `rate` and `max_velocity`, enlarge emissive flame visual, darken smoke material |
 | AprilTags don't render correctly | Fall back to colored squares |
 | Scene too dense, drones collide | Increase building spacing |
 | Scene too sparse, drones run out of survey points | Add more buildings, victims |

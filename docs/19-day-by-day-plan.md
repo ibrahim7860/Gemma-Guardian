@@ -125,6 +125,13 @@
 - PASS: Continue with 3 drones for demo.
 - FAIL: Drop to 2 drones. Adjust demo storyboard.
 
+**Post-gate work (afternoon, all hands):**
+**Person 1:** Identify and fix any sim instability surfaced during the gate run.
+**Person 2:** Note any prompt-quality issues spotted during the gate run; queue for Day 14 tuning.
+**Person 3:** Lock the demo's resilience-scenario script (which scenarios run, in what order).
+**Person 4:** Lock demo storyboard with the team. **Begin writeup first draft** (architecture and approach sections — these are stable post-Gate 4).
+**Person 5 (paired with Person 1):** Help Person 1 diagnose any sim issues from the gate run.
+
 ## Week 3 (Days 14-18): Polish and Demo Capture
 
 ### Day 14 — Friday May 16: Demo Capture Begins
@@ -134,7 +141,7 @@
 **Person 1:** Provide stable demo runs. Fix any simulation jitter.
 **Person 2:** Tune reasoning prompts for demo quality. Engineer the hallucination-catch moment.
 **Person 3:** Script the resilience scenarios as deterministic events on the EGS side (sim-side events were prepped by Person 5).
-**Person 4:** Polish dashboard visual quality. Test all dashboard interactions for video. **Begin video editing. Storyboard locked. First draft of writeup.**
+**Person 4:** Polish dashboard visual quality. Test all dashboard interactions for video. **Begin video editing** (using clean runs as they're captured). Writeup draft continues from Day 13 start.
 **Person 5 (paired with Person 1):** Run the simulator while Person 1 monitors stability. Reproduce the demo scenario over and over to surface any sim jitter. Help Person 1 with final scene polish.
 
 **Friday dress rehearsal:** Full demo run. Identify everything that's still rough.
@@ -147,90 +154,52 @@
 **Person 4:** Demo capture — record dashboard runs cleanly. Video editing continues. Writeup draft.
 **Person 5 (paired with Person 1):** Operate the simulator on the demo machine so Person 4 can record the dashboard cleanly. Help Person 1 lock the scene.
 
-### Day 16 — Sunday May 18: Lock Day
+### Day 15 — Saturday May 17: Lock + Reproduce
 
-**Today is the day everything stops changing.** Only bug fixes after this point.
+**Today is the day everything stops changing.** Only bug fixes after this point. **No new features. No "small additions."** Whatever's there is what ships.
 
-**Person 1:** Lock simulation. Document setup.
-**Person 2:** Lock prompts. Don't iterate further.
-**Person 3:** Lock EGS. Test resilience scenarios one final time.
-**Person 4:** Lock dashboard. Final video captures. Video edit complete. Writeup near-final.
-**Person 5 (paired with Person 1):** Co-write the simulation reproduction docs with Person 1. Validate them by following them on a clean machine.
+**Person 1:** Lock simulation. Have an outside-the-team tester run reproduction instructions cold; Person 5 acts as backup tester. Fix anything that breaks the cold run.
+**Person 2:** Lock prompts. Don't iterate further. Code cleanup for public repo.
+**Person 3:** Lock EGS. Test resilience scenarios one final time. Code cleanup for public repo.
+**Person 4:** Lock dashboard. Final video captures. Video edit to picture-lock. Writeup near-final draft circulated for team review.
+**Person 5 (paired with Person 1):** Co-write the simulation reproduction docs with Person 1. Run them cold from a fresh Ubuntu image. Document any rough edges.
 
-**No new features. No "small additions."** Whatever's there is what ships.
+### Day 16 — Sunday May 18: GATE 5 + SUBMIT (deadline 23:59 UTC)
 
-### Day 17 — Monday May 19: Polish and Reproduce
+**Submission day. The plan calls for submitting by ~18:00 UTC, leaving ~6 hours of buffer before the 23:59 UTC deadline.** No new features today, only finalizing deliverables and pressing the button.
 
-**Person 1:** Test reproduction instructions. Have an outside-the-team tester try the full setup; Person 5 acts as backup tester.
-**Person 2:** Code cleanup for public repo.
-**Person 3:** Code cleanup for public repo.
-**Person 4:** Code cleanup for public repo. Final video tweaks. Writeup proofreading. Submission form preparation.
-**Person 5 (paired with Person 1):** Run reproduction instructions cold from a fresh Ubuntu image. Document any rough edges. Help Person 1 fix anything that breaks.
+**Person 1:** Final reproduction-doc fixes from cold tester feedback. Backup the demo box. On-call for any submission-time sim issue.
+**Person 2:** Final repo cleanup. Confirm Ollama / model pull instructions work from scratch. On-call for prompt or model issues.
+**Person 3:** Final repo cleanup. Confirm EGS launches from the documented command. On-call for EGS issues.
+**Person 4:** Video final export and upload. Writeup proofread and finalized. **Owns the Kaggle submission form.** Confirms all required fields, links, and attachments. Submits by 18:00 UTC. Posts confirmation to the team.
+**Person 5 (paired with Person 1):** Final reproduction validation pass. Backup of repo + assets to a second machine. On-call for sim issues.
 
-### Day 18 — Tuesday May 20: GATE 5 — SUBMIT
+**Submission gate (per [`17-feasibility-and-gates.md`](17-feasibility-and-gates.md) and [`23-submission-checklist.md`](23-submission-checklist.md)):** GitHub repo public, README complete, video uploaded, writeup complete, Kaggle form submitted, two-machine backup confirmed.
 
-**Note: original deadline was May 18. The day-by-day above slipped to keep workload realistic. Adjust the plan one of two ways:**
+## Schedule (Anchored to May 18 23:59 UTC Deadline)
 
-**Option A: Submit early (Day 18 = May 16, two days early).**
-- Compress Week 3 to 4 days.
-- Hit Day 16 lock day on May 14.
-- Submission on May 16.
-
-**Option B: Use full timeline (Day 20 = May 18).**
-- Day 14 = May 12 (start polish).
-- Day 18 = May 16 (lock day).
-- Day 19 = May 17 (reproduce).
-- Day 20 = May 18 (SUBMIT).
-
-We use **Option B**. Below is the recalibrated schedule.
-
-## Recalibrated Day Numbers (Anchored to May 18 Deadline)
+The plan compresses to 16 working days so submission lands on May 18 with buffer.
 
 | Day | Date | What's happening |
 |---|---|---|
 | 1 | Tue Apr 29 | Setup + contracts |
 | 2 | Wed Apr 30 | **GATE 1** (stack working) |
 | 3 | Thu May 1 | Wiring components together |
-| 4 | Fri May 2 | First integration session + dress rehearsal |
-| 5 | Mon May 5 | Drone agent loop building |
-| 6 | Tue May 6 | Second integration session |
-| 7 | Wed May 7 | **GATE 2** (single-drone loop) |
-| 8 | Thu May 8 | Multi-drone work begins |
-| 9 | Fri May 9 | Third integration + dress rehearsal |
-| 10 | Mon May 12 | **GATE 3** (fine-tuning) |
-| 11 | Tue May 13 | Multi-drone coordination |
-| 12 | Wed May 14 | Fourth integration session |
-| 13 | Thu May 15 | **GATE 4** (multi-drone working) |
-| 14 | Fri May 16 | Demo capture + dress rehearsal |
-| 15 | Sat May 17 | Polish |
-| 16 | Sun May 18 | LOCK DAY (no new features) |
-| 17 | Mon May 19 | Reproduce + polish |
-| 18 | Tue May 20 | **GATE 5 + SUBMIT** |
-
-Wait — May 20 is past the May 18 deadline. We need to submit on May 18 itself.
-
-**Real schedule, anchored to May 18 23:59 UTC submission:**
-
-| Day | Date | What's happening |
-|---|---|---|
-| 1 | Tue Apr 29 | Setup + contracts |
-| 2 | Wed Apr 30 | **GATE 1** |
-| 3 | Thu May 1 | Wiring |
 | 4 | Fri May 2 | Integration 1 + dress rehearsal |
 | 5 | Mon May 5 | Drone agent building |
 | 6 | Tue May 6 | Integration 2 |
-| 7 | Wed May 7 | **GATE 2** |
+| 7 | Wed May 7 | **GATE 2** (single-drone loop) |
 | 8 | Thu May 8 | Multi-drone begins |
 | 9 | Fri May 9 | Integration 3 + dress rehearsal |
 | 10 | Mon May 12 | **GATE 3** (fine-tuning) |
 | 11 | Tue May 13 | Multi-drone coordination |
 | 12 | Wed May 14 | Integration 4 |
-| 13 | Thu May 15 | **GATE 4** |
+| 13 | Thu May 15 | **GATE 4** (multi-drone working) |
 | 14 | Fri May 16 | Demo capture + dress rehearsal |
-| 15 | Sat May 17 | Final polish + video edit |
+| 15 | Sat May 17 | Lock day + cold-run reproduce |
 | 16 | Sun May 18 | **GATE 5 + SUBMIT** by 23:59 UTC |
 
-That's 16 working days, which is realistic.
+Note: docs/17 currently lists earlier dates for these gates (e.g., Gate 2 May 5, Gate 5 May 16). The dates in this table are the ones the team executes against; docs/17's gate table will be reconciled to match in a follow-up edit.
 
 ## Friday Dress Rehearsal Schedule
 

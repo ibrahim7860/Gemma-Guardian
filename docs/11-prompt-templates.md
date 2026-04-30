@@ -10,6 +10,15 @@ All prompts share three principles:
 2. **Decision criteria are explicit and prioritized**
 3. **Output format is locked via function calling schemas**
 
+### Gemma 4 chat-template note
+
+Gemma's instruction-tuned chat template uses `<start_of_turn>{role}` / `<end_of_turn>` delimiters with roles `user`, `model`, and (for function calling) `developer`. Gemma does not have a native `system` role — when we say "system prompt" below, the implementation is one of:
+
+- **Ollama path (default):** pass the constraints as a `system` message in the `/api/chat` payload. Ollama's Gemma 4 template prepends this to the first `user` turn automatically. Tools are passed via the top-level `tools` field (per [Ollama tool-calling docs](https://docs.ollama.com/capabilities/tool-calling)) and structured-JSON fallback uses `format` with a JSON Schema.
+- **Direct HF / `apply_chat_template` path (fine-tuning eval only):** use the `developer` role for the constraints + tool declarations and include the activation line `"You are a model that can do function calling with the following functions"` so Gemma's function-calling logic fires. Tool schemas go through the `tools=` argument of `apply_chat_template`, not as freeform text.
+
+Prompt files in `shared/prompts/` are template-agnostic plain text; the loader wraps them with the right role tokens for whichever runtime the call site is using.
+
 ## Per-Drone Agent Prompt
 
 ### System message
@@ -25,7 +34,8 @@ You will receive:
 - Recent operator commands
 - A camera image showing what is currently below you
 
-Available tools (call exactly ONE per response):
+Available tools (call exactly ONE per response — full JSON Schema for each is
+passed via Ollama's `tools` field; see [`09-function-calling-schema.md`](09-function-calling-schema.md)):
 - report_finding(type, severity, gps_lat, gps_lon, confidence, visual_description)
 - mark_explored(zone_id, coverage_pct)
 - request_assist(reason, urgency, related_finding_id?)
@@ -81,11 +91,11 @@ Camera image below.
 What is your next action?
 ```
 
-The image is attached as a separate part of the message (multimodal).
+The image is attached as a separate part of the message (multimodal). Concretely, this is the `images` array on the user message in Ollama's `/api/chat` payload (base64-encoded JPEG/PNG, one frame per cycle). Gemma 4 E2B/E4B both accept image input via this path locally; no cloud vision API is involved.
 
 ### Corrective re-prompt examples
 
-When a validation failure occurs, append:
+When a validation failure occurs, the failed assistant turn is preserved (so the model sees its own mistake — see [`10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md)) and a new `user` turn is appended with:
 
 ```
 Your previous response was rejected because: {failure_reason}
@@ -94,6 +104,8 @@ Your previous response was rejected because: {failure_reason}
 
 Try again. Call exactly one function.
 ```
+
+The exact corrective strings (e.g. severity/confidence mismatch, GPS-out-of-zone, duplicate finding, prose-instead-of-call, coverage-decrease) are the verbatim entries in the drone-agent table in `10-validation-and-retry-loop.md`. Do not paraphrase them at the call site — load them from `shared/prompts/drone_agent_corrective.md` so the loop logs and the prompts stay in sync.
 
 ## EGS Survey-Point Assignment Prompt
 
@@ -143,12 +155,12 @@ Assign every survey point to exactly one drone.
 
 ### Corrective re-prompts (verbatim from the paper, adapted)
 
-These are appended on validation failure. The exact strings live in [`10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md). The most important ones (verbatim from Nguyen et al. 2026):
+These are appended on validation failure. The exact strings live in [`10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md) (EGS table — too-many-points, missing-points, duplicate-assignment, imbalanced-workload, drone-excluded). The two most important ones (verbatim from Nguyen et al. 2026) are reproduced here for quick reference only:
 
 - For too many points: `"You are hallucinating, creating more survey points than required. Do not invent, modify, or add any new points."`
 - For missing points: `"You have not assigned all survey points to UAVs. You must allocate all survey points to UAVs."`
 
-Each corrective prompt is appended along with the original failed attempt so the model sees its own mistake.
+Each corrective prompt is appended along with the original failed attempt (kept as an `assistant` turn) so the model sees its own mistake.
 
 ## EGS Operator Command Translation Prompt
 
@@ -160,7 +172,7 @@ to a drone swarm. Your job is to translate the operator's input (which
 may be in any language) into one of the structured commands the system 
 supports.
 
-Available commands:
+Available commands (full JSON Schemas in [`09-function-calling-schema.md`](09-function-calling-schema.md), Layer 3):
 - restrict_zone(zone_id) — focus the swarm on one zone
 - exclude_zone(zone_id) — avoid one zone
 - recall_drone(drone_id, reason) — bring a drone back to base
@@ -177,7 +189,8 @@ Hard constraints:
 5. priority_level must be one of: low, normal, high, critical
 6. lang_code must be ISO 639-1 (en, es, ar, fr, etc.)
 7. If the input is ambiguous or doesn't match any command, return 
-   unknown_command with a clarifying suggestion in the operator's language
+   unknown_command with a clarifying suggestion written in {detected_lang}
+   (the operator's input language). Do not silently switch to English.
 
 Decision approach:
 - First identify the operator's intent (focus, exclude, recall, prioritize, 
@@ -275,8 +288,8 @@ Prompt engineering is iterative. The team's process:
 
 1. Person 2 owns prompt engineering for vision tasks **and** the drone agent loop (now a single seat covering both)
 2. Person 3 owns prompt engineering for EGS tasks
-4. Iteration happens in a notebook (`ml/prompt_iteration.ipynb`) with a small evaluation set
-5. Successful changes get committed; failures are noted with metrics
+3. Iteration happens in a notebook (`ml/prompt_iteration.ipynb`) with a small evaluation set
+4. Successful changes get committed; failures are noted with metrics
 
 **Do not change prompts in the last 3 days before submission.** Lock them by Day 17 (May 15) and only fix outright bugs after that.
 

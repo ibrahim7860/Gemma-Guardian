@@ -4,6 +4,8 @@
 
 Function calling is the agentic backbone of FieldAgent. Every Gemma 4 output that drives action is a structured function call validated against hard constraints. **Lock these schemas on Day 1 and do not change them.** All five team members build against these contracts.
 
+> **Note on shape.** The JSON blocks below are *illustrative examples of the structured output we expect Gemma 4 to emit* (with angle-bracket placeholders like `<float>` standing in for real values). The authoritative machine-readable JSON Schemas (Draft 2020-12) live in `shared/schemas/*.json` and are what the validation node in [`10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md) checks against. All `gps_lat`, `gps_lon`, `severity`, `confidence`, and `coverage_pct` fields are JSON numbers (not strings); all timestamps elsewhere in the system are ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SS.sssZ`), matching [`20-integration-contracts.md`](20-integration-contracts.md).
+
 There are three layers of function calls:
 
 1. **Per-drone agent function calls** — what an individual drone agent decides to do
@@ -72,7 +74,7 @@ The drone agent must call exactly ONE of these per inference cycle.
 **Validation rules:**
 - `reason` length ≥ 10 chars
 - `urgency` ∈ {low, medium, high}
-- If `related_finding_id` provided, must reference an existing finding from this drone
+- If `related_finding_id` provided, must match the `f_<drone_id>_NNN` pattern from Contract 4 in [`20-integration-contracts.md`](20-integration-contracts.md) and reference an existing finding from this drone
 
 ### `return_to_base`
 
@@ -128,9 +130,8 @@ The EGS uses these for swarm-level decisions.
 **Validation rules:**
 - Total survey points across all assignments = total available survey points
 - No survey point appears in two drones' lists
-- Each drone has at least one point (unless excluded)
-- Counts are within ±1 of average across drones (balanced workload)
-- Every drone in the active fleet appears in assignments
+- Every drone in the active fleet appears in `assignments` (drones explicitly excluded via `replan_mission.excluded_drones` may appear with `survey_point_ids: []`; all other drones must have at least one point)
+- Counts are within ±1 of average across non-excluded drones (balanced workload)
 
 **Corrective prompts on failure:** see [`10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md).
 
@@ -230,13 +231,21 @@ The EGS translates operator natural language into these structured commands. **E
 ```
 
 **Validation rules:**
-- `command` must be one of the seven defined types
+- `command` must be one of the six defined types: `restrict_zone`, `exclude_zone`, `recall_drone`, `set_priority`, `set_language`, `unknown_command`
 - For each command, args must match the schema (e.g., `recall_drone` requires `drone_id` to reference an active drone)
 - For `set_language`, `lang_code` must be ISO 639-1 (en, es, ar, etc.)
+- `unknown_command` is the safe fallback when the EGS cannot map operator text to one of the other five — it never executes, only prompts the operator for clarification
 
 ## How Gemma 4 Calls These
 
-Gemma 4 supports native function calling. We provide the tool schemas in the system prompt; the model emits a function call as part of its response.
+We invoke Gemma 4 through Ollama's `/api/chat` endpoint. Two paths are available and we use both depending on the call site:
+
+1. **Native tools path** (`tools` array on the request body, per Ollama's tool-calling spec). Each tool is `{"type": "function", "function": {"name": ..., "description": ..., "parameters": <JSON Schema>}}`. Successful calls come back on `response.message.tool_calls[]` as `{"function": {"name": ..., "arguments": {...}}}`. We use this path on the EGS (E4B) where it is best supported.
+2. **Structured-output path** (`format: <JSON Schema>` on the request body). The model is constrained to emit JSON matching the schema directly into `message.content`. We use this path as a fallback on the per-drone agent (E2B), and as belt-and-suspenders for any Gemma 4 variant whose tool-calling fidelity we don't trust on Day 7.
+
+Either path produces output we then validate against `shared/schemas/*.json` in the validation node ([`10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md)). The wire shape `{"function": "<name>", "arguments": {...}}` shown throughout this doc is our **internal canonical form** — adapters in `agents/*/reasoning.py` normalize Ollama's `tool_calls[]` shape and the structured-output JSON into this form before validation.
+
+> **Compatibility flag.** Gemma 4 had not shipped at the time this contract was locked. If Gemma 4's Ollama integration does not expose reliable native tool calling on Day 1, we fall back exclusively to the structured-output (`format`) path — the canonical form is identical, so no schema or downstream change is required. See [`16-mocks-and-cuts.md`](16-mocks-and-cuts.md) for the fallback decision tree.
 
 ### Per-drone agent prompt structure (sketch)
 

@@ -101,20 +101,27 @@ For our purposes we don't need to match top entries. A modest improvement over b
 **Why Unsloth:**
 - Designed specifically for this workflow
 - Required to qualify for the Unsloth special prize
-- Has been validated on Gemma family models
+- Has been validated on Gemma family models, including Gemma 4
+
+**Verified as of 2026-04-29 (re-verify on Day 2 against the live Unsloth repo):**
+- Unsloth's `FastVisionModel` (and the unified `FastModel`) explicitly supports Gemma 4 multimodal fine-tuning. Per the Unsloth Gemma 4 training guide, supported variants are **E2B, E4B, 26B-A4B, and 31B**, with E2B and E4B being the primary multimodal variants (image + audio).
+- `FastVisionModel.get_peft_model` exposes independent toggles: `finetune_vision_layers`, `finetune_language_layers`, `finetune_attention_modules`, `finetune_mlp_modules`. This lets us scope the LoRA precisely.
 
 **What we fine-tune:**
-- The vision adapter / vision tower portion of Gemma 4 E2B (the smaller variant; we want this on drones)
-- Optionally fine-tune the language head with task-specific output formatting
-- Do NOT fine-tune the full LLM weights
+- Target model: Gemma 4 **E2B** (drone-side; we want this small enough to run on the onboard Ollama instance). E4B is the EGS-side model and not the FT target.
+- Per Unsloth's own Gemma 4 multimodal guidance: **start with `finetune_vision_layers=False`, fine-tune language + attention + MLP first**, then enable vision layers only if the task clearly requires it. We follow this order rather than jumping straight to vision-tower LoRA.
+- Do NOT fine-tune the full LLM weights (LoRA only).
+- Note: Unsloth ships dynamic 4-bit quants of Gemma 4 (`unsloth/gemma-4-E2B-it` family) — confirm the exact HF repo name on Day 2; do not hard-code it here.
 
 ## Day-1 Verification (Critical)
 
 **Person 2 must verify by end of Day 2:**
 
-1. Unsloth installs cleanly on the dev machine
-2. Unsloth supports Gemma 4 vision LoRA fine-tuning (not just text)
-3. A hello-world fine-tuning run completes successfully on a tiny dataset
+1. Unsloth installs cleanly on the chosen compute path (WSL2+CUDA or rented GPU).
+2. The exact Gemma 4 E2B HuggingFace repo name loads via `FastVisionModel.from_pretrained` / `FastModel.from_pretrained` in 4-bit (e.g., `unsloth/gemma-4-E2B-it`-family — confirm the live tag).
+3. `FastVisionModel.get_peft_model` accepts the layer-toggle args (`finetune_vision_layers`, etc.) for Gemma 4 in the installed Unsloth version.
+4. A hello-world SFT run on a tiny multimodal dataset completes successfully and saves a LoRA adapter.
+5. **GGUF export of the merged vision model works end-to-end** (`save_pretrained_merged` → `save_pretrained_gguf` with `q4_k_m`) and the resulting GGUF loads in Ollama and answers a vision prompt. If this step fails for Gemma 4 vision specifically, document the fallback (vLLM / transformers serving) before Day 3.
 
 If any of these fails, **fine-tuning is abandoned**. The fallback path is base Gemma 4 + heavy prompt engineering, with an honest writeup section explaining the attempt.
 
@@ -187,15 +194,20 @@ Render 200-500 patches from our Gazebo disaster scene with known damage labels (
 
 ## Training
 
-**Hardware:** RTX 4090 (24 GB VRAM) sufficient. Lower-end cards may need batch size adjustments.
+**Hardware:** Gemma 4 E2B in 4-bit with LoRA fits comfortably on a 24 GB card (RTX 4090, A10, or rented A4000/A5000). The cloud tiers listed above (Lambda A10 ~$0.75/hr, Paperspace A4000/A5000 ~$0.51–$0.76/hr, Runpod A4000 ~$0.34/hr) are sufficient for E2B LoRA at the dataset sizes we plan; an A100 is overkill but speeds wall-clock by ~2x. Lower-end consumer cards (16 GB) need batch-size and/or gradient-checkpointing adjustments.
 
-**Hyperparameters (starting point, iterate from here):**
-- LoRA rank: 16
+**Hyperparameters (starting point, aligned with Unsloth's current Gemma 4 vision recipe — iterate from here):**
+- LoRA rank `r`: 32 (Unsloth recommends `lora_alpha == r` at minimum for vision LoRA; r=16 is a viable smaller alternative if VRAM is tight)
 - LoRA alpha: 32
-- Learning rate: 2e-4 with cosine schedule
-- Batch size: 4 (with gradient accumulation if VRAM tight)
-- Epochs: 3-5
+- `target_modules`: `"all-linear"` (Unsloth's current default for vision; expanded from the old `q/k/v/o + gate/up/down` list)
+- `use_gradient_checkpointing="unsloth"`
+- Layer toggles (start): `finetune_vision_layers=False, finetune_language_layers=True, finetune_attention_modules=True, finetune_mlp_modules=True`. Flip vision to `True` only after a language-only run if accuracy on the visual task plateaus.
+- Learning rate: 2e-4 with cosine (or linear) schedule
+- Batch size: 2–4 per device with gradient accumulation 4–8 (vision examples are heavier than text-only)
+- Epochs: 1–3 on the full crop dataset (vision SFT typically needs fewer epochs than text)
 - Mixed precision: bf16
+- Optimizer: `adamw_8bit`
+- Inference settings to match training (Gemma 4 recommended): `temperature=1.0, top_p=0.95, top_k=64`
 
 **Tracking:**
 - Validation accuracy per epoch
@@ -247,14 +259,25 @@ Person 2 reports to the team:
 
 The team's plan is the same in both cases — only the writeup changes and the special-prize claim is adjusted.
 
+## Export Path to Ollama
+
+Ollama does not load PEFT/LoRA adapters at runtime — it loads GGUF weights. So our export pipeline (per current Unsloth docs) is:
+
+1. `model.save_pretrained_merged("gemma4_e2b_xbd_merged", tokenizer, save_method="merged_16bit")` — merges the LoRA adapter into base weights, saves 16-bit safetensors.
+2. `model.save_pretrained_gguf("gemma4_e2b_xbd_gguf", tokenizer, quantization_method="q4_k_m")` — converts to GGUF. (`Q8_0` is an alternative; `q4_k_m` is the right tradeoff for on-drone deployment.)
+3. Author a small `Modelfile` referencing the GGUF and the Gemma 4 chat template, then `ollama create gemma4-e2b-xbd -f Modelfile`.
+4. Run via `OLLAMA_MODELS=<dir> ollama run gemma4-e2b-xbd` (or `ollama serve` for the agent).
+
+Caveat to verify on Day 2: `save_pretrained_gguf` for **vision** models depends on llama.cpp's mmproj/multimodal-projector conversion path. If GGUF export of the merged vision tower is not yet stable for Gemma 4 in Unsloth as of Day 2, the fallback is to serve the merged 16-bit safetensors via vLLM or `transformers` directly (not Ollama) for the demo, and document the deviation. **This is a known risk; flag during Day-2 verification.**
+
 ## Integration with the Drone Agent
 
 If GO:
 
-1. Adapter file is loaded at startup of the drone agent's Ollama instance
-2. The vision component of Gemma 4 E2B uses the adapter for damage classification
+1. The merged GGUF (above) is registered as a custom Ollama model on the drone-side Ollama instance, replacing the stock `gemma-4-e2b` tag pinned in `docs/20-integration-contracts.md`.
+2. The vision component of Gemma 4 E2B uses the merged-in LoRA for damage classification — there is no runtime "adapter on/off" switch in Ollama; the choice is a model-tag swap.
 3. The drone agent's Reasoning prompt mentions the model's specific training: "Your vision model has been fine-tuned for building damage classification."
-4. Damage findings are tagged with the fine-tuned classification source for the writeup's evaluation
+4. Damage findings are tagged with the fine-tuned classification source for the writeup's evaluation.
 
 If NO-GO:
 - Skip the adapter, use base Gemma 4
@@ -265,7 +288,9 @@ If NO-GO:
 
 | Failure | Mitigation |
 |---|---|
-| Unsloth doesn't support Gemma 4 vision LoRA | Day-2 verification; abandon if confirmed |
+| Unsloth doesn't support Gemma 4 vision LoRA in installed version | Day-2 verification on the live repo; abandon if confirmed (note: as of 2026-04-29 Unsloth's docs explicitly support Gemma 4 E2B/E4B/26B-A4B/31B vision FT — but pin and re-verify on Day 2) |
+| GGUF export of merged vision model not yet stable | Day-2 verification step #5; fallback to vLLM or transformers serving instead of Ollama for the FT model (only — base Gemma 4 still on Ollama) |
+| xBD per-building patch resize loses small-damage signal | Try 336×336 or 448×448 if 224×224 hurts minor-damage F1 (Gemma 4 vision tower is flexible on input size) |
 | Training never converges | Time-box to 7 days, fall back to base |
 | Adapter is worse on Gazebo imagery than xBD | Add synthetic augmentation; prefer base for demo, fine-tuned for writeup numbers |
 | Hyperparameters wrong; need many iterations | Start conservative; document what was tried |

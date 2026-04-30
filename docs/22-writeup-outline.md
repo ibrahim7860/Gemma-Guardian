@@ -36,6 +36,7 @@ Key points:
 - Existing AI drone systems require cloud
 - The gap: AI-driven disaster response that works WITHOUT cloud
 - Specific: Los Angeles fires January 2025 as concrete example
+- **Anchor with one named operator persona** (e.g., a Red Cross volunteer in a wildfire response). Per [`02-hackathon-context.md`](02-hackathon-context.md), winning Gemma submissions name a specific person rather than only citing aggregate statistics. The "3.6B" framing belongs in the impact closer, not the opening.
 
 Sources to cite:
 - LA fires NASA imagery (https://svs.gsfc.nasa.gov/5558/, mentioned in the reference paper)
@@ -101,9 +102,11 @@ Five subsections:
 2. **Reasoning** — per-drone tactical decisions, peer broadcast evaluation, EGS swarm coordination
 3. **Function calling** — every action-driving output is structured (cite the schemas)
 4. **Multilingual** — operator commands in 140+ languages, no translation API
-5. **On-device** — Ollama local inference, validated with offline demo
+5. **On-device** — Ollama local inference (E2B onboard, E4B at EGS), validated with offline demo. Explicitly call out the **Ollama special prize** play here: every Gemma 4 instance in the system is served by a local Ollama runtime, with no cloud inference fallback anywhere in the stack.
 
 For each, give a concrete example from the system.
+
+**Offline guarantee subsection (5.6):** state the offline claim as a falsifiable property, not a marketing line. Enumerate every network call in the system and show each is either (a) ROS 2 / rosbridge on localhost, or (b) Ollama on localhost. No external hostnames. Reference the airplane-mode demo moment from [`21-demo-storyboard.md`](21-demo-storyboard.md) as evidence.
 
 ## Section 6: Validation-and-Retry Loop
 
@@ -126,7 +129,7 @@ Include a code block showing the Python validation loop pseudocode.
 Subsections:
 - 7.1: Task definition (xBD building damage classification)
 - 7.2: Why xBD (largest, most diverse, established benchmark)
-- 7.3: LoRA approach via Unsloth
+- 7.3: LoRA approach via Unsloth — explicitly frame this as the **Unsloth special prize** play, with a one-line note on why Unsloth (kernel-level speedups making LoRA on the Gemma 4 vision adapter feasible inside the hackathon window)
 - 7.4: Hyperparameters and training time
 - 7.5: Results table: base vs fine-tuned accuracy, per-class F1
 - 7.6: Sim-to-real considerations
@@ -204,6 +207,7 @@ Brief:
 - One-command setup script
 - One-command demo launcher
 - Expected output
+- Explicit note that the runtime is **Ollama** (no API keys required, no network egress) — reinforces the Ollama special-prize play and the offline guarantee at the same time
 
 Pointer to README.md for full instructions.
 

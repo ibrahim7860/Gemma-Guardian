@@ -4,7 +4,7 @@
 
 The validation-and-retry loop is the most important pattern in the entire project. It is the technical innovation we showcase, the wow moment in the demo, and the answer to the central failure mode of LLM-driven systems: hallucination.
 
-This pattern is taken directly from Nguyen et al. 2026 Algorithm 1. We implement it identically and adapt it to our function-calling schema.
+This pattern is taken directly from Nguyen, Truong, Le (2026) Algorithm 1 — *"Hallucination Mitigation via Constraint-Conditioned Re-prompting"* (arXiv 2601.14437). We implement it identically and adapt it to our function-calling schema. The four invariants of Algorithm 1 — (a) explicit hard constraints in the prompt, (b) deterministic post-hoc validation, (c) corrective re-prompt that includes the model's own failed output, (d) bounded retries with a safe fallback — all map 1:1 onto the loop below.
 
 ## The Pattern
 
@@ -20,6 +20,14 @@ This pattern is taken directly from Nguyen et al. 2026 Algorithm 1. We implement
 ```
 
 The deterministic validation is critical. We are NOT using another LLM to check the first LLM's work — that compounds the hallucination problem. We use plain Python checks against schema and constraints.
+
+Concretely, the validator stack is:
+
+1. **Shape/type validation** — `jsonschema.Draft202012Validator` (per JSON Schema 2020-12) for the function-call envelope. We instantiate once per schema, call `Draft202012Validator.check_schema(schema)` at startup, and use `iter_errors(instance)` to collect every shape error in one pass rather than failing on the first.
+2. **Semantic validation** — Pydantic v2 models for typed argument coercion. We catch `pydantic.ValidationError` and read `e.errors()` (list of `ErrorDetails` dicts with `type`, `loc`, `msg`, `input`) to produce the corrective prompt fields below.
+3. **Cross-cutting constraints** — plain Python: zone-bounds checks, duplicate detection, monotonic coverage, severity↔confidence rule, etc. These cannot be expressed in JSON Schema or Pydantic alone.
+
+The retry loop itself is hand-written (see pseudocode below). We deliberately do **not** use `tenacity` for the outer retry: tenacity retries an idempotent callable, but our retry mutates the conversation (appends the failed attempt + corrective prompt) between attempts, so a manual loop is clearer and easier to log.
 
 ## The Three Validation Layers
 
@@ -40,6 +48,18 @@ Validates that the EGS correctly parsed the operator's natural language into a k
 ## Corrective Prompts (Verbatim)
 
 These are the strings appended to the prompt context when validation fails. They follow the paper's pattern of being terse, specific, and directive.
+
+Each corrective string below is the **inner** message. At call-site it is wrapped with the standard envelope defined in [`11-prompt-templates.md`](11-prompt-templates.md):
+
+```
+Your previous response was rejected because: {failure_reason}
+
+{corrective_prompt_from_table_below}
+
+Try again. Call exactly one function.
+```
+
+The wrapper is identical for the drone agent, EGS, and operator-command paths. Only the inner string differs.
 
 ### Drone agent corrective prompts
 
@@ -76,42 +96,97 @@ These are the strings appended to the prompt context when validation fails. They
 Pseudocode for the per-drone agent (the EGS and operator command paths follow the same pattern):
 
 ```python
-async def reasoning_with_validation(perception_bundle, max_retries=3):
-    """Returns a validated function call, or continue_mission() on total failure."""
-    
+from jsonschema import Draft202012Validator
+from pydantic import ValidationError
+
+# Validate schemas once at import time, not per-call.
+for schema in DRONE_FUNCTION_SCHEMAS:
+    Draft202012Validator.check_schema(schema)
+
+DRONE_VALIDATORS = {s["name"]: Draft202012Validator(s) for s in DRONE_FUNCTION_SCHEMAS}
+
+MAX_RETRIES = 3  # bounded; do not raise without updating docs/17 gates
+
+async def reasoning_with_validation(perception_bundle, max_retries=MAX_RETRIES):
+    """Returns a validated function call, or continue_mission() on total failure.
+
+    Termination: the loop runs at most `max_retries` times. There is no
+    unbounded recursion and no exception path that re-enters the loop.
+    """
     conversation = build_initial_messages(perception_bundle)
-    
+
     for attempt in range(max_retries):
         response = await ollama_call(
             model="gemma-4-e2b",
             messages=conversation,
-            tools=DRONE_FUNCTION_SCHEMAS
+            tools=DRONE_FUNCTION_SCHEMAS,
         )
-        
-        function_call = parse_function_call(response)
-        
+
+        function_call = parse_function_call(response)  # may return ParseError sentinel
+
+        # Layered validation: shape -> typed args -> semantic constraints.
         validation_result = validate_function_call(
-            function_call, 
-            perception_bundle
+            function_call,
+            perception_bundle,
+            schema_validators=DRONE_VALIDATORS,
         )
-        
+
         if validation_result.valid:
             log_validation_success(attempt)
             return function_call
-        
+
         log_validation_failure(attempt, validation_result.failure_reason)
-        
-        # Append the corrective prompt and Gemma 4's failed attempt
+
+        # Append the model's own failed attempt and the corrective prompt
+        # (Algorithm 1: the model must see its mistake to correct it).
         conversation.append({"role": "assistant", "content": str(function_call)})
         conversation.append({
             "role": "user",
-            "content": validation_result.corrective_prompt
+            "content": validation_result.corrective_prompt,
         })
-    
-    # All retries exhausted
-    log_validation_total_failure()
-    return continue_mission_call()
+
+    # All retries exhausted — emit safe fallback and telemetry event.
+    log_validation_total_failure(
+        agent_id=perception_bundle.agent_id,
+        last_failure=validation_result.failure_reason,
+    )
+    emit_telemetry_event("validation_fallback_triggered")
+    return continue_mission_call(reason="validation_exhausted")
 ```
+
+`validate_function_call` internally:
+
+```python
+def validate_function_call(call, ctx, schema_validators):
+    # 1. Shape via jsonschema (collect all errors in one pass).
+    validator = schema_validators.get(call.name)
+    if validator is None:
+        return Invalid(reason="unknown_function", prompt=CORRECTIVE["unknown_function"])
+    shape_errors = sorted(validator.iter_errors(call.arguments), key=lambda e: list(e.path))
+    if shape_errors:
+        return Invalid(reason="schema", prompt=format_schema_errors(shape_errors))
+
+    # 2. Typed coercion via Pydantic v2.
+    try:
+        args = ARG_MODELS[call.name].model_validate(call.arguments)
+    except ValidationError as e:
+        return Invalid(reason="types", prompt=format_pydantic_errors(e.errors()))
+
+    # 3. Semantic constraints (zone bounds, duplicates, severity↔confidence, ...).
+    return check_semantic_constraints(call.name, args, ctx)
+```
+
+## Failure Fallback (Per Layer)
+
+When all `MAX_RETRIES` attempts fail, each layer has a documented safe default. The fallback is never another LLM call — it is a deterministic action chosen so that a misbehaving Gemma 4 cannot drive the system into an unsafe state.
+
+| Layer | Fallback action | Rationale |
+|---|---|---|
+| Per-drone agent | `continue_mission(reason="validation_exhausted")` | Drone keeps flying its current waypoint plan; no false report is emitted, no premature RTB. |
+| EGS coordinator (`assign_survey_points` / `replan_mission`) | Deterministic round-robin assignment of survey points to active drones, balanced ±1 | Guarantees every point is assigned exactly once even if Gemma 4 cannot. Logged as `egs_fallback_used`. |
+| Operator command translation | Return `unknown_command(operator_text, suggestion="Could not parse — please restate.")` rendered in `detected_lang` | Operator gets a clarifying request instead of a wrong action. |
+
+Every fallback emits a `validation_fallback_triggered` telemetry event with `layer`, `agent_id`, `attempts`, and `last_failure_reason`. The frontend surfaces these in the demo UI (see `docs/07-operator-interface.md`).
 
 ## Logging Validation Events
 

@@ -71,8 +71,8 @@ Read docs in this order when getting up to speed:
 ## Tech Stack Summary
 
 - **OS:** Ubuntu 22.04 — native install OR WSL2 on Windows 11 with WSLg. (VirtualBox/Parallels-class VMs still NOT acceptable.) Apple Silicon Macs are supported for non-sim roles only.
-- **Simulation:** Gazebo Harmonic + PX4 SITL + ROS 2 Humble
-- **LLM runtime:** Ollama, two instances (E2B onboard, E4B at EGS) — runs on Linux/WSL2 (CUDA) or macOS (Metal)
+- **Simulation:** Gazebo Harmonic + PX4 SITL + ROS 2 Humble. Note: this is a non-default Gazebo/ROS 2 pairing — Humble officially ships with Gazebo Fortress, and Harmonic is the official pairing for Jazzy. Harmonic-on-Humble is supported via the `packages.osrfoundation.org` `ros-gz` binaries, which conflict with the stock `ros-humble-ros-gz*` packages. Install path is documented in [`docs/13-gazebo-setup.md`](docs/13-gazebo-setup.md); do not mix the two repos.
+- **LLM runtime:** Ollama, two instances (Gemma 4 E2B onboard, Gemma 4 E4B at EGS) — runs on Linux/WSL2 (CUDA) or macOS (Metal). The exact Ollama tag for each Gemma 4 variant must be pinned in [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) once confirmed against `ollama.com/library` at integration time; do not hard-code a tag elsewhere.
 - **Orchestration:** LangGraph (per-drone agent + EGS coordinator)
 - **Fine-tuning:** Unsloth on xBD dataset (LoRA on vision adapter) — runs on WSL2+NVIDIA OR rented cloud GPU (Lambda Labs / Paperspace / Runpod)
 - **Frontend:** Flutter web dashboard via rosbridge_suite WebSocket — runs on macOS, Windows, or Linux

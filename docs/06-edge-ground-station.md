@@ -181,8 +181,9 @@ This state is published in full to the WebSocket bridge every 1 second. Flutter 
 ## Implementation Notes
 
 - The EGS is a single Python process using FastAPI + asyncio + LangGraph
+- LangGraph layout: a coordinator graph with task nodes (assignment, command translation, replanning) plus deterministic nodes (point generation, finding dedup, telemetry monitor). The `langgraph-supervisor` `create_supervisor` primitive is the right fit if we split into specialized sub-agents; otherwise a single `StateGraph` with conditional edges is simpler and sufficient for the demo.
 - ROS 2 connection via `rclpy`
-- Ollama call to Gemma 4 E4B via HTTP
+- Ollama call to Gemma 4 E4B via the local HTTP API (`POST http://localhost:11434/api/chat`). Pass `format: <JSON Schema>` to force structured output for the function-calling schema in [`09-function-calling-schema.md`](09-function-calling-schema.md), or use `tools` for native tool-calling — pick one and stay consistent across calls. `stream: false` for assignment-style calls so we can validate the full response before retrying.
 - WebSocket via FastAPI's built-in support OR rosbridge_suite (we use rosbridge for ROS-native compatibility)
 - All validation code is unit-tested separately from LLM calls
 

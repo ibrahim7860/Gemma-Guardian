@@ -2,7 +2,9 @@
 
 ## Why This Doc Exists
 
-Day 16 (May 18, lock day) and Day 18 (Submission day, May 18) require everything to be ready. This doc is the literal checklist. Print it, check items off, post in the team channel.
+Per [`19-day-by-day-plan.md`](19-day-by-day-plan.md), Day 15 (Sat May 16, polish + final video edit) and Day 16 (Sun May 18, GATE 5 + SUBMIT by 23:59 UTC) require everything to be ready. This doc is the literal checklist. Print it, check items off, post in the team channel.
+
+Note: the recalibrated schedule in `19-day-by-day-plan.md` collapses lock day and submission day into the same Day 16 (May 18). There is no separate "Day 17" or "Day 18" in the real schedule — those existed only in the earlier draft. The "Last 24 Hours" section below maps onto Day 15 (May 17) → Day 16 (May 18).
 
 ## Submission Deadline
 
@@ -38,7 +40,9 @@ The GitHub repo at submission time:
 - [ ] `shared/prompts/` — all prompt templates
 - [ ] `frontend/flutter_dashboard/` — Flutter web app
 - [ ] `ml/` — fine-tuning code (if applicable)
+- [ ] LoRA adapter artifact published if Gate 3 passed — either committed under `ml/adapters/` (if size allows) or hosted on Hugging Face / Kaggle Models with a link in `ml/README.md` and `WRITEUP.md`. Required for the Unsloth special-prize claim.
 - [ ] `scripts/` — launch and demo scripts
+- [ ] Ollama deployment artifact — `Modelfile`(s) for E2B and E4B (and the fine-tuned adapter if Gate 3 passed) plus a `scripts/pull_models.sh` or equivalent. Required for the Ollama special-prize claim.
 - [ ] `docs/` — all detailed documentation
 
 ### Code quality
@@ -185,10 +189,11 @@ Required fields (verify on Kaggle):
   - [ ] Ollama (deployment via Ollama)
 - [ ] Team member names
 - [ ] Acknowledgement of competition rules
+- [ ] Verify against the live Kaggle competition page whether a **Kaggle Writeup / notebook** is required as the submission entry (Kaggle hackathons usually require this). If yes: publish a Kaggle Writeup mirroring `WRITEUP.md` and link the GitHub repo + video from inside it.
 
 ## Last 24 Hours: What Happens
 
-### Day 17 (May 17, Saturday): Lock Day -1
+### Day 15 (May 17, Sunday): Lock Day -1
 
 - Final video editing
 - Final writeup pass
@@ -196,7 +201,7 @@ Required fields (verify on Kaggle):
 - Test demo on a different machine if available
 - Fix anything broken; no new features
 
-### Day 18 (May 18, Sunday): Submission Day
+### Day 16 (May 18, Monday): Submission Day
 
 **Morning (9 AM CDT):**
 - Final reproducibility check

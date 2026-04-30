@@ -8,13 +8,13 @@ Five people working in parallel only succeeds if each owns a vertical slice with
 
 | Person | Role | Primary Owns | Secondary Owns |
 |---|---|---|---|
-| Person 1 | Lead / Simulation | Gazebo, PX4, ROS 2, multi-drone, integration glue | Project management, gate decisions |
+| Person 1 | Simulation Lead | Gazebo, PX4, ROS 2, multi-drone, integration glue | Gate trajectory call at standup, integration testing leadership |
 | Person 2 | Per-Drone Agent + ML | Drone LangGraph agent, function calling, validation loop, **xBD fine-tuning, vision prompts, adapter integration** | Prompt iteration across the full drone-side stack |
 | Person 3 | EGS / Coordination | EGS LangGraph, swarm allocation, multilingual command path | Scripting resilience scenarios |
-| Person 4 | Frontend + Demo + Comms | Flutter dashboard, ROS 2 bridge, demo capture, **video editing, technical writeup, README** | Map view, multilingual UI, demo storyline |
+| Person 4 | Project Lead + Frontend + Demo + Comms (**Ibrahim**) | Flutter dashboard, ROS 2 bridge, demo capture, **video editing, technical writeup, README**, **overall project management** | Map view, multilingual UI, demo storyline, scope-cut arbitration |
 | Person 5 | Simulation Co-Pilot (paired with Person 1) | Disaster scene visuals, ground-truth manifest, multi-drone spawn assist, ROS 2 launch plumbing — every sim/infra task that can be parallelized | All integration-testing prep work for Person 1 |
 
-## Person 1: Lead / Simulation
+## Person 1: Simulation Lead
 
 **Owns end-to-end:**
 - Gazebo Harmonic + PX4 SITL + ROS 2 Humble installation and stability
@@ -157,7 +157,7 @@ Format per person:
 - What I'm shipping today
 - What's blocking me / what I need from someone
 
-Standup ends with the leader (Person 1) confirming gate trajectory: "We're on track for Gate N at Day X."
+Standup ends with Person 1 (Simulation Lead) reporting gate trajectory ("We're on track for Gate N at Day X") and Person 4 (Project Lead, Ibrahim) confirming or calling for descope.
 
 ### Twice-Weekly Integration Sessions (90 minutes)
 
@@ -197,7 +197,8 @@ This catches integration issues early and builds the team's demo muscle memory.
 | Changes to shared schemas | Team consensus, requires PR review |
 | Scope cuts | Team vote at gate evaluations |
 | Demo storyline | Person 4 proposes, team approves |
-| Submission timing | Person 1 calls it (Day 18 by default) |
+| Scope cuts (final call after team vote) | Person 4 (Project Lead, Ibrahim) |
+| Submission timing | Person 4 (Project Lead, Ibrahim) calls it (Day 18 by default), with Person 1 confirming sim-stack readiness |
 
 ## What If Someone Falls Behind
 
