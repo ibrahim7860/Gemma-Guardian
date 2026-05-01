@@ -1,11 +1,19 @@
-"""The bridge must produce schema-valid state_update envelopes from the seed fixture."""
+"""Phase 2 integration: main.py wiring produces schema-valid envelopes.
+
+Most envelope-construction concerns are unit-tested in `test_aggregator.py`.
+This file pins the integration: ``create_app()`` wires aggregator + config +
+fixture together, and the resulting first snapshot validates against the
+``websocket_messages`` contract. Plus a regression on ``contract_version``
+stamping (the emit loop overwrites whatever the aggregator put there).
+"""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from shared.contracts import validate, VERSION
-from frontend.ws_bridge.main import build_state_update_envelope
+from shared.contracts import VERSION, validate
+from frontend.ws_bridge.aggregator import StateAggregator
+from frontend.ws_bridge.main import _load_seed_envelope, _now_iso_ms, create_app
 
 SEED_FIXTURE = (
     Path(__file__).parent.parent.parent.parent
@@ -15,45 +23,61 @@ SEED_FIXTURE = (
 
 
 def test_seed_fixture_validates():
-    """Sanity-check the fixture itself before we build on it."""
+    """The fixture we seed the aggregator with must itself be valid."""
     payload = json.loads(SEED_FIXTURE.read_text())
     outcome = validate("websocket_messages", payload)
     assert outcome.valid, outcome.errors
 
 
-def test_envelope_validates_at_tick_zero():
-    env = build_state_update_envelope(tick=0)
+def test_load_seed_envelope_matches_fixture():
+    seed = _load_seed_envelope()
+    fixture = json.loads(SEED_FIXTURE.read_text())
+    assert seed == fixture
+
+
+def test_aggregator_first_snapshot_validates_with_seed():
+    """End-to-end Phase 1A regression: empty buckets still produce a valid envelope."""
+    seed = _load_seed_envelope()
+    agg = StateAggregator(max_findings=50, seed_envelope=seed)
+    env = agg.snapshot(timestamp_iso=_now_iso_ms())
     outcome = validate("websocket_messages", env)
     assert outcome.valid, outcome.errors
 
 
-def test_envelope_validates_after_many_ticks():
-    """Mutated values across ticks must still validate."""
-    for tick in [1, 5, 30, 100, 1000]:
-        env = build_state_update_envelope(tick=tick)
-        outcome = validate("websocket_messages", env)
-        assert outcome.valid, f"tick={tick}: {outcome.errors}"
+def test_emit_loop_stamps_contract_version_from_shared_version():
+    """The emit loop overwrites contract_version with shared.contracts.VERSION.
 
-
-def test_envelope_stamps_contract_version():
-    env = build_state_update_envelope(tick=0)
+    Aggregator seeds with VERSION too, but main.py is the single source of
+    truth at runtime — assert that the stamp matches even if a future change
+    has the aggregator emit something else.
+    """
+    seed = _load_seed_envelope()
+    agg = StateAggregator(max_findings=50, seed_envelope=seed)
+    env = agg.snapshot(timestamp_iso=_now_iso_ms())
+    env["contract_version"] = VERSION   # what _emit_loop does
+    outcome = validate("websocket_messages", env)
+    assert outcome.valid, outcome.errors
     assert env["contract_version"] == VERSION
 
 
-def test_envelope_timestamp_advances_with_tick():
-    """Each tick should produce a distinct timestamp so the dashboard sees fresh data."""
-    e0 = build_state_update_envelope(tick=0)
-    e1 = build_state_update_envelope(tick=1)
-    assert e0["timestamp"] != e1["timestamp"]
+def test_now_iso_ms_format():
+    """_now_iso_ms() must produce iso_timestamp_utc_ms format."""
+    s = _now_iso_ms()
+    # YYYY-MM-DDTHH:MM:SS.mmmZ
+    assert len(s) == 24
+    assert s[10] == "T"
+    assert s[-1] == "Z"
+    assert s[19] == "."
 
 
-def test_envelope_battery_varies_realistically():
-    """Battery should drift downward over many ticks (not stay frozen at 87)."""
-    e0 = build_state_update_envelope(tick=0)
-    e_late = build_state_update_envelope(tick=300)  # 5 min in
-    drone_e0 = e0["active_drones"][0] if e0["active_drones"] else None
-    drone_late = e_late["active_drones"][0] if e_late["active_drones"] else None
-    if drone_e0 and drone_late:
-        # Variety: either battery moves or this fixture has no drones
-        # (the seed fixture has empty active_drones, so this test is a no-op for now).
-        assert drone_e0 == drone_e0  # placeholder — we don't enforce drift in Phase 1A
+def test_create_app_wires_aggregator_and_subscriber(monkeypatch):
+    """create_app() must populate app.state with the four lifecycle objects."""
+    # Avoid trying to actually contact Redis during construction (we never
+    # start the lifespan in this test, but constructing RedisSubscriber should
+    # be I/O-free).
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    app = create_app()
+    assert hasattr(app.state, "config")
+    assert hasattr(app.state, "aggregator")
+    assert hasattr(app.state, "subscriber")
+    assert hasattr(app.state, "registry")

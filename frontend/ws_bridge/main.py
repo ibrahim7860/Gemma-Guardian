@@ -1,64 +1,73 @@
-"""FastAPI WebSocket bridge — Phase 1A skeleton (no Redis yet).
+"""FastAPI WebSocket bridge — Phase 2.
 
-Pushes a state_update envelope to all connected clients every 1 second.
-Every envelope is schema-valid against shared/schemas/websocket_messages.json
-and stamped with the contract_version from shared/VERSION.
+Wires together:
 
-Wire into Redis in Phase 2; for now, this lets Person 4 build the Flutter
-dashboard against a moving target without waiting for Person 3's EGS to ship.
+  * ``BridgeConfig``       — env-driven tunables.
+  * ``StateAggregator``    — three-bucket in-memory state (egs / drones / findings).
+  * ``RedisSubscriber``    — psubscribes to egs.state, drones.*.state,
+                              drones.*.findings; validates and dispatches into
+                              the aggregator.
+  * ``_emit_loop``         — reads ``aggregator.snapshot()`` at ``BRIDGE_TICK_S``
+                              and broadcasts to all WS clients.
+  * ``_ConnectionRegistry``— per-client send with timeout, parallel via
+                              ``asyncio.gather`` (eng-review fix 1A).
+
+Inbound operator commands are validated against the
+``websocket_messages.operator_command`` branch and echoed back. Real Redis
+republish is Phase 3.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from shared.contracts import VERSION, validate
+from shared.contracts.logging import ValidationEventLogger, setup_logging
 
-# ---- envelope construction --------------------------------------------------
+from frontend.ws_bridge.aggregator import StateAggregator
+from frontend.ws_bridge.config import BridgeConfig
+from frontend.ws_bridge.redis_subscriber import RedisSubscriber
+
+# ---- helpers ---------------------------------------------------------------
 
 _FIXTURE_PATH = (
     Path(__file__).parent.parent.parent
     / "shared" / "schemas" / "fixtures" / "valid"
     / "websocket_messages" / "01_state_update.json"
 )
-_SEED: Dict[str, Any] = json.loads(_FIXTURE_PATH.read_text())
-_EPOCH = datetime(2026, 5, 1, 0, 0, 0, tzinfo=timezone.utc)
 
 
-def _iso_ms(dt: datetime) -> str:
+def _load_seed_envelope() -> Dict[str, Any]:
+    return json.loads(_FIXTURE_PATH.read_text())
+
+
+def _now_iso_ms() -> str:
+    """Return current UTC time formatted as iso_timestamp_utc_ms (per _common)."""
+    dt = datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 
-def build_state_update_envelope(*, tick: int) -> Dict[str, Any]:
-    """Return a schema-valid state_update envelope. Mutates timestamp per tick.
+# ---- connection registry ---------------------------------------------------
 
-    Phase 1A keeps the embedded egs_state / active_findings / active_drones
-    payloads stable from the seed fixture — those will be real once Phase 2
-    wires Redis. The job here is to produce a moving-but-valid envelope so the
-    dashboard sees per-second activity.
-    """
-    now = _EPOCH + timedelta(seconds=tick)
-    iso = _iso_ms(now)
-    env: Dict[str, Any] = json.loads(json.dumps(_SEED))  # deep copy
-    env["timestamp"] = iso
-    env["contract_version"] = VERSION
-    if "egs_state" in env and "timestamp" in env["egs_state"]:
-        env["egs_state"]["timestamp"] = iso
-    return env
-
-
-# ---- connection registry ----------------------------------------------------
 
 class _ConnectionRegistry:
-    def __init__(self) -> None:
+    """Thread-safe (asyncio-safe) WS client registry with parallel broadcast.
+
+    Each client receives the broadcast in its own ``asyncio`` task wrapped in
+    ``asyncio.wait_for`` with ``broadcast_timeout_s``. A slow or dead client is
+    dropped without blocking the other clients (eng-review finding 1A).
+    """
+
+    def __init__(self, *, broadcast_timeout_s: float) -> None:
         self._clients: Set[WebSocket] = set()
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._send_timeout_s: float = broadcast_timeout_s
 
     async def add(self, ws: WebSocket) -> None:
         async with self._lock:
@@ -69,60 +78,102 @@ class _ConnectionRegistry:
             self._clients.discard(ws)
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
-        # Snapshot under lock to avoid mutation during iteration.
         async with self._lock:
-            targets = list(self._clients)
+            targets: List[WebSocket] = list(self._clients)
+        if not targets:
+            return
         encoded = json.dumps(message)
-        dead: List[WebSocket] = []
-        for ws in targets:
+
+        async def _send(ws: WebSocket) -> Optional[WebSocket]:
             try:
-                await ws.send_text(encoded)
+                await asyncio.wait_for(ws.send_text(encoded), timeout=self._send_timeout_s)
+                return None
             except Exception:
-                dead.append(ws)
+                return ws
+
+        results = await asyncio.gather(*[_send(ws) for ws in targets], return_exceptions=False)
+        dead = [ws for ws in results if ws is not None]
         if dead:
             async with self._lock:
                 for ws in dead:
                     self._clients.discard(ws)
 
 
-# ---- broadcast loop ---------------------------------------------------------
+# ---- emit loop -------------------------------------------------------------
 
-async def _ticker(registry: _ConnectionRegistry, *, interval_s: float = 1.0) -> None:
-    tick = 0
+
+async def _emit_loop(
+    *,
+    registry: _ConnectionRegistry,
+    aggregator: StateAggregator,
+    tick_s: float,
+) -> None:
+    """Read aggregator snapshot at ``tick_s`` Hz and broadcast.
+
+    Stamps ``contract_version`` from ``shared.contracts.VERSION`` on the way
+    out (single source of truth at runtime). Validates the envelope against
+    ``websocket_messages`` before broadcast; never publishes invalid output.
+    A self-validation failure is a bridge bug, not upstream noise — log to
+    stderr and skip the tick.
+    """
     while True:
-        env = build_state_update_envelope(tick=tick)
-        # Defensive: never publish an invalid envelope.
+        env = aggregator.snapshot(timestamp_iso=_now_iso_ms())
+        env["contract_version"] = VERSION
         outcome = validate("websocket_messages", env)
         if outcome.valid:
             await registry.broadcast(env)
         else:
-            # Self-test failure: log and skip rather than push junk to clients.
-            print(
-                f"[ws_bridge] WARN: envelope failed validation at tick {tick}: {outcome.errors}"
-            )
-        tick += 1
-        await asyncio.sleep(interval_s)
+            print(f"[ws_bridge] BUG: aggregator emitted invalid envelope: {outcome.errors}")
+        await asyncio.sleep(tick_s)
 
 
-# ---- app --------------------------------------------------------------------
+# ---- app -------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
-    registry: _ConnectionRegistry = app.state.registry  # type: ignore[attr-defined]
-    task = asyncio.create_task(_ticker(registry))
+    config: BridgeConfig = app.state.config
+    registry: _ConnectionRegistry = app.state.registry
+    aggregator: StateAggregator = app.state.aggregator
+    subscriber: RedisSubscriber = app.state.subscriber
+
+    emit_task = asyncio.create_task(
+        _emit_loop(registry=registry, aggregator=aggregator, tick_s=config.tick_s)
+    )
+    subscribe_task = asyncio.create_task(subscriber.run())
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        emit_task.cancel()
+        await subscriber.stop()
+        for task in (emit_task, subscribe_task):
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="FieldAgent WS Bridge (Phase 1A)", lifespan=lifespan)
-    app.state.registry = _ConnectionRegistry()
+    setup_logging("ws_bridge")
+    config = BridgeConfig.from_env()
+    seed_envelope = _load_seed_envelope()
+    aggregator = StateAggregator(
+        max_findings=config.max_findings,
+        seed_envelope=seed_envelope,
+    )
+    validation_logger = ValidationEventLogger()
+    subscriber = RedisSubscriber(
+        config=config,
+        aggregator=aggregator,
+        validation_logger=validation_logger,
+    )
+    registry = _ConnectionRegistry(broadcast_timeout_s=config.broadcast_timeout_s)
+
+    app = FastAPI(title="FieldAgent WS Bridge (Phase 2)", lifespan=lifespan)
+    app.state.config = config
+    app.state.aggregator = aggregator
+    app.state.subscriber = subscriber
+    app.state.registry = registry
 
     @app.get("/health")
     async def health() -> Dict[str, str]:
@@ -131,19 +182,60 @@ def create_app() -> FastAPI:
     @app.websocket("/")
     async def ws_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()
-        registry: _ConnectionRegistry = app.state.registry
         await registry.add(websocket)
         try:
             # Send an immediate envelope on connect so the dashboard renders
-            # without waiting up to 1 second.
-            await websocket.send_text(json.dumps(build_state_update_envelope(tick=0)))
+            # without waiting up to one tick.
+            initial = aggregator.snapshot(timestamp_iso=_now_iso_ms())
+            initial["contract_version"] = VERSION
+            await websocket.send_text(json.dumps(initial))
             while True:
-                # We accept inbound messages (operator commands etc.) but Phase 1A
-                # just echoes them back to confirm the round-trip is wired.
                 msg = await websocket.receive_text()
-                await websocket.send_text(
-                    json.dumps({"type": "echo", "received": msg, "contract_version": VERSION})
-                )
+                # Validate inbound; only operator_command frames are accepted
+                # for now (Phase 3 will republish to Redis). Other types echo
+                # back with a hint.
+                try:
+                    parsed = json.loads(msg)
+                except json.JSONDecodeError:
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "echo",
+                            "error": "invalid_json",
+                            "received": msg,
+                            "contract_version": VERSION,
+                        })
+                    )
+                    continue
+                if isinstance(parsed, dict) and parsed.get("type") == "operator_command":
+                    outcome = validate("websocket_messages", parsed)
+                    if outcome.valid:
+                        # Phase 3 will republish onto Redis. For now, just
+                        # acknowledge.
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "echo",
+                                "ack": "operator_command_received",
+                                "command_id": parsed.get("command_id"),
+                                "contract_version": VERSION,
+                            })
+                        )
+                    else:
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "echo",
+                                "error": "invalid_operator_command",
+                                "detail": [e.message for e in outcome.errors],
+                                "contract_version": VERSION,
+                            })
+                        )
+                else:
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "echo",
+                            "received": parsed,
+                            "contract_version": VERSION,
+                        })
+                    )
         except WebSocketDisconnect:
             pass
         finally:
