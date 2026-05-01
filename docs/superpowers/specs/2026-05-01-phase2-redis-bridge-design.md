@@ -166,10 +166,10 @@ Standalone CLI publisher. Connects to `REDIS_URL`, publishes scripted contract-v
 
 Default behavior:
 - Publishes `egs.state` every 2s with a stable `mission_id="dev_mission"` and incrementing `timestamp`.
-- Publishes `drones.dev_drone1.state` every 1s with battery decreasing slowly.
-- Every 8s, publishes a `drones.dev_drone1.findings` event with rotating `finding_type` and `finding_id="f_dev_drone1_<counter>"`.
+- Publishes `drones.drone99.state` every 1s with battery decreasing slowly.
+- Every 8s, publishes a `drones.drone99.findings` event with rotating `finding_type` and `finding_id="f_drone99_<counter>"`.
 
-Why `dev_drone1` (not `drone1`): when Person 1's sim ships and starts publishing on `drones.drone1.state`, the dev fake-producer must not collide. Distinct prefix gives zero ambiguity. The `--drone-id` CLI flag overrides for tests that need to pin a specific id.
+Why `drone99` (not `drone1`): when Person 1's sim ships and starts publishing on `drones.drone1.state` / `drones.drone2.state` / `drones.drone3.state`, the dev fake-producer must not collide. **Original spec said `dev_drone1` but the locked Contract 9 `drone_id` regex `^drone\d+$` rejects underscores**, so we use a high-numbered id outside the real-sim range instead. The `--drone-id` CLI flag overrides for tests that need to pin a specific id.
 
 CLI:
 ```
