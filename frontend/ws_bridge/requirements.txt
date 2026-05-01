@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12.0
+# Shared contracts (pulled in transitively, but pin floors here for clarity)
+jsonschema>=4.18
+referencing>=0.30
+pydantic>=2.5
+PyYAML>=6.0
+pytest>=8.0
+httpx>=0.27   # for ASGI test client
