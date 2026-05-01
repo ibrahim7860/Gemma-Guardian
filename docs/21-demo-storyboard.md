@@ -44,7 +44,7 @@ Hard cap. Judges have hundreds of submissions. Going over loses attention.
 
 ### Sub-beat 3a: Mission Start (0:25 - 0:35)
 
-**Visual:** Wide shot of Gazebo simulation. Disaster zone with damaged buildings, debris, victims. 2-3 drones launching from ground station.
+**Visual:** Wide shot of the software-only Python simulation. Disaster zone with damaged buildings, debris, victims. 2-3 drones launching from ground station.
 
 **Caption:** *"3 simulated drones, each running Gemma 4 E2B. Edge ground station running Gemma 4 E4B. No internet."*
 
@@ -52,7 +52,7 @@ Hard cap. Judges have hundreds of submissions. Going over loses attention.
 
 **Split-screen layout:**
 
-Left side: Drone-eye camera view in Gazebo. Drone flies over a damaged building. Spots a victim marker.
+Left side: Drone-eye camera view in the software sim. Drone flies over a damaged building. Spots a victim marker.
 
 Right side: Live overlay showing:
 - Gemma 4's reasoning trace
@@ -132,7 +132,7 @@ This is less impressive but more reliable to capture.
 1. **Run the full demo scenario at least 50 times.** This is non-negotiable. Out of 50 runs, find the 2-3 cleanest.
 
 2. **Multi-camera capture:**
-   - Screen recording of Gazebo (full screen)
+   - Screen recording of the software sim (full screen)
    - Screen recording of dashboard (full screen)
    - Screen recording of terminal showing logs
    - Audio of any narration
@@ -143,7 +143,7 @@ This is less impressive but more reliable to capture.
 
 ### Visual Style
 
-- **Color palette:** dark backgrounds (terminal, Gazebo) with bright accent colors for the dashboard (greens for success, red for failures)
+- **Color palette:** dark backgrounds (terminal, sim view) with bright accent colors for the dashboard (greens for success, red for failures)
 - **Typography:** sans-serif throughout, bold for emphasis
 - **Transitions:** quick cuts (no fades). Hackathon judges have short attention spans.
 - **Music:** subtle, urgent, no lyrics. Royalty-free from YouTube Audio Library or similar.
@@ -163,7 +163,7 @@ If no narration, captions carry the information. Captions are mandatory either w
 
 Every video must contain:
 
-- [ ] Real Gazebo footage (not just slideshow)
+- [ ] Real software sim footage (not just slideshow)
 - [ ] Dashboard rendering live state
 - [ ] Gemma 4's structured output visible on screen at least once
 - [ ] Validation correction event visible
@@ -174,7 +174,7 @@ Every video must contain:
 
 ### "Simulation" Disclosure
 
-We do not hide that this is simulation. A subtle caption in the bottom corner during Gazebo footage: *"Gazebo simulation"*. Hackathon judges respect this transparency.
+We do not hide that this is simulation. A subtle caption in the bottom corner during sim footage: *"Software simulation"*. Hackathon judges respect this transparency.
 
 Frame the simulation positively: *"This code runs unchanged on real Jetson Orin hardware. We simulate to safely demonstrate disaster scenarios at scale."*
 

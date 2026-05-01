@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_commands.json",
+  "title": "Operator Commands (v1, locked 2026-04-30)",
+  "description": "Layer-3 schemas: EGS-side translation of operator natural-language input. unknown_command is the safe fallback that never executes.",
+  "oneOf": [
+    {"$ref": "#/$defs/restrict_zone"},
+    {"$ref": "#/$defs/exclude_zone"},
+    {"$ref": "#/$defs/recall_drone"},
+    {"$ref": "#/$defs/set_priority"},
+    {"$ref": "#/$defs/set_language"},
+    {"$ref": "#/$defs/unknown_command"}
+  ],
+  "$defs": {
+    "restrict_zone": {
+      "type": "object", "required": ["command", "args"], "additionalProperties": false,
+      "properties": {
+        "command": {"const": "restrict_zone"},
+        "args": {
+          "type": "object", "required": ["zone_id"], "additionalProperties": false,
+          "properties": {"zone_id": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "exclude_zone": {
+      "type": "object", "required": ["command", "args"], "additionalProperties": false,
+      "properties": {
+        "command": {"const": "exclude_zone"},
+        "args": {
+          "type": "object", "required": ["zone_id"], "additionalProperties": false,
+          "properties": {"zone_id": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "recall_drone": {
+      "type": "object", "required": ["command", "args"], "additionalProperties": false,
+      "properties": {
+        "command": {"const": "recall_drone"},
+        "args": {
+          "type": "object", "required": ["drone_id", "reason"], "additionalProperties": false,
+          "properties": {
+            "drone_id": {"$ref": "_common.json#/$defs/drone_id"},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "set_priority": {
+      "type": "object", "required": ["command", "args"], "additionalProperties": false,
+      "properties": {
+        "command": {"const": "set_priority"},
+        "args": {
+          "type": "object", "required": ["finding_type", "priority_level"], "additionalProperties": false,
+          "properties": {
+            "finding_type": {"$ref": "_common.json#/$defs/finding_type"},
+            "priority_level": {"$ref": "_common.json#/$defs/priority_level"}
+          }
+        }
+      }
+    },
+    "set_language": {
+      "type": "object", "required": ["command", "args"], "additionalProperties": false,
+      "properties": {
+        "command": {"const": "set_language"},
+        "args": {
+          "type": "object", "required": ["lang_code"], "additionalProperties": false,
+          "properties": {"lang_code": {"$ref": "_common.json#/$defs/iso_lang_code"}}
+        }
+      }
+    },
+    "unknown_command": {
+      "type": "object", "required": ["command", "args"], "additionalProperties": false,
+      "properties": {
+        "command": {"const": "unknown_command"},
+        "args": {
+          "type": "object", "required": ["operator_text", "suggestion"], "additionalProperties": false,
+          "properties": {
+            "operator_text": {"type": "string", "minLength": 1},
+            "suggestion": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

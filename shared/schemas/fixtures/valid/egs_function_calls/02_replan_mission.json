@@ -1,0 +1,9 @@
+{
+  "function": "replan_mission",
+  "arguments": {
+    "trigger": "drone_failure",
+    "new_zone_polygon": [[34.1230, -118.5680], [34.1240, -118.5680], [34.1240, -118.5670], [34.1230, -118.5670]],
+    "excluded_drones": ["drone3"],
+    "excluded_survey_points": ["sp_023"]
+  }
+}

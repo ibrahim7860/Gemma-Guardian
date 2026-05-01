@@ -1,0 +1,8 @@
+{
+  "function": "request_assist",
+  "arguments": {
+    "reason": "Cluster of victims, need second drone.",
+    "urgency": "high",
+    "related_finding_id": "f_drone1_047"
+  }
+}

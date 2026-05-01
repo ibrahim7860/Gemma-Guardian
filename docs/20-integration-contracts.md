@@ -15,9 +15,13 @@ If a contract change is required mid-project, treat it as a serious event:
 1. Function-calling schemas (per-drone, EGS, operator)
 2. Per-drone state schema
 3. EGS state schema
-4. ROS 2 topic names and message types
+4. Redis pub/sub channel names
 5. WebSocket message schemas
 6. File system layout
+
+## Transport (locked April 30, 2026)
+
+The system uses **Redis pub/sub** as the inter-process messaging bus, not ROS 2. A single local `redis-server` (`brew install redis` / `apt install redis-server`) hosts every channel. All five team members run the same `redis-server` on `localhost:6379` and connect via `redis-py`. There is no Gazebo, no PX4 SITL, and no ROS 2 install. See [`13-runtime-setup.md`](13-runtime-setup.md).
 
 ## Contract 1: Function-Calling Schemas
 
@@ -36,9 +40,9 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 ## Contract 2: Per-Drone State Schema
 
-**Topic:** `/drones/<id>/state`
+**Channel:** `drones.<id>.state`
 **Frequency:** 2 Hz
-**Owner:** Person 1 publishes (from PX4 telemetry); Person 2 augments with agent state.
+**Owner:** Person 1's `sim/waypoint_runner.py` publishes the kinematic fields (position, velocity, heading, battery decay) from the scripted scenario; Person 2's drone agent overwrites the agent-state fields (`current_task`, `last_action`, `validation_failures_total`, `findings_count`, `agent_status`) on the same channel as a merged record.
 
 ```json
 {
@@ -56,7 +60,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
   },
   "battery_pct": 87,
   "heading_deg": 135,
-  "current_task": "survey_zone_a",
+  "current_task": "survey",
   "current_waypoint_id": "sp_005",
   "assigned_survey_points_remaining": 12,
   "last_action": "report_finding",
@@ -72,9 +76,9 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 ## Contract 3: EGS State Schema
 
-**Topic:** `/egs/state`
+**Channel:** `egs.state`
 **Frequency:** 1 Hz
-**Owner:** Person 3 publishes; Person 4 consumes.
+**Owner:** Person 3 publishes; Person 4 consumes (via the FastAPI WebSocket bridge mirroring this channel out to Flutter).
 
 ```json
 {
@@ -114,7 +118,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
       "agent": "drone1",
       "task": "report_finding",
       "outcome": "corrected_after_retry",
-      "issue": "duplicate_finding"
+      "issue": "DUPLICATE_FINDING"
     }
   ],
   "active_zone_ids": ["zone_a", "zone_b"]
@@ -123,7 +127,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 ## Contract 4: Findings Schema
 
-**Topic:** `/drones/<id>/findings` (drone publishes), `/egs/findings` (EGS aggregates)
+**Channel:** `drones.<id>.findings` (drone publishes). EGS aggregates findings into the `egs.state` envelope's `findings_count_by_type` and surfaces individual findings to Flutter via the `state_update` WebSocket message; there is no separate `egs.findings` channel in v1.
 
 ```json
 {
@@ -148,7 +152,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 ## Contract 5: Task Assignment Schema
 
-**Topic:** `/drones/<id>/tasks`
+**Channel:** `drones.<id>.tasks`
 **Owner:** Person 3 (EGS) publishes; Person 2 (drone agent) consumes.
 
 ```json
@@ -170,7 +174,7 @@ Task types: `survey`, `investigate_finding`, `return_to_base`, `hold_position`.
 
 ## Contract 6: Peer Broadcast Schema
 
-**Topic:** `/swarm/broadcasts/<sender_id>`
+**Channel:** `swarm.broadcasts.<sender_id>`
 
 ```json
 {
@@ -192,7 +196,7 @@ Task types: `survey`, `investigate_finding`, `return_to_base`, `hold_position`.
 
 Broadcast types: `finding`, `assist_request`, `task_complete`, `entering_standalone_mode`, `rejoining_swarm`.
 
-The `mesh_simulator` filters these based on range; receiving drones subscribe to `/swarm/<their_id>/visible_to_<their_id>` after filtering.
+The `mesh_simulator` process subscribes to `swarm.broadcasts.*` (Redis pattern subscribe), filters each message by Euclidean distance against the live `drones.*.state` snapshot, and republishes accepted messages on `swarm.<receiver_id>.visible_to.<receiver_id>`. Receiving drones subscribe to their own visible-to channel.
 
 ## Contract 7: Operator Command Schemas
 
@@ -237,7 +241,7 @@ The `mesh_simulator` filters these based on range; receiving drones subscribe to
 ## Contract 8: WebSocket Endpoint
 
 **Endpoint:** `ws://localhost:9090`
-**Owner:** Person 4 connects; Person 3 hosts via rosbridge_suite.
+**Owner:** Person 4 connects; Person 3 hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
 
 Messages from EGS to Flutter (every 1 second):
 
@@ -257,43 +261,48 @@ Messages from Flutter to EGS (event-driven):
 - `operator_command_dispatch` (see Contract 7)
 - `finding_approval` ({type, command_id, finding_id, action: "approve" | "dismiss"})
 
-## Contract 9: ROS 2 Topic Naming
+## Contract 9: Redis Channel Naming
 
 ```
-# Per-drone topics
-/drones/<id>/state              std_msgs/String (JSON)
-/drones/<id>/tasks              std_msgs/String (JSON)
-/drones/<id>/findings           std_msgs/String (JSON)
-/drones/<id>/camera             sensor_msgs/Image
-/drones/<id>/cmd                std_msgs/String (JSON, flight commands)
+# Per-drone channels (payload: JSON, validated against the named schema)
+drones.<id>.state                drone_state
+drones.<id>.tasks                task_assignment
+drones.<id>.findings             finding
+drones.<id>.camera               (raw JPEG bytes; not JSON-validated)
+drones.<id>.cmd                  (sim-internal flight commands; not part of the agent contract)
 
-# Swarm topics
-/swarm/broadcasts/<id>          std_msgs/String (JSON)
-/swarm/<id>/visible_to_<id>     std_msgs/String (JSON, filtered by mesh sim)
-/swarm/operator_alerts          std_msgs/String (JSON)
+# Swarm channels
+swarm.broadcasts.<id>            peer_broadcast
+swarm.<id>.visible_to.<id>       peer_broadcast       (republished by mesh_simulator after range filtering)
+swarm.operator_alerts            (free-form, debug-only)
 
-# EGS topics
-/egs/state                      std_msgs/String (JSON)
-/egs/replan_events              std_msgs/String (JSON)
+# EGS channels
+egs.state                        egs_state
+egs.replan_events                (free-form, debug-only)
 
 # Mesh simulator
-/mesh/adjacency_matrix          std_msgs/String (JSON, debug only)
+mesh.adjacency_matrix            (debug only)
 ```
 
-We use `std_msgs/String` with JSON payloads for everything except camera. This keeps schema versioning simple and lets all five team members work without compiling custom ROS 2 messages.
+Every contract channel carries a JSON string. Subscribers `redis.pubsub().subscribe(channel)` and parse the message body. The `drones.<id>.camera` channel is the one exception — it carries raw JPEG bytes (the pre-recorded frame for the current simulated tick from `sim/frame_server.py`). Receivers handle camera and JSON channels through different code paths.
+
+**Why dot-notation:** `redis-cli PSUBSCRIBE 'drones.*.state'` works as a glob, which is how the FastAPI WebSocket bridge consumes "all drones" without enumerating IDs. The dot is the conventional Redis channel separator in pub/sub idioms (NATS-style).
 
 ## Contract 10: File System Layout
 
 ```
-fieldagent/
+gemma-guardian/
 ├── CLAUDE.md
 ├── README.md
 ├── docs/
-├── simulation/
-│   ├── worlds/disaster_zone_v1.sdf
-│   ├── worlds/disaster_zone_v1_groundtruth.json
-│   ├── px4_patches/
-│   └── ros2_ws/
+├── sim/
+│   ├── waypoint_runner.py        # publishes drones.<id>.state on a scripted track
+│   ├── frame_server.py           # publishes drones.<id>.camera (JPEG) per tick
+│   ├── scenarios/
+│   │   ├── disaster_zone_v1.yaml # waypoints + frame mappings + scripted failures
+│   │   └── disaster_zone_v1_groundtruth.json
+│   └── fixtures/
+│       └── frames/               # pre-recorded JPEG frames (xBD crops, public aerials)
 ├── agents/
 │   ├── drone_agent/
 │   │   ├── __init__.py
@@ -305,6 +314,7 @@ fieldagent/
 │   │   └── main.py
 │   ├── egs_agent/
 │   │   ├── __init__.py
+│   │   ├── validation.py        # contracts plan stub (cross-drone dedup); Person 3 fleshes out the rest
 │   │   ├── coordinator.py
 │   │   ├── command_translator.py
 │   │   ├── replanning.py
@@ -312,19 +322,25 @@ fieldagent/
 │   └── mesh_simulator/
 │       └── main.py
 ├── shared/
-│   ├── schemas/
+│   ├── VERSION
+│   ├── config.yaml
+│   ├── schemas/                 # JSON Schemas (Draft 2020-12)
+│   ├── contracts/               # Python loader, Pydantic mirrors, RuleID, generated topic constants
 │   ├── prompts/
-│   └── utils/
+│   └── tests/
 ├── frontend/
-│   └── flutter_dashboard/
+│   ├── flutter_dashboard/
+│   │   └── lib/generated/       # codegen targets (topics.dart, contract_version.dart)
+│   └── ws_bridge/
+│       └── main.py              # FastAPI app; ws://localhost:9090; mirrors Redis channels
 ├── ml/
 │   ├── data_prep/
 │   ├── training/
 │   ├── evaluation/
-│   └── adapters/                 # output of fine-tuning
+│   └── adapters/                # output of fine-tuning
 ├── scripts/
-│   ├── launch_swarm.sh
-│   ├── launch_agents.sh
+│   ├── gen_topic_constants.py
+│   ├── launch_swarm.sh          # starts redis-server, sim, agents, ws_bridge, dashboard
 │   ├── run_full_demo.sh
 │   ├── stop_demo.sh
 │   └── run_resilience_scenario.sh
@@ -333,17 +349,17 @@ fieldagent/
 
 ## Contract 11: Logging
 
-All logs go to `/tmp/fieldagent_logs/` with this structure:
+All logs go to `/tmp/gemma_guardian_logs/` with this structure:
 
 ```
-/tmp/fieldagent_logs/
+/tmp/gemma_guardian_logs/
 ├── drone1_agent.log
 ├── drone2_agent.log
 ├── egs_agent.log
 ├── mesh_sim.log
-├── px4_drone1.log
-├── px4_drone2.log
-├── gazebo.log
+├── waypoint_runner.log           # sim/waypoint_runner.py
+├── frame_server.log              # sim/frame_server.py
+├── ws_bridge.log                 # frontend/ws_bridge/main.py
 └── validation_events.jsonl       # every validation event from any agent
 ```
 
@@ -354,31 +370,64 @@ All logs go to `/tmp/fieldagent_logs/` with this structure:
 `shared/config.yaml`:
 
 ```yaml
+contract_version: "1.0.0"           # must match shared/VERSION
+
 mission:
   drone_count: 3
-  zone_id: "disaster_zone_v1"
-  
+  scenario_id: "disaster_zone_v1"   # directory under sim/scenarios/
+
+transport:
+  redis_url: "redis://localhost:6379/0"
+  channel_prefix: ""                # if non-empty, prefixed to every channel (test isolation)
+
 inference:
   drone_model: "gemma-4:e2b"
   egs_model: "gemma-4:e4b"
   drone_sampling_hz: 1.0
   ollama_drone_endpoint: "http://localhost:11434"
   ollama_egs_endpoint: "http://localhost:11435"
-  
+  function_call_path:
+    egs: "native_tools"             # uses Ollama tools[] when available
+    drone: "structured_output"      # uses Ollama format=<schema> as the safer default
+    fallback: "structured_output"
+
 mesh:
   range_meters: 200
   egs_link_range_meters: 500
   heartbeat_timeout_seconds: 10
-  
+
 validation:
   max_retries: 3
-  
+
 logging:
-  base_dir: "/tmp/fieldagent_logs"
+  base_dir: "/tmp/gemma_guardian_logs"
   level: "INFO"
 ```
 
-All processes read from this config. Changes here propagate everywhere. Don't hardcode values that should be config.
+All processes read from this config. Changes here propagate everywhere. Don't hardcode values that should be config. Mismatched `contract_version` aborts startup with a clear error.
+
+## Authoritative artifacts
+
+These are the machine-checked sources of truth for the contracts above. If any of these disagrees with this doc, **the artifact wins**; update this doc.
+
+| Concern | Path |
+|---|---|
+| Wire shapes | [`shared/schemas/*.json`](../shared/schemas/) |
+| Shared `$defs` | [`shared/schemas/_common.json`](../shared/schemas/_common.json) |
+| Python validators | [`shared/contracts/schemas.py`](../shared/contracts/schemas.py) |
+| Pydantic mirrors | [`shared/contracts/models.py`](../shared/contracts/models.py) |
+| Rule IDs and corrective templates | [`shared/contracts/rules.py`](../shared/contracts/rules.py) |
+| Ollama → canonical adapter | [`shared/contracts/adapters.py`](../shared/contracts/adapters.py) |
+| Channel registry (Python) | [`shared/contracts/topics.py`](../shared/contracts/topics.py) (generated) |
+| Channel registry (Dart) | [`frontend/flutter_dashboard/lib/generated/topics.dart`](../frontend/flutter_dashboard/lib/generated/topics.dart) (generated) |
+| Channel registry source | [`shared/contracts/topics.yaml`](../shared/contracts/topics.yaml) |
+| Mission config | [`shared/config.yaml`](../shared/config.yaml) |
+| Config loader | [`shared/contracts/config.py`](../shared/contracts/config.py) |
+| Contract version constant | [`shared/VERSION`](../shared/VERSION) |
+| Validation event log shape | [`shared/schemas/validation_event.json`](../shared/schemas/validation_event.json) |
+| Validation event logger | [`shared/contracts/logging.py`](../shared/contracts/logging.py) |
+
+CI fails when `shared/VERSION`, `shared/config.yaml.contract_version`, and `frontend/.../contract_version.dart` disagree, and when generated `topics.py` / `topics.dart` are stale relative to `topics.yaml`. See [`shared/tests/test_version_consistency.py`](../shared/tests/test_version_consistency.py) and [`shared/tests/test_topics_codegen_fresh.py`](../shared/tests/test_topics_codegen_fresh.py).
 
 ## Versioning
 

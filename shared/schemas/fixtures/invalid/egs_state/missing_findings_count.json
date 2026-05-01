@@ -1,0 +1,15 @@
+{
+  "mission_id": "demo_run_5",
+  "mission_status": "active",
+  "timestamp": "2026-05-15T14:23:11.342Z",
+  "zone_polygon": [
+    [34.1230, -118.5680],
+    [34.1240, -118.5680],
+    [34.1240, -118.5670],
+    [34.1230, -118.5670]
+  ],
+  "survey_points": [],
+  "drones_summary": {},
+  "recent_validation_events": [],
+  "active_zone_ids": []
+}

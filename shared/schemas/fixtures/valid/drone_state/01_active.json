@@ -1,0 +1,17 @@
+{
+  "drone_id": "drone1",
+  "timestamp": "2026-05-15T14:23:11.342Z",
+  "position": {"lat": 34.1234, "lon": -118.5678, "alt": 25.0},
+  "velocity": {"vx": 5.2, "vy": 0.0, "vz": 0.1},
+  "battery_pct": 87,
+  "heading_deg": 135,
+  "current_task": "survey",
+  "current_waypoint_id": "sp_005",
+  "assigned_survey_points_remaining": 12,
+  "last_action": "report_finding",
+  "last_action_timestamp": "2026-05-15T14:23:08.119Z",
+  "validation_failures_total": 2,
+  "findings_count": 4,
+  "in_mesh_range_of": ["drone2", "egs"],
+  "agent_status": "active"
+}

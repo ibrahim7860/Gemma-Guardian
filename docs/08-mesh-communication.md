@@ -13,50 +13,50 @@ The communication substrate between drones, between drones and EGS, and the simu
 - EGS is one node in the mesh
 
 **Our simulation:**
-- ROS 2 Humble topics with explicit per-drone namespaces
+- Redis pub/sub on `localhost:6379` with dot-notation channel names
 - Range-based dropout simulated in software (a simple Euclidean distance check)
-- All "broadcasts" are actually publishes to ROS 2 topics with software filtering on the simulator side
-- Pure application-layer filtering. We do **not** use DDS partitions, custom RMW configs, network shaping (`tc`/`netem`), or `ros_domain_id` tricks. A separate node owns the visibility logic.
+- All "broadcasts" are publishes to Redis channels with software filtering by a separate `mesh_simulator` process
+- Pure application-layer filtering. No network shaping (`tc`/`netem`). The mesh simulator owns the visibility logic.
 
-## Topic Structure
+## Channel Structure
 
 ```
-/drones/<id>/state              # 2 Hz, drone state telemetry
-/drones/<id>/findings           # event-driven, individual findings
-/drones/<id>/tasks              # event-driven, EGS → drone commands
-/drones/<id>/camera/image_raw   # 30 Hz from PX4, sampled at 1 Hz by agent
+drones.<id>.state              # 2 Hz, drone state telemetry (JSON)
+drones.<id>.findings           # event-driven, individual findings (JSON)
+drones.<id>.tasks              # event-driven, EGS → drone commands (JSON)
+drones.<id>.camera             # ~1 Hz from frame_server, sampled at 1 Hz by agent (JPEG bytes)
 
-/swarm/broadcasts/<sender_id>   # event-driven, raw peer broadcasts (sender publishes here)
-/swarm/inbox/<receiver_id>      # event-driven, mesh_simulator republishes broadcasts that <receiver_id> can hear
-/swarm/operator_alerts          # event-driven, operator → all drones
+swarm.broadcasts.<sender_id>   # event-driven, raw peer broadcasts (sender publishes here; JSON)
+swarm.<receiver_id>.visible_to.<receiver_id>
+                               # event-driven, mesh_simulator republishes broadcasts that
+                               # <receiver_id> can hear (JSON)
+swarm.operator_alerts          # event-driven, operator → all drones (JSON)
 
-/egs/state                      # 1 Hz, EGS state for the dashboard
-/egs/replan_events              # event-driven, replanning notifications
-/mesh/adjacency                 # 1 Hz, mesh_simulator publishes the current adjacency matrix
+egs.state                      # 1 Hz, EGS state for the dashboard (JSON)
+egs.replan_events              # event-driven, replanning notifications (JSON)
+mesh.adjacency_matrix          # 1 Hz, mesh_simulator publishes the current adjacency matrix (JSON)
 ```
 
-Naming convention: lowercase, snake_case segments, `<id>` is the drone identifier (e.g., `drone1`). Each drone agent only ever publishes under `/drones/<own_id>/...` and `/swarm/broadcasts/<own_id>`, and only ever subscribes to `/swarm/inbox/<own_id>` (plus its own `/drones/<own_id>/tasks` and the operator/EGS topics). This keeps the per-drone agent identical across drones — only the namespace argument changes — and is enforced via the launch file.
+Naming convention: lowercase dot-notation, glob-friendly with `redis-cli PSUBSCRIBE` (e.g., `PSUBSCRIBE drones.*.state`). `<id>` is the drone identifier (e.g., `drone1`). Each drone agent only ever publishes to `drones.<own_id>.*` and `swarm.broadcasts.<own_id>`, and only ever subscribes to `swarm.<own_id>.visible_to.<own_id>` (plus its own `drones.<own_id>.tasks` and the operator/EGS channels). This keeps the per-drone agent identical across drones — only the drone ID argument changes. The canonical channel registry is in `shared/contracts/topics.yaml`; see [`20-integration-contracts.md`](20-integration-contracts.md).
 
-## QoS Profiles
+## Delivery Semantics
 
-ROS 2 Humble (`rclpy.qos.QoSProfile`) settings are pinned per topic class. The defaults below are sane for a lossy-link emulation: telemetry is best-effort (drop, don't queue), commands are reliable, and "latest snapshot for late joiners" topics are transient-local.
+Redis pub/sub is fire-and-forget at the broker level: a message is delivered to all current subscribers and dropped if no one is listening. We map the old per-channel reliability/durability intentions onto application-layer conventions:
 
-| Topic class | Reliability | Durability | History / depth | Notes |
-|---|---|---|---|---|
-| `/drones/<id>/state` | `BEST_EFFORT` | `VOLATILE` | `KEEP_LAST`, depth=5 | High-rate telemetry; drop is preferable to backlog. Mirrors `qos_profile_sensor_data`. |
-| `/drones/<id>/camera/image_raw` | `BEST_EFFORT` | `VOLATILE` | `KEEP_LAST`, depth=1 | Use `qos_profile_sensor_data`. |
-| `/drones/<id>/findings` | `RELIABLE` | `VOLATILE` | `KEEP_LAST`, depth=20 | Findings must not be silently dropped on a healthy link. Loss under simulated dropout is the simulator's job, not RMW's. |
-| `/drones/<id>/tasks` | `RELIABLE` | `TRANSIENT_LOCAL` | `KEEP_LAST`, depth=5 | Late-joining drones get the most recent task on subscribe. |
-| `/swarm/broadcasts/<sender_id>` | `RELIABLE` | `VOLATILE` | `KEEP_LAST`, depth=20 | Reliable on the sim-internal hop into `mesh_simulator`. |
-| `/swarm/inbox/<receiver_id>` | `RELIABLE` | `VOLATILE` | `KEEP_LAST`, depth=20 | Same; the simulator already enforces dropout by withholding publishes. |
-| `/swarm/operator_alerts` | `RELIABLE` | `TRANSIENT_LOCAL` | `KEEP_LAST`, depth=5 | Late-joining drones see the active alert. |
-| `/egs/state` | `RELIABLE` | `TRANSIENT_LOCAL` | `KEEP_LAST`, depth=1 | Latch-style; new subscribers get current EGS state immediately. |
-| `/egs/replan_events` | `RELIABLE` | `VOLATILE` | `KEEP_LAST`, depth=10 | |
-| `/mesh/adjacency` | `RELIABLE` | `TRANSIENT_LOCAL` | `KEEP_LAST`, depth=1 | Latch-style snapshot. |
+| Channel class | Delivery intent | Application convention |
+|---|---|---|
+| `drones.<id>.state` | Best-effort; drop preferred over backlog | Published at 2 Hz; consumers use latest received; no buffering |
+| `drones.<id>.camera` | Best-effort | Published at ~1 Hz; consumer uses latest frame; frame_server drops if slow |
+| `drones.<id>.findings` | Reliable (must not be lost) | Agent retains in local log and re-publishes on reconnect if no ACK from EGS |
+| `drones.<id>.tasks` | Reliable + "latch" semantics | EGS re-publishes on reconnect; drone agent stores last-received task to disk |
+| `swarm.broadcasts.<sender_id>` | Reliable (sim-internal hop) | mesh_simulator subscribes synchronously; loss here is a bug |
+| `swarm.<receiver_id>.visible_to.<receiver_id>` | Reliable | Forwarded immediately by mesh_simulator; dropout is explicit by omission |
+| `swarm.operator_alerts` | Reliable | EGS re-publishes on reconnect |
+| `egs.state` | Latch-style | EGS maintains last state and re-publishes to newly connected subscribers |
+| `egs.replan_events` | Reliable | EGS queues until subscriber connects |
+| `mesh.adjacency_matrix` | Latch-style | mesh_simulator re-publishes at 1 Hz unconditionally |
 
-`Deadline` and `Liveliness` QoS are intentionally **not** used to drive heartbeat detection. We keep heartbeat logic in application code (see below) so the demo can show explicit, narratable timeouts on the dashboard rather than RMW-internal callbacks. If we ever push beyond the prototype, `deadline=Duration(seconds=1)` on `/drones/<id>/state` and `liveliness=AUTOMATIC` with a 3-second lease are the natural drop-ins.
-
-Publisher and subscriber QoS must match (or be compatible) or `rclpy` will silently refuse to connect — this is a common foot-gun. We pin profiles in `shared/schemas/qos_profiles.py` and import from both sides.
+Heartbeat detection is handled in application code (see below), not at the transport layer, so the demo can show explicit, narratable timeouts on the dashboard.
 
 ## Range-Based Dropout
 
@@ -68,26 +68,25 @@ The realism we need for the demo is "drones lose connection when out of range, s
 
 **Implementation:**
 
-A small ROS 2 node called `mesh_simulator` runs alongside the drones. It:
-1. Subscribes to `/drones/<id>/state` for all drones
-2. Computes pairwise Euclidean distances every 1 second
-3. Maintains an in-memory adjacency matrix and publishes it at 1 Hz on `/mesh/adjacency`
-4. Subscribes to every `/swarm/broadcasts/<sender_id>` topic and republishes each message onto `/swarm/inbox/<receiver_id>` for every receiver currently in range of the sender
+A small Python process called `mesh_simulator` runs alongside the drones. It:
+1. Pattern-subscribes (`PSUBSCRIBE drones.*.state`) to track all drone positions via Redis
+2. Computes pairwise Euclidean distances every 1 second against the live position snapshot
+3. Maintains an in-memory adjacency matrix and publishes it at 1 Hz on `mesh.adjacency_matrix`
+4. Pattern-subscribes to `swarm.broadcasts.*` and republishes each message onto `swarm.<receiver_id>.visible_to.<receiver_id>` for every receiver currently in range of the sender
 
-Each drone subscribes only to its own `/swarm/inbox/<id>`. When a peer moves out of range, the simulator stops fanning that peer's broadcasts into the drone's inbox — exactly as a real mesh would behave. The same node also gates EGS-bound traffic (see EGS Link below).
+Each drone subscribes only to its own `swarm.<id>.visible_to.<id>`. When a peer moves out of range, the simulator stops fanning that peer's broadcasts to the drone's channel — exactly as a real mesh would behave. The same process also gates EGS-bound traffic (see EGS Link below).
 
-The `in_mesh_range_of` field in the drone state schema is a convenience copy: drones populate it by reading the latest `/mesh/adjacency` snapshot. Ground truth lives in the simulator.
+The `in_mesh_range_of` field in the drone state schema is a convenience copy: drones populate it by reading the latest `mesh.adjacency_matrix` snapshot. Ground truth lives in the simulator.
 
 **Code structure (simplified):**
 
 ```python
-class MeshSimulator(Node):
-    def __init__(self):
+class MeshSimulator:
+    def __init__(self, redis_client):
         self.drone_positions = {}
-        self.broadcasts_received_by = defaultdict(set)
-        # Subscribe to all drone states
-        # Subscribe to all raw broadcasts
-        # Republish filtered broadcasts on a per-recipient topic
+        self.redis = redis_client
+        # Pattern-subscribe to drones.*.state (position updates)
+        # Pattern-subscribe to swarm.broadcasts.* (peer broadcasts)
     
     def filter_broadcast(self, sender_id, msg):
         for receiver_id in self.drone_positions:
@@ -96,27 +95,28 @@ class MeshSimulator(Node):
             distance = euclidean(self.drone_positions[sender_id],
                                  self.drone_positions[receiver_id])
             if distance < MESH_RANGE_METERS:
-                # Republish onto /swarm/inbox/<receiver_id>
-                self.inbox_pubs[receiver_id].publish(msg)
+                # Republish onto swarm.<receiver_id>.visible_to.<receiver_id>
+                channel = f"swarm.{receiver_id}.visible_to.{receiver_id}"
+                self.redis.publish(channel, msg)
 ```
 
 This is simple, works, and gives us the resilience scenarios we need to demo.
 
 ## EGS Link
 
-Drones publish state and findings to the EGS via dedicated topics. The EGS link is also range-gated:
+Drones publish state and findings to the EGS via dedicated Redis channels. The EGS link is also range-gated:
 
-- If a drone is more than `EGS_LINK_RANGE_METERS` from the EGS position, its `/drones/<id>/state` and `/drones/<id>/findings` publishes are filtered out
+- If a drone is more than `EGS_LINK_RANGE_METERS` from the EGS position, the mesh_simulator withholds forwarding that drone's `drones.<id>.state` and `drones.<id>.findings` messages to the EGS subscriber
 - The drone queues telemetry locally
 - When back in range, queued telemetry flushes
 
-This is handled the same way as peer-to-peer mesh: the `mesh_simulator` node filters EGS-bound traffic too.
+This is handled the same way as peer-to-peer mesh: the mesh_simulator filters EGS-bound traffic too.
 
 ## Heartbeat and Failure Detection
 
-**Drone heartbeats:** every drone publishes `/drones/<id>/state` at 2 Hz unconditionally. If the EGS doesn't see a state update for 10 consecutive seconds, the drone is marked as offline. The EGS then triggers replanning to reassign that drone's survey points.
+**Drone heartbeats:** every drone publishes `drones.<id>.state` at 2 Hz unconditionally. If the EGS doesn't see a state update for 10 consecutive seconds, the drone is marked as offline. The EGS then triggers replanning to reassign that drone's survey points.
 
-**EGS heartbeats:** the EGS publishes `/egs/state` at 1 Hz. If a drone doesn't see an EGS update for 10 seconds, it enters **standalone mode**:
+**EGS heartbeats:** the EGS publishes `egs.state` at 1 Hz. If a drone doesn't see an EGS update for 10 seconds, it enters **standalone mode**:
 - Continues current task
 - Coordinates with peers via direct broadcasts
 - Doesn't wait for re-tasking
@@ -126,7 +126,7 @@ Standalone mode is a key resilience demo. It's the exact scenario the reference 
 
 ## Message Schemas
 
-### `/drones/<id>/state` (2 Hz from each drone)
+### `drones.<id>.state` (2 Hz from each drone; JSON)
 
 ```json
 {
@@ -145,7 +145,7 @@ Standalone mode is a key resilience demo. It's the exact scenario the reference 
 }
 ```
 
-### `/swarm/broadcasts/<id>` (event-driven)
+### `swarm.broadcasts.<id>` (event-driven; JSON)
 
 ```json
 {
@@ -167,7 +167,7 @@ Standalone mode is a key resilience demo. It's the exact scenario the reference 
 
 Other broadcast types: `assist_request`, `task_complete`, `entering_standalone_mode`.
 
-### `/drones/<id>/tasks` (event-driven, EGS → drone)
+### `drones.<id>.tasks` (event-driven, EGS → drone; JSON)
 
 ```json
 {
@@ -213,8 +213,8 @@ A drone simulates GPS failure and calls `return_to_base`. The EGS detects the or
 | Failure | Mitigation |
 |---|---|
 | Mesh simulator becomes a bottleneck | Adjacency recomputed at 1 Hz; broadcast forwarding is event-driven and small (peer count ≤ 3 in our demo) |
-| ROS 2 namespace collisions | Strict naming convention enforced via launch file; per-drone `Node` namespace set via `Node('drone_agent', namespace=f'/drones/{id}')` |
-| QoS publisher/subscriber mismatch (silent no-connect) | All profiles pinned in `shared/schemas/qos_profiles.py`, imported by both publisher and subscriber sides |
+| Redis channel name typo causes silent no-delivery | All channel names generated from `shared/contracts/topics.yaml`; never hardcoded. `test_topics_codegen_fresh.py` CI check catches stale constants. |
+| Redis drops messages (no current subscriber) | Findings and tasks use application-layer queuing + re-publish on reconnect (see Delivery Semantics). |
 | Heartbeat false positives (lag spikes) | 10-second timeout is generous; can extend to 15 if needed |
 | Standalone mode produces erratic behavior | Test heavily in Week 3; if drones make bad decisions, tighten reasoning prompt |
 

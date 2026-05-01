@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/egs_state.json",
+  "title": "EGS State Message (v1, locked 2026-04-30)",
+  "description": "Published on Redis channel egs.state at 1 Hz. Contract 3 in docs/20-integration-contracts.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mission_id", "mission_status", "timestamp", "zone_polygon",
+    "survey_points", "drones_summary", "findings_count_by_type",
+    "recent_validation_events", "active_zone_ids"
+  ],
+  "properties": {
+    "mission_id": {"type": "string", "minLength": 1},
+    "mission_status": {"$ref": "_common.json#/$defs/mission_status"},
+    "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "zone_polygon": {"$ref": "_common.json#/$defs/polygon"},
+    "survey_points": {"type": "array", "items": {"$ref": "_common.json#/$defs/survey_point"}},
+    "drones_summary": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "battery"],
+        "additionalProperties": false,
+        "properties": {
+          "status": {"$ref": "_common.json#/$defs/agent_status"},
+          "battery": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0, "maximum": 100},
+              {"type": "null"}
+            ]
+          }
+        }
+      }
+    },
+    "findings_count_by_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["victim", "fire", "smoke", "damaged_structure", "blocked_route"],
+      "properties": {
+        "victim": {"type": "integer", "minimum": 0},
+        "fire": {"type": "integer", "minimum": 0},
+        "smoke": {"type": "integer", "minimum": 0},
+        "damaged_structure": {"type": "integer", "minimum": 0},
+        "blocked_route": {"type": "integer", "minimum": 0}
+      }
+    },
+    "recent_validation_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "agent", "task", "outcome", "issue"],
+        "additionalProperties": false,
+        "properties": {
+          "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+          "agent": {
+            "oneOf": [{"$ref": "_common.json#/$defs/drone_id"}, {"const": "egs"}]
+          },
+          "task": {"type": "string", "minLength": 1},
+          "outcome": {
+            "enum": ["success_first_try", "corrected_after_retry", "failed_after_retries"]
+          },
+          "issue": {
+            "oneOf": [{"$ref": "_common.json#/$defs/rule_id"}, {"type": "null"}]
+          }
+        }
+      }
+    },
+    "active_zone_ids": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

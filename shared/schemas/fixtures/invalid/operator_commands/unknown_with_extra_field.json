@@ -1,0 +1,4 @@
+{
+  "command": "unknown_command",
+  "args": {"operator_text": "x", "suggestion": "y", "extra": "no"}
+}

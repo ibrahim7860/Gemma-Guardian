@@ -1,6 +1,11 @@
 """Validation node — deterministic constraint checks per docs/09 + corrective prompts per docs/10.
 
-NO LLM calls in this module. The whole point is to catch the LLM with code.
+Structural checks (types, ranges, required fields, enums, additionalProperties)
+are delegated to shared.contracts.schemas. Stateful checks (duplicates, coverage,
+GPS-in-zone, RTB battery, RTB mission_complete) stay here. Every failure_reason
+is a RuleID enum value.
+
+NO LLM calls in this module.
 """
 from __future__ import annotations
 
@@ -9,19 +14,9 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from shared.contracts import RuleID, validate as schema_validate
+
 from .perception import PerceptionBundle
-
-ALLOWED_FUNCTIONS = {
-    "report_finding",
-    "mark_explored",
-    "request_assist",
-    "return_to_base",
-    "continue_mission",
-}
-
-FINDING_TYPES = {"victim", "fire", "smoke", "damaged_structure", "blocked_route"}
-URGENCIES = {"low", "medium", "high"}
-RTB_REASONS = {"low_battery", "mission_complete", "ordered", "mechanical", "weather"}
 
 DUPLICATE_WINDOW_S = 30.0
 DUPLICATE_DISTANCE_M = 10.0
@@ -31,8 +26,9 @@ GPS_ZONE_TOLERANCE_M = 50.0
 @dataclass
 class ValidationResult:
     valid: bool
-    failure_reason: Optional[str] = None
+    failure_reason: Optional[RuleID] = None
     corrective_prompt: Optional[str] = None
+    field_path: Optional[str] = None  # populated only for structural failures
 
 
 @dataclass
@@ -45,34 +41,50 @@ class RecentFinding:
 
 class ValidationNode:
     def __init__(self):
-        self.recent_findings: list[RecentFinding] = []
-        self.last_coverage_by_zone: dict[str, float] = {}
+        self.recent_findings: list = []
+        self.last_coverage_by_zone: dict = {}
 
-    def validate(self, call: dict | None, bundle: PerceptionBundle) -> ValidationResult:
+    def validate(self, call: dict, bundle: PerceptionBundle) -> ValidationResult:
         if call is None:
             return ValidationResult(
                 valid=False,
-                failure_reason="prose_instead_of_function",
+                failure_reason=RuleID.PROSE_INSTEAD_OF_FUNCTION,
                 corrective_prompt=(
                     "You returned prose instead of a function call. You must call exactly one function. "
-                    "The available functions are: report_finding, mark_explored, request_assist, return_to_base, continue_mission."
+                    "Available: report_finding, mark_explored, request_assist, return_to_base, continue_mission."
                 ),
             )
 
-        name = call.get("function")
-        args = call.get("arguments") or {}
-
-        if name not in ALLOWED_FUNCTIONS:
+        # 1. Structural validation via JSON Schema.
+        outcome = schema_validate("drone_function_calls", call)
+        if not outcome.valid:
+            err = outcome.errors[0]
+            # If the discriminator field itself failed, report as INVALID_FUNCTION_NAME
+            # so callers receive a more actionable RuleID than the generic structural one.
+            if err.field_path == "function":
+                return ValidationResult(
+                    valid=False,
+                    failure_reason=RuleID.INVALID_FUNCTION_NAME,
+                    corrective_prompt=(
+                        "You called a function that does not exist. The available functions are: "
+                        "report_finding, mark_explored, request_assist, return_to_base, continue_mission. "
+                        "Call exactly one of these."
+                    ),
+                    field_path=err.field_path,
+                )
             return ValidationResult(
                 valid=False,
-                failure_reason="invalid_function_name",
+                failure_reason=RuleID.STRUCTURAL_VALIDATION_FAILED,
                 corrective_prompt=(
-                    "You called a function that does not exist. The available functions are: "
-                    "report_finding, mark_explored, request_assist, return_to_base, continue_mission. "
-                    "Call exactly one of these."
+                    f"Your call did not match the required JSON shape at field '{err.field_path}': {err.message}. "
+                    "Re-emit the call with the correct shape."
                 ),
+                field_path=err.field_path,
             )
 
+        # 2. Stateful / cross-field checks per function name.
+        name = call["function"]
+        args = call.get("arguments", {})
         method = getattr(self, f"_validate_{name}")
         return method(args, bundle)
 
@@ -92,42 +104,33 @@ class ValidationNode:
             self.last_coverage_by_zone[args["zone_id"]] = float(args["coverage_pct"])
 
     def _validate_report_finding(self, args: dict, bundle: PerceptionBundle) -> ValidationResult:
-        ftype = args.get("type")
-        if ftype not in FINDING_TYPES:
-            return ValidationResult(False, "invalid_finding_type",
-                f"type must be one of {sorted(FINDING_TYPES)}, got {ftype!r}.")
-
-        try:
-            severity = int(args.get("severity"))
-            confidence = float(args.get("confidence"))
-            lat = float(args.get("gps_lat"))
-            lon = float(args.get("gps_lon"))
-        except (TypeError, ValueError):
-            return ValidationResult(False, "invalid_argument_type",
-                "severity, confidence, gps_lat, gps_lon must be numeric.")
-
-        if not 1 <= severity <= 5:
-            return ValidationResult(False, "severity_out_of_range",
-                f"severity must be in [1,5], got {severity}.")
-        if not 0.0 <= confidence <= 1.0:
-            return ValidationResult(False, "confidence_out_of_range",
-                f"confidence must be in [0,1], got {confidence}.")
-
-        desc = args.get("visual_description", "")
-        if not isinstance(desc, str) or len(desc.strip()) < 10:
-            return ValidationResult(False, "visual_description_too_short",
-                "Your visual description was too short or empty. Provide at least 10 characters describing what you see in the image that supports this classification.")
+        severity = int(args["severity"])
+        confidence = float(args["confidence"])
+        lat = float(args["gps_lat"])
+        lon = float(args["gps_lon"])
+        ftype = args["type"]
 
         if severity >= 4 and confidence < 0.6:
-            return ValidationResult(False, "severity_confidence_mismatch",
-                f"You reported a severity {severity} finding with confidence {confidence}. "
-                "For severity 4 or higher, confidence must be at least 0.6. "
-                "Either lower the severity or increase confidence with stronger visual evidence, or use continue_mission() if you are uncertain.")
+            return ValidationResult(
+                valid=False,
+                failure_reason=RuleID.SEVERITY_CONFIDENCE_MISMATCH,
+                corrective_prompt=(
+                    f"You reported severity {severity} with confidence {confidence}. "
+                    "For severity 4 or higher, confidence must be >= 0.6. "
+                    "Lower severity, raise confidence with stronger evidence, or use continue_mission()."
+                ),
+            )
 
         if not _within_zone(lat, lon, bundle.state.zone_bounds, GPS_ZONE_TOLERANCE_M):
-            return ValidationResult(False, "gps_outside_zone",
-                f"You reported a finding at GPS ({lat}, {lon}) but your assigned zone bounds are {bundle.state.zone_bounds}. "
-                "The finding must be within your zone. Either correct the coordinates if you mistyped, or use continue_mission() if the target is outside your zone.")
+            return ValidationResult(
+                valid=False,
+                failure_reason=RuleID.GPS_OUTSIDE_ZONE,
+                corrective_prompt=(
+                    f"You reported a finding at GPS ({lat}, {lon}) but your assigned zone bounds are "
+                    f"{bundle.state.zone_bounds}. The finding must be within your zone. "
+                    "Either correct the coordinates or use continue_mission()."
+                ),
+            )
 
         now = time.time()
         for prev in self.recent_findings:
@@ -137,66 +140,63 @@ class ValidationNode:
                 continue
             if _haversine_m(lat, lon, prev.lat, prev.lon) <= DUPLICATE_DISTANCE_M:
                 seconds_ago = int(now - prev.timestamp)
-                return ValidationResult(False, "duplicate_finding",
-                    f"You reported a {ftype} at this location {seconds_ago} seconds ago. "
-                    "Do not duplicate findings. If this is a different target, describe the difference. Otherwise call continue_mission().")
+                return ValidationResult(
+                    valid=False,
+                    failure_reason=RuleID.DUPLICATE_FINDING,
+                    corrective_prompt=(
+                        f"You reported a {ftype} at this location {seconds_ago} seconds ago. "
+                        "Do not duplicate findings. If this is a different target, describe the difference. "
+                        "Otherwise call continue_mission()."
+                    ),
+                )
 
-        return ValidationResult(True)
+        return ValidationResult(valid=True)
 
     def _validate_mark_explored(self, args: dict, bundle: PerceptionBundle) -> ValidationResult:
-        zone_id = args.get("zone_id")
-        if not isinstance(zone_id, str) or not zone_id:
-            return ValidationResult(False, "invalid_zone_id", "zone_id must be a non-empty string.")
-
-        try:
-            coverage = float(args.get("coverage_pct"))
-        except (TypeError, ValueError):
-            return ValidationResult(False, "invalid_argument_type", "coverage_pct must be numeric.")
-
-        if not 0.0 <= coverage <= 100.0:
-            return ValidationResult(False, "coverage_out_of_range",
-                f"coverage_pct must be in [0,100], got {coverage}.")
-
+        zone_id = args["zone_id"]
+        coverage = float(args["coverage_pct"])
         prev = self.last_coverage_by_zone.get(zone_id)
         if prev is not None and coverage < prev:
-            return ValidationResult(False, "coverage_decreased",
-                f"You reported coverage of {coverage}% but previously reported {prev}%. "
-                f"Coverage cannot decrease. Provide a coverage value greater than or equal to {prev}%.")
-
-        return ValidationResult(True)
+            return ValidationResult(
+                valid=False,
+                failure_reason=RuleID.COVERAGE_DECREASED,
+                corrective_prompt=(
+                    f"You reported coverage {coverage}% but previously reported {prev}%. "
+                    f"Coverage cannot decrease. Provide a value >= {prev}%."
+                ),
+            )
+        return ValidationResult(valid=True)
 
     def _validate_request_assist(self, args: dict, bundle: PerceptionBundle) -> ValidationResult:
-        reason = args.get("reason", "")
-        if not isinstance(reason, str) or len(reason.strip()) < 10:
-            return ValidationResult(False, "reason_too_short", "request_assist reason must be at least 10 characters.")
-
-        urgency = args.get("urgency")
-        if urgency not in URGENCIES:
-            return ValidationResult(False, "invalid_urgency",
-                f"urgency must be one of {sorted(URGENCIES)}, got {urgency!r}.")
-
-        return ValidationResult(True)
+        # Length and urgency enum already enforced by JSON Schema.
+        # related_finding_id format also enforced by JSON Schema; existence-of-finding
+        # check requires drone memory and is layered on by reasoning.py.
+        return ValidationResult(valid=True)
 
     def _validate_return_to_base(self, args: dict, bundle: PerceptionBundle) -> ValidationResult:
-        reason = args.get("reason")
-        if reason not in RTB_REASONS:
-            return ValidationResult(False, "invalid_rtb_reason",
-                f"reason must be one of {sorted(RTB_REASONS)}, got {reason!r}.")
-
+        reason = args["reason"]
         if reason == "low_battery" and bundle.state.battery_pct >= 25:
-            return ValidationResult(False, "return_to_base_low_battery_invalid",
-                f"You called return_to_base(reason=\"low_battery\") but your battery is at {bundle.state.battery_pct}% which is above the 25% threshold. "
-                "Use a different reason or continue_mission().")
-
+            return ValidationResult(
+                valid=False,
+                failure_reason=RuleID.RTB_LOW_BATTERY_INVALID,
+                corrective_prompt=(
+                    f"return_to_base(reason='low_battery') but battery is {bundle.state.battery_pct}%. "
+                    "Use a different reason or continue_mission()."
+                ),
+            )
         if reason == "mission_complete" and bundle.state.assigned_survey_points_remaining > 0:
-            return ValidationResult(False, "return_to_base_mission_complete_invalid",
-                f"You called return_to_base(reason=\"mission_complete\") but you have {bundle.state.assigned_survey_points_remaining} survey points still pending. "
-                "Complete them or use a different reason.")
-
-        return ValidationResult(True)
+            return ValidationResult(
+                valid=False,
+                failure_reason=RuleID.RTB_MISSION_COMPLETE_INVALID,
+                corrective_prompt=(
+                    f"return_to_base(reason='mission_complete') but {bundle.state.assigned_survey_points_remaining} "
+                    "survey points still pending. Complete them or use a different reason."
+                ),
+            )
+        return ValidationResult(valid=True)
 
     def _validate_continue_mission(self, args: dict, bundle: PerceptionBundle) -> ValidationResult:
-        return ValidationResult(True)
+        return ValidationResult(valid=True)
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -231,7 +231,9 @@ def _point_in_polygon(lat: float, lon: float, polygon: list, tolerance_m: float)
     for i in range(n):
         lat1, lon1 = polygon[i]
         lat2, lon2 = polygon[(i + 1) % n]
-        if ((lat1 > lat) != (lat2 > lat)) and (lon < (lon2 - lon1) * (lat - lat1) / ((lat2 - lat1) or 1e-12) + lon1):
+        if ((lat1 > lat) != (lat2 > lat)) and (
+            lon < (lon2 - lon1) * (lat - lat1) / ((lat2 - lat1) or 1e-12) + lon1
+        ):
             inside = not inside
     if inside:
         return True

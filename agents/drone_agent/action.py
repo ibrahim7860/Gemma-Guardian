@@ -1,7 +1,8 @@
-"""Action node — translates a validated function call into ROS 2 publishes.
+"""Action node — translates a validated function call into Redis pub/sub publishes.
 
-ROS 2 publishing is stubbed via a Publisher protocol so the agent runs without rclpy in Day-1 standalone mode.
-P1's launch system swaps in the real ROS 2 publisher.
+Publishing is stubbed via a Publisher protocol so the agent runs without redis-py in Day-1 standalone mode.
+The real Redis publisher (frontend/ws_bridge or sim/waypoint_runner-side helper) gets injected at boot.
+Channel names follow Contract 9 in docs/20-integration-contracts.md (dot-notation, e.g. drones.drone1.findings).
 """
 from __future__ import annotations
 
@@ -13,12 +14,12 @@ from typing import Protocol
 
 
 class Publisher(Protocol):
-    def publish(self, topic: str, payload: dict) -> None: ...
+    def publish(self, channel: str, payload: dict) -> None: ...
 
 
 class StdoutPublisher:
-    def publish(self, topic: str, payload: dict) -> None:
-        print(f"[publish] {topic}: {json.dumps(payload)}")
+    def publish(self, channel: str, payload: dict) -> None:
+        print(f"[publish] {channel}: {json.dumps(payload)}")
 
 
 class ActionNode:
@@ -50,7 +51,7 @@ class ActionNode:
             "validation_retries": 0,
             "operator_status": "pending",
         }
-        self.publisher.publish(f"/drones/{self.drone_id}/findings", finding)
+        self.publisher.publish(f"drones.{self.drone_id}.findings", finding)
 
         broadcast = {
             "broadcast_id": f"{self.drone_id}_b{uuid.uuid4().hex[:6]}",
@@ -60,16 +61,16 @@ class ActionNode:
             "broadcast_type": "finding",
             "payload": {k: finding[k] for k in ("type", "severity", "gps_lat", "gps_lon", "confidence", "visual_description")},
         }
-        self.publisher.publish(f"/swarm/broadcasts/{self.drone_id}", broadcast)
+        self.publisher.publish(f"swarm.broadcasts.{self.drone_id}", broadcast)
 
     def _act_mark_explored(self, args: dict, sender_position: dict) -> None:
-        self.publisher.publish(f"/drones/{self.drone_id}/state_event", {
-            "drone_id": self.drone_id,
-            "timestamp": _now_iso(),
-            "event": "mark_explored",
-            "zone_id": args["zone_id"],
-            "coverage_pct": args["coverage_pct"],
-        })
+        # mark_explored is an internal state update only. The drone agent's
+        # validation node tracks last_coverage_by_zone, and the next
+        # drones.<id>.state publish will carry the updated current_task /
+        # findings_count fields. No dedicated channel per Contract 9; the
+        # validation_events.jsonl entry produced by the validation node is
+        # the cross-process record of this call.
+        return
 
     def _act_request_assist(self, args: dict, sender_position: dict) -> None:
         broadcast = {
@@ -80,10 +81,10 @@ class ActionNode:
             "broadcast_type": "assist_request",
             "payload": args,
         }
-        self.publisher.publish(f"/swarm/broadcasts/{self.drone_id}", broadcast)
+        self.publisher.publish(f"swarm.broadcasts.{self.drone_id}", broadcast)
 
     def _act_return_to_base(self, args: dict, sender_position: dict) -> None:
-        self.publisher.publish(f"/drones/{self.drone_id}/cmd", {
+        self.publisher.publish(f"drones.{self.drone_id}.cmd", {
             "drone_id": self.drone_id,
             "timestamp": _now_iso(),
             "command": "return_to_base",

@@ -1,0 +1,8 @@
+{
+  "broadcast_id": "drone2_b012",
+  "sender_id": "drone2",
+  "sender_position": {"lat": 34.1235, "lon": -118.5670, "alt": 22.0},
+  "timestamp": "2026-05-15T14:24:00.000Z",
+  "broadcast_type": "task_complete",
+  "payload": {"task_id": "task_237", "result": "success"}
+}

@@ -1,0 +1,7 @@
+{
+  "type": "finding_approval",
+  "command_id": "cmd_43",
+  "finding_id": "f_drone1_047",
+  "action": "approve",
+  "contract_version": "1.0.0"
+}

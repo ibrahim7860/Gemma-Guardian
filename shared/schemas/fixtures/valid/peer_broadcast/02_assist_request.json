@@ -1,0 +1,12 @@
+{
+  "broadcast_id": "drone1_b048",
+  "sender_id": "drone1",
+  "sender_position": {"lat": 34.1234, "lon": -118.5678, "alt": 25.0},
+  "timestamp": "2026-05-15T14:23:15.000Z",
+  "broadcast_type": "assist_request",
+  "payload": {
+    "reason": "Cluster of victims, need second drone.",
+    "urgency": "high",
+    "related_finding_id": "f_drone1_047"
+  }
+}

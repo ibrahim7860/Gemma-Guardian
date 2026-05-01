@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/validation_event.json",
+  "title": "Validation Event (v1, locked 2026-04-30)",
+  "description": "One JSONL line in /tmp/gemma_guardian_logs/validation_events.jsonl. Contract 11.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "timestamp", "agent_id", "layer", "function_or_command",
+    "attempt", "valid", "rule_id", "outcome", "raw_call", "contract_version"
+  ],
+  "properties": {
+    "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "agent_id": {
+      "oneOf": [{"$ref": "_common.json#/$defs/drone_id"}, {"const": "egs"}]
+    },
+    "layer": {"enum": ["drone", "egs", "operator"]},
+    "function_or_command": {"type": "string", "minLength": 1},
+    "attempt": {"type": "integer", "minimum": 1},
+    "valid": {"type": "boolean"},
+    "rule_id": {
+      "oneOf": [{"$ref": "_common.json#/$defs/rule_id"}, {"type": "null"}]
+    },
+    "outcome": {
+      "enum": ["success_first_try", "corrected_after_retry", "failed_after_retries", "in_progress"]
+    },
+    "raw_call": {"oneOf": [{"type": "object"}, {"type": "null"}]},
+    "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+  }
+}

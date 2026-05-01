@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json",
+  "title": "Shared definitions (v1, locked 2026-04-30)",
+  "description": "Reusable $defs referenced by every other contract schema.",
+  "$defs": {
+    "iso_timestamp_utc_ms": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "drone_id": {"type": "string", "pattern": "^drone\\d+$"},
+    "finding_id": {"type": "string", "pattern": "^f_drone\\d+_\\d+$"},
+    "lat": {"type": "number", "minimum": -90, "maximum": 90},
+    "lon": {"type": "number", "minimum": -180, "maximum": 180},
+    "altitude_m": {"type": "number", "minimum": 0},
+    "gps_point": {
+      "type": "object",
+      "required": ["lat", "lon"],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {"$ref": "#/$defs/lat"},
+        "lon": {"$ref": "#/$defs/lon"}
+      }
+    },
+    "position3d": {
+      "type": "object",
+      "required": ["lat", "lon", "alt"],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {"$ref": "#/$defs/lat"},
+        "lon": {"$ref": "#/$defs/lon"},
+        "alt": {"$ref": "#/$defs/altitude_m"}
+      }
+    },
+    "velocity3d": {
+      "type": "object",
+      "required": ["vx", "vy", "vz"],
+      "additionalProperties": false,
+      "properties": {
+        "vx": {"type": "number"},
+        "vy": {"type": "number"},
+        "vz": {"type": "number"}
+      }
+    },
+    "polygon": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": {"type": "number"}
+      }
+    },
+    "severity": {"type": "integer", "minimum": 1, "maximum": 5},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "coverage_pct": {"type": "number", "minimum": 0, "maximum": 100},
+    "finding_type": {
+      "enum": ["victim", "fire", "smoke", "damaged_structure", "blocked_route"]
+    },
+    "urgency": {"enum": ["low", "medium", "high"]},
+    "priority_level": {"enum": ["low", "normal", "high", "critical"]},
+    "iso_lang_code": {"type": "string", "pattern": "^[a-z]{2}$"},
+    "agent_status": {
+      "enum": ["active", "standalone", "returning", "offline", "error"]
+    },
+    "mission_status": {
+      "enum": ["idle", "active", "paused", "aborted", "complete"]
+    },
+    "task_type": {
+      "enum": ["survey", "investigate_finding", "return_to_base", "hold_position"]
+    },
+    "broadcast_type": {
+      "enum": [
+        "finding",
+        "assist_request",
+        "task_complete",
+        "entering_standalone_mode",
+        "rejoining_swarm"
+      ]
+    },
+    "operator_status": {"enum": ["pending", "approved", "dismissed"]},
+    "survey_point_status": {
+      "enum": ["unassigned", "assigned", "completed", "failed"]
+    },
+    "survey_point": {
+      "type": "object",
+      "required": ["id", "lat", "lon", "assigned_to", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "lat": {"$ref": "#/$defs/lat"},
+        "lon": {"$ref": "#/$defs/lon"},
+        "assigned_to": {
+          "oneOf": [
+            {"$ref": "#/$defs/drone_id"},
+            {"type": "null"}
+          ]
+        },
+        "status": {"$ref": "#/$defs/survey_point_status"},
+        "priority": {"$ref": "#/$defs/priority_level"}
+      }
+    },
+    "rtb_reason": {
+      "enum": ["low_battery", "mission_complete", "ordered", "mechanical", "weather"]
+    },
+    "rule_id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,}$"}
+  }
+}

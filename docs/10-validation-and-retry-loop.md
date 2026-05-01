@@ -47,6 +47,8 @@ Validates that the EGS correctly parsed the operator's natural language into a k
 
 ## Corrective Prompts (Verbatim)
 
+Failure reason strings throughout this doc map 1:1 to `RuleID` enum values in [`shared/contracts/rules.py`](../shared/contracts/rules.py).
+
 These are the strings appended to the prompt context when validation fails. They follow the paper's pattern of being terse, specific, and directive.
 
 Each corrective string below is the **inner** message. At call-site it is wrapped with the standard envelope defined in [`11-prompt-templates.md`](11-prompt-templates.md):
@@ -205,7 +207,7 @@ Log structure:
   "task": "report_finding",
   "attempt": 1,
   "outcome": "failed",
-  "failure_reason": "duplicate_finding",
+  "failure_reason": "DUPLICATE_FINDING",
   "corrective_prompt_used": "You reported a victim at...",
   "final_attempt": false
 }

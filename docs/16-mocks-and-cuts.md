@@ -21,7 +21,7 @@ The Plan C path in the hallucination demo (below) is the only adjacent edge case
 
 ### Real Satellite Imagery
 - **What the paper does:** Continuous satellite feeds drive zone updates
-- **What we do:** A single static aerial screenshot of our Gazebo world used as the EGS's "satellite view"
+- **What we do:** A single static aerial image (one of the xBD base frames or a public-domain satellite photograph) used as the EGS's "satellite view"
 - **Why it's fine:** Same reasoning as segmentation. We're not pretending to have satellite access; we're showing the architecture works.
 
 ### Real Fire Spread Physics
@@ -36,13 +36,23 @@ The Plan C path in the hallucination demo (below) is the only adjacent edge case
 
 ### Real GPS / Sensor Fusion
 - **What the paper does:** Real RTK-GPS, IMU, etc.
-- **What we do:** Gazebo's default simulated GPS at the configured PX4 home
+- **What we do:** Scripted lat/lon/alt positions interpolated from waypoints in the scenario YAML, published by `sim/waypoint_runner.py`
 - **Why it's fine:** Sufficient accuracy for the demo. We don't claim production-grade.
 
 ### Real Mesh Networking
 - **What the paper does:** Self-organizing WiFi mesh
-- **What we do:** ROS 2 topics with software dropout based on Euclidean distance
+- **What we do:** Redis pub/sub with software dropout based on Euclidean distance. `agents/mesh_simulator/main.py` subscribes to `swarm.broadcasts.*`, filters each message against live drone positions, and republishes accepted messages on `swarm.<receiver_id>.visible_to.<receiver_id>`. See [`20-integration-contracts.md`](20-integration-contracts.md) Contract 9.
 - **Why it's fine:** The behavior is identical from the agent's perspective. We document the abstraction in the writeup.
+
+### Drone Flight Dynamics
+- **What the paper does:** PX4 SITL flight controller with dynamics simulation, control loops, and sensor fusion
+- **What we do:** Scripted waypoint tracks at configurable speed. The drone "appears" at the next waypoint after `t = distance / speed`. No dynamics, no control loops, no sensor fusion.
+- **Why it's fine:** Agentic decisions are independent of flight physics. The agent cares about position and camera frames, not the underlying flight controller state.
+
+### 3D Rendering / Synthetic Camera
+- **What the paper does (and what we originally planned):** Gazebo renders camera frames from a 3D world in real time
+- **What we do:** Pre-recorded xBD post-disaster crops and public-domain aerial/satellite photographs, served from `sim/fixtures/frames/` by `sim/frame_server.py` at 1 Hz
+- **Why it's fine:** Real aerial disaster imagery is more visually compelling than Gazebo's default rendering, and it is the exact same distribution the vision fine-tuning pipeline trains on — eliminating sim-to-real gap for the vision task entirely.
 
 ### Real Drone Failures
 - **What the paper does:** Actual hardware failures, sensor faults
@@ -70,8 +80,8 @@ The Plan C path in the hallucination demo (below) is the only adjacent edge case
 See [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md).
 
 ### Three Drones vs Two
-- **Status:** AIM for 3, fall back to 2 if multi-drone Gazebo is unstable
-- **Cutoff:** Day 13 (May 11). If 3-drone simulation isn't stable by then, demo with 2.
+- **Status:** AIM for 3, fall back to 2 if multi-drone Redis coordination is unstable
+- **Cutoff:** Day 13 (May 15). If 3-drone simulation isn't stable by then, demo with 2.
 - **Why:** A polished 2-drone demo beats a flaky 3-drone demo.
 
 ### Multilingual Demo
@@ -98,7 +108,6 @@ These are tempting but cut hard:
 - **Voice operator commands.** Text only. (Stretch only if everything else is done.)
 - **Drone camera live feed in dashboard.** Map view only. (Stretch.)
 - **Mission timeline replay.** Out of scope.
-- **Cross-platform support beyond the team's dev paths.** The simulation stack runs on Ubuntu 22.04 — native or WSL2 on Windows 11. Apple Silicon Macs are supported for the agent / EGS / frontend roles only. We do NOT support running the full simulation stack on macOS or Windows-native; reproduction docs assume Linux or WSL2.
 
 ## Decision Heuristic
 
@@ -117,10 +126,12 @@ The writeup explicitly enumerates every mock with the rationale. This is a credi
 > "FieldAgent is a research prototype demonstrating the agentic LLM architecture for disaster response. Several components are deliberately simplified for the prototype:
 > 
 > - **Zone segmentation** is replaced with predefined polygons (the original architecture uses U-Net on satellite imagery).
-> - **Mesh networking** is simulated via ROS 2 topics with software-based range dropout (the architecture is designed for WiFi mesh).
+> - **Mesh networking** is simulated via Redis pub/sub with software-based range dropout (`agents/mesh_simulator/main.py`); the architecture is designed for WiFi mesh.
+> - **Drone flight dynamics** are replaced with scripted waypoint tracks; no flight controller or sensor fusion runs. The drone advances from waypoint to waypoint at a fixed configured speed.
+> - **Camera frames** are pre-recorded xBD post-disaster crops and public-domain aerial imagery served by `sim/frame_server.py`; no real-time 3D rendering is performed.
 > - **Drone hardware** is fully simulated; we deploy on Jetson Orin NX in concept only.
 > 
-> These simplifications do not affect the validity of the agentic loop, validation patterns, or coordination behaviors demonstrated. They scope the prototype to what is feasible in a 20-day hackathon while preserving the architectural claims."
+> These simplifications do not affect the validity of the agentic loop, validation patterns, or coordination behaviors demonstrated. They scope the prototype to what is feasible in a 20-day hackathon while preserving the architectural claims. The software-only simulation stack runs on any modern laptop (macOS, Linux, Windows) with Python 3.11+, Redis, and Ollama."
 
 Judges respect this kind of transparency.
 

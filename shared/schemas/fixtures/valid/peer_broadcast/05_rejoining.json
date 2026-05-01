@@ -1,0 +1,8 @@
+{
+  "broadcast_id": "drone3_b002",
+  "sender_id": "drone3",
+  "sender_position": {"lat": 34.1240, "lon": -118.5660, "alt": 30.0},
+  "timestamp": "2026-05-15T14:30:00.000Z",
+  "broadcast_type": "rejoining_swarm",
+  "payload": {"findings_to_share_count": 3}
+}

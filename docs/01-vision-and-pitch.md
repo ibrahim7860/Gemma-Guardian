@@ -36,7 +36,7 @@ Same architecture. Same agentic pattern. Same validation-loop approach. Zero clo
 
 When a judge watches the 90-second video, they should see:
 
-1. A real Gazebo simulation with 2-3 drones flying in a damaged-building scene
+1. A real software-only Python simulation with 2-3 drones flying in a damaged-building scene
 2. Gemma 4's reasoning and function calls visible on screen as drones identify victims and damage
 3. The validation loop catching a Gemma 4 hallucination and correcting it (live)
 4. An operator typing a command in Spanish; Gemma 4 translates to swarm tasking
@@ -49,12 +49,12 @@ When a judge watches the 90-second video, they should see:
 - **Technically correct use of Gemma 4.** Vision, reasoning, function calling, multilingual, on-device — all used naturally, none bolted on.
 - **Emotionally resonant.** Disasters are universal. Cell towers failing is universal.
 - **Falsifiable claims.** Coverage rate, mission completion time, hallucination catch rate, multilingual fidelity — measurable against the paper's baseline.
-- **Open and reproducible.** Permissively licensed open stack throughout (Gazebo, ROS 2, LangGraph, Ollama, Flutter, PX4) with Gemma 4 weights under Google's permissive Gemma Terms of Use. Anyone with a laptop and the open weights can deploy this.
+- **Open and reproducible.** Permissively licensed open stack throughout (Redis, LangGraph, Ollama, Flutter) with Gemma 4 weights under Google's permissive Gemma Terms of Use. Anyone with a laptop and the open weights can deploy this.
 
 ## Out of Scope (Intentionally)
 
 - Real drone hardware (we're in simulation, framed honestly)
-- Real fire physics or sensor fusion (Gazebo's defaults are sufficient)
+- Real fire physics or sensor fusion (the software sim uses scripted waypoint motion, not physics)
 - Real satellite imagery / U-Net segmentation (we use predefined zones)
 - Production-grade safety guarantees (this is a research prototype)
 - Beyond-line-of-sight regulatory compliance (out of scope for sim)

@@ -13,7 +13,7 @@ PERSIST_INTERVAL_S = 10.0
 
 
 class MemoryStore:
-    def __init__(self, drone_id: str, persist_dir: str | Path = "/tmp/fieldagent_logs"):
+    def __init__(self, drone_id: str, persist_dir: str | Path = "/tmp/gemma_guardian_logs"):
         self.drone_id = drone_id
         self.persist_path = Path(persist_dir) / f"{drone_id}_memory.jsonl"
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +48,15 @@ class MemoryStore:
         cutoff = time.time() - window_s
         return [b for b in self.peer_broadcasts if b.get("ts", 0) >= cutoff]
 
+    def next_finding_id(self) -> str:
+        """Return f_<drone_id>_<counter> with a per-drone monotonic counter.
+
+        Format matches _common.json#/$defs/finding_id pattern:
+            ^f_drone\\d+_\\d+$
+        """
+        self._finding_counter = getattr(self, "_finding_counter", 0) + 1
+        return f"f_{self.drone_id}_{self._finding_counter}"
+
     def _maybe_persist(self) -> None:
         now = time.time()
         if now - self._last_persist < PERSIST_INTERVAL_S:
@@ -57,3 +66,7 @@ class MemoryStore:
             while self.short_term:
                 entry = self.short_term.popleft()
                 f.write(json.dumps(entry) + "\n")
+
+
+# Alias so tests and callers can use either name.
+DroneMemory = MemoryStore

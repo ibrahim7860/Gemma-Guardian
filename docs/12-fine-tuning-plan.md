@@ -65,7 +65,7 @@ This is exactly what the xView2 / xBD challenge was built for. It's the cleanest
 
 **We do NOT fine-tune for:**
 - Victim detection (visually ambiguous, sim-to-real gap is huge)
-- Fire/smoke detection (Gemma 4 base is reasonably good already, and fire visuals in Gazebo are unrealistic)
+- Fire/smoke detection (Gemma 4 base is reasonably good already, and fire visuals in the software sim are unrealistic)
 - Multi-task learning (too much risk in 20 days)
 
 Pick one. Damage classification. That's it.
@@ -188,9 +188,9 @@ Gemma 4 vision input is multimodal: image + text. Each training example:
 
 The output is JSON to encourage structured generation in production.
 
-### Step 5: Synthetic Gazebo augmentation (optional, Week 2)
+### Step 5: Synthetic sim augmentation (optional, Week 2)
 
-Render 200-500 patches from our Gazebo disaster scene with known damage labels (since we control the scene). Add to training set as 5-10% augmentation. This addresses the sim-to-real gap.
+Render 200-500 patches from our software sim disaster scene with known damage labels (since we control the scene). Add to training set as 5-10% augmentation. This addresses the sim-to-real gap.
 
 ## Training
 
@@ -292,7 +292,7 @@ If NO-GO:
 | GGUF export of merged vision model not yet stable | Day-2 verification step #5; fallback to vLLM or transformers serving instead of Ollama for the FT model (only — base Gemma 4 still on Ollama) |
 | xBD per-building patch resize loses small-damage signal | Try 336×336 or 448×448 if 224×224 hurts minor-damage F1 (Gemma 4 vision tower is flexible on input size) |
 | Training never converges | Time-box to 7 days, fall back to base |
-| Adapter is worse on Gazebo imagery than xBD | Add synthetic augmentation; prefer base for demo, fine-tuned for writeup numbers |
+| Adapter is worse on sim imagery than xBD | Add synthetic augmentation; prefer base for demo, fine-tuned for writeup numbers |
 | Hyperparameters wrong; need many iterations | Start conservative; document what was tried |
 | xBD download is slow / corrupted | Mirror to local SSD on Day 1 |
 

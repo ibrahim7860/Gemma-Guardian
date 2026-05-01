@@ -1,0 +1,1 @@
+{"command": "set_priority", "args": {"finding_type": "victim", "priority_level": "critical"}}

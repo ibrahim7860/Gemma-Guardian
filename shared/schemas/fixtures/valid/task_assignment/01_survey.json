@@ -1,0 +1,12 @@
+{
+  "task_id": "task_237",
+  "drone_id": "drone1",
+  "issued_at": "2026-05-15T14:23:00.000Z",
+  "task_type": "survey",
+  "assigned_survey_points": [
+    {"id": "sp_001", "lat": 34.1232, "lon": -118.5675, "priority": "normal"},
+    {"id": "sp_002", "lat": 34.1234, "lon": -118.5673, "priority": "normal"}
+  ],
+  "priority_override": null,
+  "valid_until": "2026-05-15T14:38:00.000Z"
+}

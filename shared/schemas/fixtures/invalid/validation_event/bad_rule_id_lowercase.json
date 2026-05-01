@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-05-15T14:24:00.000Z",
+  "agent_id": "drone1",
+  "layer": "drone",
+  "function_or_command": "report_finding",
+  "attempt": 2,
+  "valid": false,
+  "rule_id": "bad lowercase",
+  "outcome": "corrected_after_retry",
+  "raw_call": null,
+  "contract_version": "1.0.0"
+}

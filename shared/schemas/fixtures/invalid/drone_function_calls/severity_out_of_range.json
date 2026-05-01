@@ -1,0 +1,11 @@
+{
+  "function": "report_finding",
+  "arguments": {
+    "type": "fire",
+    "severity": 9,
+    "gps_lat": 34.0,
+    "gps_lon": -118.0,
+    "confidence": 0.5,
+    "visual_description": "ten characters"
+  }
+}

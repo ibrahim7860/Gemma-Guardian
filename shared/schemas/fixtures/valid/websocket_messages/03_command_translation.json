@@ -1,0 +1,9 @@
+{
+  "type": "command_translation",
+  "command_id": "cmd_42",
+  "structured": {"command": "restrict_zone", "args": {"zone_id": "east"}},
+  "valid": true,
+  "preview_text": "Will restrict mission to zone 'east'",
+  "preview_text_in_operator_language": "Restringirá la misión a la zona 'este'",
+  "contract_version": "1.0.0"
+}

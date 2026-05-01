@@ -1,0 +1,9 @@
+{
+  "function": "replan_mission",
+  "arguments": {
+    "trigger": "zone_change",
+    "new_zone_polygon": [[0, 0], [1, 1]],
+    "excluded_drones": [],
+    "excluded_survey_points": []
+  }
+}

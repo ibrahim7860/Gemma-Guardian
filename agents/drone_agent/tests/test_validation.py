@@ -1,4 +1,4 @@
-"""Unit tests for the validation node — runs without Ollama or ROS 2."""
+"""Unit tests for the validation node — runs without Ollama or Redis."""
 from __future__ import annotations
 
 import time
@@ -8,6 +8,7 @@ import pytest
 
 from agents.drone_agent.perception import DroneState, PerceptionBundle
 from agents.drone_agent.validation import ValidationNode
+from shared.contracts import RuleID
 
 
 def _bundle(battery=87.0, remaining=10, zone=None):
@@ -35,14 +36,14 @@ def test_prose_response_rejected():
     v = ValidationNode()
     r = v.validate(None, _bundle())
     assert not r.valid
-    assert r.failure_reason == "prose_instead_of_function"
+    assert r.failure_reason == RuleID.PROSE_INSTEAD_OF_FUNCTION
 
 
 def test_invalid_function_rejected():
     v = ValidationNode()
     r = v.validate({"function": "fly_to_moon", "arguments": {}}, _bundle())
     assert not r.valid
-    assert r.failure_reason == "invalid_function_name"
+    assert r.failure_reason == RuleID.INVALID_FUNCTION_NAME
 
 
 def test_severity_confidence_mismatch():
@@ -56,7 +57,7 @@ def test_severity_confidence_mismatch():
     }
     r = v.validate(call, _bundle())
     assert not r.valid
-    assert r.failure_reason == "severity_confidence_mismatch"
+    assert r.failure_reason == RuleID.SEVERITY_CONFIDENCE_MISMATCH
 
 
 def test_gps_outside_zone():
@@ -70,10 +71,12 @@ def test_gps_outside_zone():
     }
     r = v.validate(call, _bundle())
     assert not r.valid
-    assert r.failure_reason == "gps_outside_zone"
+    assert r.failure_reason == RuleID.GPS_OUTSIDE_ZONE
 
 
 def test_visual_description_too_short():
+    # visual_description length is now enforced by JSON Schema (minLength).
+    # The failure surfaces as STRUCTURAL_VALIDATION_FAILED, not a distinct code.
     v = ValidationNode()
     call = {
         "function": "report_finding",
@@ -84,7 +87,7 @@ def test_visual_description_too_short():
     }
     r = v.validate(call, _bundle())
     assert not r.valid
-    assert r.failure_reason == "visual_description_too_short"
+    assert r.failure_reason == RuleID.STRUCTURAL_VALIDATION_FAILED
 
 
 def test_duplicate_finding():
@@ -102,7 +105,7 @@ def test_duplicate_finding():
     v.record_success(call, bundle)
     r2 = v.validate(call, bundle)
     assert not r2.valid
-    assert r2.failure_reason == "duplicate_finding"
+    assert r2.failure_reason == RuleID.DUPLICATE_FINDING
 
 
 def test_low_battery_must_actually_be_low():
@@ -110,7 +113,7 @@ def test_low_battery_must_actually_be_low():
     call = {"function": "return_to_base", "arguments": {"reason": "low_battery"}}
     r = v.validate(call, _bundle(battery=80.0))
     assert not r.valid
-    assert r.failure_reason == "return_to_base_low_battery_invalid"
+    assert r.failure_reason == RuleID.RTB_LOW_BATTERY_INVALID
 
     r2 = v.validate(call, _bundle(battery=15.0))
     assert r2.valid
@@ -137,4 +140,4 @@ def test_mark_explored_cannot_decrease():
     low = {"function": "mark_explored", "arguments": {"zone_id": "z1", "coverage_pct": 50.0}}
     r2 = v.validate(low, bundle)
     assert not r2.valid
-    assert r2.failure_reason == "coverage_decreased"
+    assert r2.failure_reason == RuleID.COVERAGE_DECREASED

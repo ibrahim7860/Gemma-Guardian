@@ -1,0 +1,15 @@
+{
+  "broadcast_id": "drone1_b047",
+  "sender_id": "drone1",
+  "sender_position": {"lat": 34.1234, "lon": -118.5678, "alt": 25.0},
+  "timestamp": "2026-05-15T14:23:11.342Z",
+  "broadcast_type": "finding",
+  "payload": {
+    "type": "victim",
+    "severity": 4,
+    "gps_lat": 34.1234,
+    "gps_lon": -118.5678,
+    "confidence": 0.78,
+    "visual_description": "Person prone, partially covered by debris."
+  }
+}

@@ -13,11 +13,11 @@ Critically, the dashboard is also our **demo storytelling surface**. The video u
 ## Tech Stack
 
 - **Flutter web** (single-page app), default `canvaskit` renderer. Do **not** opt into the WebAssembly (`skwasm`) build for the hackathon — it adds packaging complexity and the demo doesn't need it. Lock the renderer at `_flutter.loader.load({config: {renderer: "canvaskit"}})` in `web/index.html` so behaviour is deterministic across browsers.
-- **rosbridge_suite** (`rosbridge_websocket` node) on the EGS host, exposing ROS 2 topics/services as JSON ops over WebSocket on port 9090.
-- **`web_socket_channel`** Flutter package for the raw socket. We speak rosbridge protocol directly (`{op: "subscribe", topic, type}`, `{op: "publish", topic, msg}`) — there is no maintained first-party Dart equivalent of roslibjs, and writing a thin client against a handful of topics is faster than vendoring one.
+- **FastAPI WebSocket bridge** at `frontend/ws_bridge/main.py`, exposing `ws://localhost:9090`. The bridge subscribes to a fixed list of Redis channels and relays JSON messages to/from connected Flutter clients. No rosbridge_suite.
+- **`web_socket_channel`** Flutter package for the raw socket. We speak a simple discriminated-union JSON protocol (see WebSocket Message Schema below) — thin client against a handful of message types. Channel name constants are generated into `frontend/flutter_dashboard/lib/generated/topics.dart` from `shared/contracts/topics.yaml`.
 - **State management:** `Provider` (or plain `ChangeNotifier` + `InheritedWidget`). No Bloc/Riverpod — we have one global mission state stream and four panels reading from it; anything heavier is over-engineering for 20 days.
 - **flutter_map** for the map layer (OSM tiles disabled — we use a static base image, see Panel 1). `google_maps_flutter` is rejected because it requires an API key + internet and we are explicitly an offline system.
-- Hosted locally (served from the same dev machine as rosbridge_websocket for the demo).
+- Hosted locally (served from the same dev machine as the FastAPI bridge for the demo).
 
 ## Layout
 
@@ -46,7 +46,7 @@ Four panels in a 2×2 grid:
 Renders the simulated environment in top-down view.
 
 **Layers:**
-1. Base layer: satellite-style image of the simulated world (static, exported from Gazebo once)
+1. Base layer: satellite-style image of the simulated world (static aerial screenshot)
 2. Zone polygon: outlined region currently being surveyed
 3. Survey points: small dots, color-coded per assigned drone
 4. Drone positions: animated icons showing current location and heading; each drone gets a distinct color
@@ -58,7 +58,7 @@ Renders the simulated environment in top-down view.
 - Click a finding → details popup with confidence, description, photo if available
 - Hover a survey point → shows ID and assigned drone
 
-**Implementation note:** Don't try to make this look like Google Maps. It's a Gazebo top-down view with overlays. Functional > pretty.
+**Implementation note:** Don't try to make this look like Google Maps. It's a static aerial screenshot with overlays driven by Redis state. Functional > pretty.
 
 ## Panel 2: Drone Status
 
@@ -141,14 +141,15 @@ The video makes a point of showing Gemma 4 correctly translating each.
 
 ## WebSocket Message Schema
 
-These are **app-level** payloads carried inside rosbridge `publish`/`subscribe` ops, not raw rosbridge envelopes. Flutter subscribes to a fixed set of ROS 2 topics owned by the EGS:
+These are **app-level** JSON payloads sent over the FastAPI WebSocket bridge at `ws://localhost:9090`. The bridge subscribes to the relevant Redis channels and relays them to Flutter; outbound Flutter messages are published back onto Redis. Flutter subscribes to a fixed set of message types:
 
-- `/fieldagent/state` (`std_msgs/String` carrying the JSON below) — pushed by EGS at 1 Hz
-- `/fieldagent/operator_command` (`std_msgs/String`) — published by Flutter
-- `/fieldagent/command_translation` (`std_msgs/String`) — pushed by EGS in response
-- `/fieldagent/operator_command_dispatch` (`std_msgs/String`) — published by Flutter on approval
+- `state_update` — pushed by EGS at 1 Hz (mirrors `egs.state` Redis channel)
+- `operator_command` — published by Flutter
+- `command_translation` — pushed by EGS in response
+- `operator_command_dispatch` — published by Flutter on approval
+- `finding_approval` — published by Flutter on APPROVE/DISMISS
 
-We use `std_msgs/String` with a JSON payload (rather than custom `.msg` files) so the contract lives in `shared/schemas/` and doesn't require rebuilding the ROS 2 workspace every time we tweak it. See [`20-integration-contracts.md`](20-integration-contracts.md) for the locked field list.
+All message shapes are discriminated on a `type` field. The locked field list and `contract_version` stamping rules are in [`20-integration-contracts.md`](20-integration-contracts.md). Dart-side channel constants are generated into `frontend/flutter_dashboard/lib/generated/topics.dart`.
 
 The EGS pushes state to Flutter every 1 second:
 
@@ -207,7 +208,7 @@ Detailed in [`20-integration-contracts.md`](20-integration-contracts.md).
 
 ## Stretch Features (Only If Time)
 
-- Mini camera feed from each drone (one frame per second, pulled from ROS topic)
+- Mini camera feed from each drone (one frame per second, pulled from `drones.<id>.camera` Redis channel via the WebSocket bridge)
 - Audio operator commands via voice (would use Gemma 4 E4B audio mode if accessible)
 - Mission timeline scrubber for replay
 
@@ -217,17 +218,17 @@ These are nice-to-haves. Don't build them unless the rest is solid by Day 16.
 
 | Failure | Mitigation |
 |---|---|
-| WebSocket disconnects | Auto-reconnect with exponential backoff (1s, 2s, 4s, capped at 10s); cache last-known state client-side and re-subscribe to all four topics on reconnect |
+| WebSocket disconnects | Auto-reconnect with exponential backoff (1s, 2s, 4s, capped at 10s); cache last-known state client-side and reconnect to `ws://localhost:9090` on retry |
 | Map renders slowly | Use static base layer, don't fetch tiles |
 | Command translation slow | Show "translating..." spinner; cap timeout at 15 seconds |
 | Multilingual fails | Fall back to English-only for the demo, document limitation |
 
 ## Why This Matters for the Demo
 
-The dashboard is what the judge actually watches. The Gazebo footage is supporting context; the dashboard is where the story is told. Specifically:
+The dashboard is what the judge actually watches. The sim terminal output is supporting context; the dashboard is where the story is told. Specifically:
 
 - Validation event ticks visible → "Gemma 4 is being self-corrected, you can see it"
 - Multilingual command translation → "Gemma 4 speaks Spanish natively, no translation API"
 - Drone status panel going OFFLINE → "the swarm is reorganizing without external help"
 
-The dashboard lets a non-technical viewer understand what an agentic LLM-driven swarm actually means. Without it, the demo is just terminal output and Gazebo footage. With it, the demo tells a story.
+The dashboard lets a non-technical viewer understand what an agentic LLM-driven swarm actually means. Without it, the demo is just terminal output. With it, the demo tells a story.
