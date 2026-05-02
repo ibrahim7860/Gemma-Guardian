@@ -387,6 +387,61 @@ def create_app() -> FastAPI:
                             "contract_version": VERSION,
                         })
                     )
+                elif isinstance(parsed, dict) and parsed.get("type") == "operator_command_dispatch":
+                    # Phase 4: the operator clicked DISPATCH on a translated
+                    # command. Mirror the ``finding_approval`` path — validate,
+                    # stamp ``bridge_received_at_iso_ms``, defensively
+                    # re-validate against ``operator_actions`` (whose ``oneOf``
+                    # covers both ``finding_approval`` and
+                    # ``operator_command_dispatch`` kinds), then republish
+                    # onto the same ``egs.operator_actions`` channel.
+                    outcome = validate("websocket_messages", parsed)
+                    if not outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="invalid_operator_command_dispatch",
+                            detail=[e.message for e in outcome.errors],
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    redis_payload: Dict[str, Any] = {
+                        "kind": "operator_command_dispatch",
+                        "command_id": parsed["command_id"],
+                        "bridge_received_at_iso_ms": _now_iso_ms(),
+                        "contract_version": VERSION,
+                    }
+                    bridge_outcome = validate("operator_actions", redis_payload)
+                    if not bridge_outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="bridge_internal",
+                            detail=[e.message for e in bridge_outcome.errors],
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    try:
+                        await app.state.publisher.publish(
+                            "egs.operator_actions", redis_payload,
+                        )
+                    except Exception:
+                        # See finding_approval branch — bare ``except
+                        # Exception`` is safe here because
+                        # ``asyncio.CancelledError`` is a ``BaseException``,
+                        # not an ``Exception``.
+                        await _echo_error(
+                            websocket,
+                            error="redis_publish_failed",
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "echo",
+                            "ack": "operator_command_dispatch",
+                            "command_id": parsed["command_id"],
+                            "contract_version": VERSION,
+                        })
+                    )
                 else:
                     await websocket.send_text(
                         json.dumps({
