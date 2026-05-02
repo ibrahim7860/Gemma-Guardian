@@ -289,6 +289,19 @@ def create_app() -> FastAPI:
                             finding_id=parsed.get("finding_id"),
                         )
                         continue
+                    # Phase 4: allowlist guard. The bridge's aggregator holds
+                    # the canonical "known findings" set (the same set the
+                    # dashboard renders). Reject approvals for unknown ids
+                    # before publishing to keep the operator-decision audit
+                    # trail clean — closes the Phase 3 adversarial finding.
+                    if not app.state.aggregator.has_finding(parsed["finding_id"]):
+                        await _echo_error(
+                            websocket,
+                            error="unknown_finding_id",
+                            command_id=parsed.get("command_id"),
+                            finding_id=parsed.get("finding_id"),
+                        )
+                        continue
                     redis_payload: Dict[str, Any] = {
                         "kind": "finding_approval",
                         "command_id": parsed["command_id"],

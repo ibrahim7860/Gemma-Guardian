@@ -25,14 +25,37 @@ def fake_client():
 @pytest.fixture
 def app_with_fake_redis(monkeypatch, fake_client):
     """Build the bridge app with redis.asyncio.from_url returning a single
-    fakeredis instance for both the subscriber and the publisher."""
+    fakeredis instance for both the subscriber and the publisher.
+
+    Phase 4: also seed the aggregator with the finding_id the existing
+    tests approve (``f_drone1_42``) so the new allowlist guard does not
+    reject otherwise-valid frames. Tests that want to exercise the
+    unknown-id path live in ``test_main_finding_id_allowlist.py``.
+    """
     monkeypatch.setattr(
         redis_async.Redis, "from_url",
         staticmethod(lambda url, **kw: fake_client),
     )
     # Import after patching so any import-time client creation uses the patched factory.
     from frontend.ws_bridge.main import create_app
-    return create_app()
+    app = create_app()
+    app.state.aggregator.add_finding({
+        "finding_id": "f_drone1_42",
+        "source_drone_id": "drone1",
+        "timestamp": "2026-05-02T12:00:00.000Z",
+        "type": "victim",
+        "severity": 4,
+        "gps_lat": 34.12,
+        "gps_lon": -118.56,
+        "altitude": 0,
+        "confidence": 0.8,
+        "visual_description": "person prone in debris",
+        "image_path": "/tmp/x.jpg",
+        "validated": True,
+        "validation_retries": 0,
+        "operator_status": "pending",
+    })
+    return app
 
 
 @pytest.fixture
@@ -153,6 +176,24 @@ def test_redis_publish_failure_returns_error_echo(monkeypatch):
         staticmethod(lambda url, **kw: fake),
     )
     app = create_app()
+    # Phase 4: seed the aggregator so the allowlist guard does not
+    # short-circuit before we get to the simulated Redis failure.
+    app.state.aggregator.add_finding({
+        "finding_id": "f_drone1_42",
+        "source_drone_id": "drone1",
+        "timestamp": "2026-05-02T12:00:00.000Z",
+        "type": "victim",
+        "severity": 4,
+        "gps_lat": 34.12,
+        "gps_lon": -118.56,
+        "altitude": 0,
+        "confidence": 0.8,
+        "visual_description": "person prone in debris",
+        "image_path": "/tmp/x.jpg",
+        "validated": True,
+        "validation_retries": 0,
+        "operator_status": "pending",
+    })
     # Replace the publisher with one whose publish() raises.
     async def _raise(channel, payload):
         raise RedisError("simulated redis down")
