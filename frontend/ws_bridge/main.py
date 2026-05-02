@@ -1,4 +1,4 @@
-"""FastAPI WebSocket bridge — Phase 2.
+"""FastAPI WebSocket bridge — Phase 2 + 3.
 
 Wires together:
 
@@ -7,14 +7,18 @@ Wires together:
   * ``RedisSubscriber``    — psubscribes to egs.state, drones.*.state,
                               drones.*.findings; validates and dispatches into
                               the aggregator.
+  * ``RedisPublisher``     — Phase 3 outbound: republishes validated operator
+                              approvals to ``egs.operator_actions``.
   * ``_emit_loop``         — reads ``aggregator.snapshot()`` at ``BRIDGE_TICK_S``
                               and broadcasts to all WS clients.
   * ``_ConnectionRegistry``— per-client send with timeout, parallel via
                               ``asyncio.gather`` (eng-review fix 1A).
 
-Inbound operator commands are validated against the
-``websocket_messages.operator_command`` branch and echoed back. Real Redis
-republish is Phase 3.
+Inbound ``operator_command`` frames are validated and echoed back (full
+multilingual translation path lands in Phase 4 with the EGS).
+Inbound ``finding_approval`` frames (Phase 3) are validated, stamped with a
+bridge-side timestamp, defensively re-validated against ``operator_actions``,
+republished to Redis, and acked back to the operator.
 """
 from __future__ import annotations
 
@@ -32,6 +36,7 @@ from shared.contracts.logging import ValidationEventLogger, setup_logging
 
 from frontend.ws_bridge.aggregator import StateAggregator
 from frontend.ws_bridge.config import BridgeConfig
+from frontend.ws_bridge.redis_publisher import RedisPublisher
 from frontend.ws_bridge.redis_subscriber import RedisSubscriber
 
 # ---- helpers ---------------------------------------------------------------
@@ -51,6 +56,35 @@ def _now_iso_ms() -> str:
     """Return current UTC time formatted as iso_timestamp_utc_ms (per _common)."""
     dt = datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
+
+async def _echo_error(
+    websocket: WebSocket,
+    *,
+    error: str,
+    detail: Optional[List[str]] = None,
+    command_id: Optional[str] = None,
+    finding_id: Optional[str] = None,
+) -> None:
+    """Send a uniformly-shaped error echo back to the WS client.
+
+    All bridge-side rejections (schema invalid, internal validation failure,
+    Redis publish failure) go through this helper so Flutter can branch on
+    the ``error`` field without per-error-type parsing. (Task 5 adds the
+    remaining ``finding_approval`` call sites.)
+    """
+    payload: Dict[str, Any] = {
+        "type": "echo",
+        "error": error,
+        "contract_version": VERSION,
+    }
+    if detail is not None:
+        payload["detail"] = detail
+    if command_id is not None:
+        payload["command_id"] = command_id
+    if finding_id is not None:
+        payload["finding_id"] = finding_id
+    await websocket.send_text(json.dumps(payload))
 
 
 # ---- connection registry ---------------------------------------------------
@@ -151,6 +185,7 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+        await app.state.publisher.close()
 
 
 def create_app() -> FastAPI:
@@ -167,6 +202,7 @@ def create_app() -> FastAPI:
         aggregator=aggregator,
         validation_logger=validation_logger,
     )
+    publisher = RedisPublisher(redis_url=config.redis_url)
     registry = _ConnectionRegistry(broadcast_timeout_s=config.broadcast_timeout_s)
 
     app = FastAPI(title="FieldAgent WS Bridge (Phase 2)", lifespan=lifespan)
@@ -174,6 +210,7 @@ def create_app() -> FastAPI:
     app.state.aggregator = aggregator
     app.state.subscriber = subscriber
     app.state.registry = registry
+    app.state.publisher = publisher
 
     @app.get("/health")
     async def health() -> Dict[str, str]:
@@ -220,14 +257,69 @@ def create_app() -> FastAPI:
                             })
                         )
                     else:
-                        await websocket.send_text(
-                            json.dumps({
-                                "type": "echo",
-                                "error": "invalid_operator_command",
-                                "detail": [e.message for e in outcome.errors],
-                                "contract_version": VERSION,
-                            })
+                        await _echo_error(
+                            websocket,
+                            error="invalid_operator_command",
+                            detail=[e.message for e in outcome.errors],
+                            command_id=parsed.get("command_id"),
                         )
+                elif isinstance(parsed, dict) and parsed.get("type") == "finding_approval":
+                    outcome = validate("websocket_messages", parsed)
+                    if not outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="invalid_finding_approval",
+                            detail=[e.message for e in outcome.errors],
+                            command_id=parsed.get("command_id"),
+                            finding_id=parsed.get("finding_id"),
+                        )
+                        continue
+                    redis_payload: Dict[str, Any] = {
+                        "kind": "finding_approval",
+                        "command_id": parsed["command_id"],
+                        "finding_id": parsed["finding_id"],
+                        "action": parsed["action"],
+                        "bridge_received_at_iso_ms": _now_iso_ms(),
+                        "contract_version": VERSION,
+                    }
+                    # Defensive: validate the payload we're about to publish.
+                    bridge_outcome = validate("operator_actions", redis_payload)
+                    if not bridge_outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="bridge_internal",
+                            detail=[e.message for e in bridge_outcome.errors],
+                            command_id=parsed.get("command_id"),
+                            finding_id=parsed.get("finding_id"),
+                        )
+                        continue
+                    try:
+                        await app.state.publisher.publish(
+                            "egs.operator_actions", redis_payload,
+                        )
+                    except Exception:
+                        # Python 3.8+ guarantee: asyncio.CancelledError is a
+                        # BaseException, NOT a subclass of Exception, so the
+                        # bare ``except Exception`` here cannot swallow loop
+                        # cancellation. Do not "tighten" this to
+                        # ``except (RedisError, Exception)`` — that would
+                        # introduce a real CancelledError suppression.
+                        await _echo_error(
+                            websocket,
+                            error="redis_publish_failed",
+                            command_id=parsed.get("command_id"),
+                            finding_id=parsed.get("finding_id"),
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "echo",
+                            "ack": "finding_approval",
+                            "command_id": parsed["command_id"],
+                            "finding_id": parsed["finding_id"],
+                            "contract_version": VERSION,
+                        })
+                    )
                 else:
                     await websocket.send_text(
                         json.dumps({
