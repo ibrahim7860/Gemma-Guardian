@@ -1,0 +1,13 @@
+{
+  "kind": "command_translation",
+  "command_id": "abcd-1700000000000-3",
+  "structured": {
+    "command": "fabricated_command",
+    "args": {}
+  },
+  "valid": true,
+  "preview_text": "Bogus",
+  "preview_text_in_operator_language": "Bogus",
+  "egs_published_at_iso_ms": "2026-05-02T12:34:57.123Z",
+  "contract_version": "1.0.0"
+}

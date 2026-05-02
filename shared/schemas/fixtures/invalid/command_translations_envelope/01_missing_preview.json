@@ -1,0 +1,11 @@
+{
+  "kind": "command_translation",
+  "command_id": "abcd-1700000000000-3",
+  "structured": {
+    "command": "recall_drone",
+    "args": {"drone_id": "drone1", "reason": "operator request"}
+  },
+  "valid": true,
+  "egs_published_at_iso_ms": "2026-05-02T12:34:57.123Z",
+  "contract_version": "1.0.0"
+}
