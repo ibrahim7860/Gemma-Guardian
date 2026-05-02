@@ -30,7 +30,7 @@
       "required": ["type", "command_id", "language", "raw_text", "contract_version"],
       "properties": {
         "type": {"const": "operator_command"},
-        "command_id": {"type": "string", "minLength": 1},
+        "command_id": {"$ref": "_common.json#/$defs/command_id"},
         "language": {"$ref": "_common.json#/$defs/iso_lang_code"},
         "raw_text": {"type": "string", "minLength": 1},
         "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
@@ -42,7 +42,7 @@
       "required": ["type", "command_id", "structured", "valid", "preview_text", "preview_text_in_operator_language", "contract_version"],
       "properties": {
         "type": {"const": "command_translation"},
-        "command_id": {"type": "string", "minLength": 1},
+        "command_id": {"$ref": "_common.json#/$defs/command_id"},
         "structured": {"$ref": "operator_commands.json"},
         "valid": {"type": "boolean"},
         "preview_text": {"type": "string", "minLength": 1},
@@ -56,7 +56,7 @@
       "required": ["type", "command_id", "contract_version"],
       "properties": {
         "type": {"const": "operator_command_dispatch"},
-        "command_id": {"type": "string", "minLength": 1},
+        "command_id": {"$ref": "_common.json#/$defs/command_id"},
         "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
       }
     },
