@@ -45,7 +45,7 @@ class _CommandPanelState extends State<CommandPanel> {
   @override
   Widget build(BuildContext context) {
     return Consumer<MissionState>(
-      builder: (_, state, __) {
+      builder: (_, state, _) {
         final cid = state.activeCommandId;
         final cs = cid != null ? state.commandState(cid) : null;
         final translation = cid != null ? state.commandTranslation(cid) : null;
@@ -177,7 +177,7 @@ class _Preview extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border.all(color: valid ? Colors.green[700]! : Colors.orange[700]!),
         borderRadius: BorderRadius.circular(4),
-        color: (valid ? Colors.green : Colors.orange).withOpacity(0.05),
+        color: (valid ? Colors.green : Colors.orange).withValues(alpha: 0.05),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
