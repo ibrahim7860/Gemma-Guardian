@@ -15,5 +15,6 @@ class Channels {
   static const swarmOperatorAlerts = "swarm.operator_alerts";
   static const egsState = "egs.state";
   static const egsReplanEvents = "egs.replan_events";
+  static const egsOperatorActions = "egs.operator_actions";
   static const meshAdjacency = "mesh.adjacency_matrix";
 }
