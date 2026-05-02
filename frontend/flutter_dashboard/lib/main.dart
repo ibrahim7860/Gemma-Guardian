@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:provider/provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -14,6 +16,16 @@ import 'widgets/map_panel.dart';
 
 void main() {
   runApp(const FieldAgentDashboard());
+  // On web, Flutter ships a11y disabled by default for performance and only
+  // builds the semantics tree when the user clicks the off-screen
+  // "Enable accessibility" button. We always want it on: real operators
+  // benefit from screen-reader support, AND this is what makes browser
+  // automation (Playwright / chrome-devtools MCP) able to find buttons by
+  // role on the otherwise canvas-rendered UI.
+  // Doc: https://docs.flutter.dev/ui/accessibility/web-accessibility
+  if (kIsWeb) {
+    SemanticsBinding.instance.ensureSemantics();
+  }
 }
 
 class FieldAgentDashboard extends StatelessWidget {
