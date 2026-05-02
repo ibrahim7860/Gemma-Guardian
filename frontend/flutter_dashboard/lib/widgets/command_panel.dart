@@ -52,14 +52,12 @@ class _CommandPanelState extends State<CommandPanel> {
           const SizedBox(height: 12),
           Row(
             children: [
-              ElevatedButton(
-                onPressed: () {
-                  // Phase 3 wires this to the WebSocket; Phase 1B is a stub.
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Phase 3 will dispatch this to the EGS")),
-                  );
-                },
-                child: const Text("DISPATCH"),
+              Tooltip(
+                message: "Coming soon — multilingual command path",
+                child: ElevatedButton(
+                  onPressed: null,
+                  child: const Text("DISPATCH"),
+                ),
               ),
               const SizedBox(width: 12),
               OutlinedButton(
