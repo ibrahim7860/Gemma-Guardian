@@ -1,0 +1,8 @@
+{
+  "kind": "recall_drone",
+  "command_id": "abcd-1700000000000-1",
+  "finding_id": "f_drone1_42",
+  "action": "approve",
+  "bridge_received_at_iso_ms": "2026-05-02T12:34:56.789Z",
+  "contract_version": "1.0.0"
+}

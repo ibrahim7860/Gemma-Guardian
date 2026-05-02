@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_actions.json",
+  "title": "Redis payloads on egs.operator_actions",
+  "description": "Operator-driven actions republished by the WS bridge to Redis after schema validation. Discriminated by `kind`.",
+  "oneOf": [
+    {"$ref": "#/$defs/finding_approval"}
+  ],
+  "$defs": {
+    "finding_approval": {
+      "type": "object",
+      "required": ["kind", "command_id", "finding_id", "action", "bridge_received_at_iso_ms", "contract_version"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "finding_approval"},
+        "command_id": {"type": "string", "minLength": 1},
+        "finding_id": {"$ref": "_common.json#/$defs/finding_id"},
+        "action": {"enum": ["approve", "dismiss"]},
+        "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    }
+  }
+}
