@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "properties": {
         "kind": {"const": "finding_approval"},
-        "command_id": {"type": "string", "minLength": 1},
+        "command_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]{1,128}$"},
         "finding_id": {"$ref": "_common.json#/$defs/finding_id"},
         "action": {"enum": ["approve", "dismiss"]},
         "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},

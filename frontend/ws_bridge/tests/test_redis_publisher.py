@@ -132,3 +132,42 @@ async def test_concurrent_first_publishes_share_one_client(patched_from_url):
     # assert _client identity is the fake we patched in.
     assert pub._client is patched_from_url  # type: ignore[attr-defined]
     await pub.close()
+
+
+@pytest.mark.asyncio
+async def test_publish_failure_resets_client_for_lazy_reconnect(monkeypatch):
+    """After a publish raises, _client is nulled so the next call re-init's.
+
+    Without this, a transient Redis outage would brick every subsequent publish
+    until the bridge process restarts.
+    """
+    import redis.asyncio as redis_async
+    from redis.exceptions import RedisError
+
+    # First client raises, second succeeds — proving lazy reconnect happened.
+    raising_client = AsyncMock()
+    raising_client.publish = AsyncMock(side_effect=RedisError("simulated"))
+    raising_client.aclose = AsyncMock()
+    healthy_client = AsyncMock()
+    healthy_client.publish = AsyncMock()
+    healthy_client.aclose = AsyncMock()
+
+    clients_iter = iter([raising_client, healthy_client])
+    monkeypatch.setattr(
+        redis_async.Redis, "from_url",
+        staticmethod(lambda url, **kw: next(clients_iter)),
+    )
+
+    pub = RedisPublisher(redis_url="redis://localhost:6379")
+    with pytest.raises(RedisError):
+        await pub.publish("egs.operator_actions", {"kind": "test", "n": 1})
+    # _client must have been nulled so the next call re-init's via from_url
+    assert pub._client is None  # type: ignore[attr-defined]
+    # Aclose the dead client was attempted during error recovery.
+    raising_client.aclose.assert_awaited()
+
+    # Next publish gets the healthy client.
+    await pub.publish("egs.operator_actions", {"kind": "test", "n": 2})
+    assert pub._client is healthy_client  # type: ignore[attr-defined]
+    healthy_client.publish.assert_awaited_once()
+    await pub.close()

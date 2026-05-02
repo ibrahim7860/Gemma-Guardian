@@ -186,4 +186,97 @@ void main() {
       expect(ids.length, 1000);
     });
   });
+
+  group('idempotency + forward-compat', () {
+    test('markFinding is no-op if finding already pending (double-tap guard)', () {
+      final s = MissionState();
+      final sink = _RecordingSink();
+      s.attachSink(sink);
+      s.setConnectionStatus("connected");
+      s.markFinding("f_drone1_42", "approve");
+      s.markFinding("f_drone1_42", "approve"); // double-tap
+      expect(sink.received, hasLength(1));
+      expect(s.findingState("f_drone1_42"), ApprovalState.pending);
+    });
+
+    test('markFinding is no-op if finding already received', () {
+      final s = MissionState();
+      final sink = _RecordingSink();
+      s.attachSink(sink);
+      s.setConnectionStatus("connected");
+      s.markFinding("f_drone1_42", "approve");
+      final emitted = jsonDecode(sink.received.single as String) as Map<String, dynamic>;
+      s.handleEcho({
+        "type": "echo",
+        "ack": "finding_approval",
+        "command_id": emitted["command_id"],
+        "finding_id": "f_drone1_42",
+      });
+      expect(s.findingState("f_drone1_42"), ApprovalState.received);
+      s.markFinding("f_drone1_42", "approve");
+      expect(sink.received, hasLength(1)); // no second envelope
+    });
+
+    test('markFinding allows retry after failed', () {
+      final s = MissionState();
+      final sink = _RecordingSink();
+      s.attachSink(sink);
+      s.setConnectionStatus("connected");
+      s.markFinding("f_drone1_42", "approve");
+      s.handleEcho({
+        "type": "echo",
+        "error": "redis_publish_failed",
+        "finding_id": "f_drone1_42",
+      });
+      expect(s.findingState("f_drone1_42"), ApprovalState.failed);
+      s.markFinding("f_drone1_42", "approve");
+      expect(sink.received, hasLength(2));
+      expect(s.findingState("f_drone1_42"), ApprovalState.pending);
+    });
+
+    test('applyStateUpdate(approved=true) promotes pending → confirmed (EGS-before-ack)', () {
+      final s = MissionState();
+      final sink = _RecordingSink();
+      s.attachSink(sink);
+      s.setConnectionStatus("connected");
+      s.markFinding("f_drone1_42", "approve");
+      expect(s.findingState("f_drone1_42"), ApprovalState.pending);
+      s.applyStateUpdate({
+        "type": "state_update",
+        "timestamp": "2026-05-02T12:00:00.000Z",
+        "contract_version": "1.0.0",
+        "active_findings": [
+          {"finding_id": "f_drone1_42", "approved": true},
+        ],
+        "active_drones": [],
+      });
+      expect(s.findingState("f_drone1_42"), ApprovalState.confirmed);
+    });
+
+    test('applyStateUpdate(approved=true) does NOT override dismissed', () {
+      final s = MissionState();
+      final sink = _RecordingSink();
+      s.attachSink(sink);
+      s.setConnectionStatus("connected");
+      s.markFinding("f_drone1_42", "dismiss");
+      final emitted = jsonDecode(sink.received.single as String) as Map<String, dynamic>;
+      s.handleEcho({
+        "type": "echo",
+        "ack": "finding_approval",
+        "command_id": emitted["command_id"],
+        "finding_id": "f_drone1_42",
+      });
+      expect(s.findingState("f_drone1_42"), ApprovalState.dismissed);
+      s.applyStateUpdate({
+        "type": "state_update",
+        "timestamp": "2026-05-02T12:01:00.000Z",
+        "contract_version": "1.0.0",
+        "active_findings": [
+          {"finding_id": "f_drone1_42", "approved": true},
+        ],
+        "active_drones": [],
+      });
+      expect(s.findingState("f_drone1_42"), ApprovalState.dismissed);
+    });
+  });
 }

@@ -44,6 +44,15 @@ class _MapPanelState extends State<MapPanel> {
         // Lock bbox on first non-empty frame.
         _bbox ??= _computeBbox(drones, findings);
 
+        // Self-heal if the locked bbox no longer covers any current point.
+        // Defends against the (0,0) "no-GPS-yet" sentinel: if the first
+        // frame contained only sentinel coords and now real coords arrive
+        // outside the original ±1° box, we recompute instead of silently
+        // showing an empty map.
+        if (!_bboxStillCovers(_bbox!, drones, findings)) {
+          _bbox = _computeBbox(drones, findings);
+        }
+
         final colors = palettePreview([
           for (final d in drones) (d["drone_id"] as String?) ?? "?",
         ]);
@@ -125,6 +134,35 @@ class _Bbox {
   double get midLat => (minLat + maxLat) / 2.0;
   double get latSpan => math.max((maxLat - minLat).abs(), 1e-6);
   double get lonSpan => math.max((maxLon - minLon).abs(), 1e-6);
+
+  bool covers(double lat, double lon) =>
+      lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
+}
+
+/// Returns false if any drone or finding has finite coords outside [bbox].
+/// Used to auto-refit when the locked bbox doesn't represent current state
+/// (e.g., the first frame had only (0,0) sentinels).
+bool _bboxStillCovers(
+  _Bbox bbox,
+  List<Map<String, dynamic>> drones,
+  List<Map<String, dynamic>> findings,
+) {
+  bool checkPoint(num? la, num? lo) {
+    if (la == null || lo == null) return true;
+    final lat = la.toDouble();
+    final lon = lo.toDouble();
+    if (!lat.isFinite || !lon.isFinite) return true;
+    return bbox.covers(lat, lon);
+  }
+  for (final d in drones) {
+    final p = d["position"] as Map<String, dynamic>?;
+    if (!checkPoint(p?["lat"] as num?, p?["lon"] as num?)) return false;
+  }
+  for (final f in findings) {
+    final p = f["location"] as Map<String, dynamic>?;
+    if (!checkPoint(p?["lat"] as num?, p?["lon"] as num?)) return false;
+  }
+  return true;
 }
 
 _Bbox _computeBbox(
@@ -190,8 +228,13 @@ class _ProjectionPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
 
-    // cos(midLat) longitude correction.
-    final cosLat = math.cos(bbox.midLat * math.pi / 180.0);
+    // cos(midLat) longitude correction. Floor at 0.01 so near-polar bboxes
+    // (cos(±90°) → 0) don't produce astronomical lonScale values. Disaster
+    // scenarios stay sub-polar, but the floor keeps stale-fixture testing safe.
+    final cosLat = math.max(
+      math.cos(bbox.midLat * math.pi / 180.0).abs(),
+      0.01,
+    );
     final lonScale = size.width / (bbox.lonSpan * cosLat);
     final latScale = size.height / bbox.latSpan;
 

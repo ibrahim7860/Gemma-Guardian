@@ -104,4 +104,32 @@ void main() {
     // First three sorted ids get the first three palette entries.
     expect(colors1["drone1"], isNot(colors1["drone2"]));
   });
+
+  testWidgets('auto-refits when first frame had sentinel coords and real coords arrive', (tester) async {
+    // Adversarial-review regression: first frame is a "no-GPS-yet" sentinel
+    // at (0,0) which locks the bbox to a degenerate box around the origin.
+    // When real disaster-area coords arrive, the panel must self-heal so
+    // the new drone projects onto the visible canvas.
+    final s = MissionState();
+    s.applyStateUpdate({
+      "type": "state_update",
+      "timestamp": "2026-05-02T12:00:00.000Z",
+      "contract_version": "1.0.0",
+      "active_findings": [],
+      "active_drones": [_drone("drone1", 0.0, 0.0)],  // sentinel
+    });
+    await tester.pumpWidget(_wrap(s));
+    expect(find.byKey(const ValueKey("map-drone-drone1")), findsOneWidget);
+    // Real coords arrive — far outside the original ±1° box around origin.
+    s.applyStateUpdate({
+      "type": "state_update",
+      "timestamp": "2026-05-02T12:00:01.000Z",
+      "contract_version": "1.0.0",
+      "active_findings": [],
+      "active_drones": [_drone("drone1", 34.05, -118.25)],  // real LA coords
+    });
+    await tester.pump();
+    // Marker is still rendered (would have been clipped without auto-refit).
+    expect(find.byKey(const ValueKey("map-drone-drone1")), findsOneWidget);
+  });
 }

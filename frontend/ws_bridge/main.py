@@ -70,8 +70,7 @@ async def _echo_error(
 
     All bridge-side rejections (schema invalid, internal validation failure,
     Redis publish failure) go through this helper so Flutter can branch on
-    the ``error`` field without per-error-type parsing. (Task 5 adds the
-    remaining ``finding_approval`` call sites.)
+    the ``error`` field without per-error-type parsing.
     """
     payload: Dict[str, Any] = {
         "type": "echo",
@@ -151,13 +150,21 @@ async def _emit_loop(
     stderr and skip the tick.
     """
     while True:
-        env = aggregator.snapshot(timestamp_iso=_now_iso_ms())
-        env["contract_version"] = VERSION
-        outcome = validate("websocket_messages", env)
-        if outcome.valid:
-            await registry.broadcast(env)
-        else:
-            print(f"[ws_bridge] BUG: aggregator emitted invalid envelope: {outcome.errors}")
+        try:
+            env = aggregator.snapshot(timestamp_iso=_now_iso_ms())
+            env["contract_version"] = VERSION
+            outcome = validate("websocket_messages", env)
+            if outcome.valid:
+                await registry.broadcast(env)
+            else:
+                print(f"[ws_bridge] BUG: aggregator emitted invalid envelope: {outcome.errors}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Never let one bad tick kill the loop. Without this guard, a
+            # single malformed aggregator state silently stops broadcasts
+            # forever while WS clients keep connecting and seeing empty.
+            print(f"[ws_bridge] _emit_loop tick error (continuing): {type(exc).__name__}: {exc}")
         await asyncio.sleep(tick_s)
 
 
@@ -178,8 +185,15 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     try:
         yield
     finally:
+        # Cancel both tasks BEFORE awaiting either. If subscriber.stop()
+        # raises, ``await subscribe_task`` would block forever otherwise,
+        # hanging FastAPI shutdown until SIGKILL.
         emit_task.cancel()
-        await subscriber.stop()
+        subscribe_task.cancel()
+        try:
+            await subscriber.stop()
+        except Exception:
+            pass
         for task in (emit_task, subscribe_task):
             try:
                 await task
@@ -228,9 +242,10 @@ def create_app() -> FastAPI:
             await websocket.send_text(json.dumps(initial))
             while True:
                 msg = await websocket.receive_text()
-                # Validate inbound; only operator_command frames are accepted
-                # for now (Phase 3 will republish to Redis). Other types echo
-                # back with a hint.
+                # Validate inbound. Phase 3: ``finding_approval`` is republished
+                # to Redis after validation. Phase 4 will republish
+                # ``operator_command`` once the EGS translation path lands.
+                # Unknown types fall through to a debug echo.
                 try:
                     parsed = json.loads(msg)
                 except json.JSONDecodeError:
@@ -246,8 +261,8 @@ def create_app() -> FastAPI:
                 if isinstance(parsed, dict) and parsed.get("type") == "operator_command":
                     outcome = validate("websocket_messages", parsed)
                     if outcome.valid:
-                        # Phase 3 will republish onto Redis. For now, just
-                        # acknowledge.
+                        # Phase 4 will translate via the EGS and republish onto
+                        # Redis. For now, just acknowledge.
                         await websocket.send_text(
                             json.dumps({
                                 "type": "echo",

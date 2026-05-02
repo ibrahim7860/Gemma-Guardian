@@ -35,6 +35,9 @@ class RedisPublisher:
 
         Opens a Redis client on first call (under a lock to prevent races
         between concurrent first-callers) and reuses it for subsequent calls.
+        On any exception during publish, the client is closed and nulled out
+        so the next call lazy-reconnects. Without this, a transient Redis
+        outage would brick every subsequent publish until the bridge restarts.
         Raises ``redis.exceptions.RedisError`` on connection failures.
         """
         if self._client is None:
@@ -42,7 +45,20 @@ class RedisPublisher:
                 if self._client is None:
                     self._client = redis_async.Redis.from_url(self._redis_url)
         encoded = json.dumps(payload)
-        await self._client.publish(channel, encoded)
+        try:
+            await self._client.publish(channel, encoded)
+        except Exception:
+            client = self._client
+            self._client = None
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception as exc:
+                    _LOG.debug(
+                        "RedisPublisher: aclose during error recovery failed: %s",
+                        exc, exc_info=True,
+                    )
+            raise
 
     async def close(self) -> None:
         """Dispose of the client. Idempotent and safe pre-publish."""

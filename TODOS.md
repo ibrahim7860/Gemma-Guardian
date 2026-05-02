@@ -30,6 +30,15 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Map panel uses pure CustomPaint with `_DroneMarker` and `_FindingMarker` private widgets passed projection coordinates.
 - **Owner:** Person 4 (later phase if time).
 
+### Bridge finding_id allowlist for `egs.operator_actions`
+- **What:** When the bridge receives a `finding_approval`, cross-check the inbound `finding_id` against the aggregator's known-finding set before publishing to Redis. Reject unknown finding_ids with `unknown_finding_id` echo.
+- **Why:** Today the bridge republishes any well-formed finding_id verbatim. A buggy or malicious WS client can send fabricated finding_ids that get persisted on `egs.operator_actions`, polluting the EGS view of operator decision history.
+- **Pros:** Tighter integrity on the operator-decision audit trail.
+- **Cons:** Couples the inbound handler to aggregator internal state. Aggregator currently keeps findings in an `OrderedDict` keyed by finding_id; adding a `has_finding(id)` accessor is the right shape.
+- **Context:** Surfaced by the Phase 3 adversarial review. Bridge integrity is fine while there's no EGS subscriber yet (Phase 4 work). This becomes load-bearing when Phase 4 EGS subscribes and writes audit records.
+- **Depends on:** Could land before Phase 4 EGS, but practically belongs in the same PR as the EGS subscriber.
+- **Owner:** Person 4 (bridge changes) and Person 3 (EGS coordination).
+
 ### Validation event ticker on drone status panel
 - **What:** Show recent validation failures per drone on the status card (count + last-event timestamp).
 - **Why:** Demo storytelling — "Gemma 4 self-corrects, you can see it." Day-10 work in the roadmap.

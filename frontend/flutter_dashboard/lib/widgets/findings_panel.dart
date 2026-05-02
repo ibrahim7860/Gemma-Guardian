@@ -9,8 +9,13 @@ class FindingsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<MissionState>(
       builder: (context, mission, _) {
+        // Defensive shape check: drop entries missing a string finding_id
+        // before mapping to tiles. The bridge validates upstream, but a
+        // single malformed entry slipping through would otherwise crash
+        // the entire panel via `as String` non-null casts below.
         final upstream = mission.activeFindings
             .whereType<Map<String, dynamic>>()
+            .where((f) => f["finding_id"] is String)
             .toList()
             .reversed
             .toList();
@@ -56,9 +61,19 @@ class _FindingTile extends StatelessWidget {
         state == ApprovalState.confirmed ||
         state == ApprovalState.dismissed;
 
-    final borderColor = state == ApprovalState.confirmed
-        ? Colors.green
-        : (state == ApprovalState.dismissed ? Colors.grey.shade400 : Colors.transparent);
+    final Color borderColor;
+    switch (state) {
+      case ApprovalState.confirmed:
+        borderColor = Colors.green;
+      case ApprovalState.dismissed:
+        borderColor = Colors.grey.shade400;
+      case ApprovalState.failed:
+        borderColor = Colors.red.shade300;
+      case ApprovalState.pending:
+      case ApprovalState.received:
+      case null:
+        borderColor = Colors.transparent;
+    }
 
     final titleStyle = state == ApprovalState.dismissed
         ? const TextStyle(decoration: TextDecoration.lineThrough)
@@ -111,7 +126,20 @@ class _ArchivedTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = state == ApprovalState.dismissed ? "dismissed" : "approved";
+    final String label;
+    switch (state) {
+      case ApprovalState.dismissed:
+        label = "dismissed";
+      case ApprovalState.received:
+      case ApprovalState.confirmed:
+        label = "approved";
+      case ApprovalState.pending:
+      case ApprovalState.failed:
+        // archivedFindingIds() filters these out, so reaching here is a
+        // contract violation in MissionState rather than user-facing data.
+        assert(false, "archived tile rendered with non-archivable state: $state");
+        label = "approved";
+    }
     return ListTile(
       title: Text(
         "$findingId (archived)",

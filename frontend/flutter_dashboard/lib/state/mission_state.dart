@@ -74,6 +74,11 @@ class MissionState extends ChangeNotifier {
     _findingActions.forEach((id, state) {
       if (state == ApprovalState.pending) flipped.add(id);
     });
+    // Drop the in-flight command bookkeeping — the bridge will never ack
+    // these, and a reconnect's bridge starts fresh. Without this, the maps
+    // grow unbounded under heavy disconnect/reconnect cycles.
+    _pendingActions.clear();
+    _commandToFinding.clear();
     if (flipped.isEmpty) {
       notifyListeners();
       return;
@@ -98,8 +103,19 @@ class MissionState extends ChangeNotifier {
   }
 
   /// Operator clicked APPROVE or DISMISS on a finding row.
+  ///
+  /// Idempotent against double-clicks: if the finding already has a
+  /// non-failed terminal/pending state, this is a no-op. Without the guard,
+  /// a fast double-tap (two pointerup events before the disabled-button
+  /// rebuild lands) would publish two approvals to Redis with different
+  /// command_ids — the EGS would see duplicate decisions for one finding.
   void markFinding(String findingId, String action) {
     assert(action == "approve" || action == "dismiss");
+    final existing = _findingActions[findingId];
+    if (existing != null && existing != ApprovalState.failed) {
+      // Already pending or terminal — ignore the duplicate click.
+      return;
+    }
     final commandId = _nextCommandId();
     _findingActions[findingId] = ApprovalState.pending;
     _pendingActions[commandId] = action;
@@ -148,13 +164,23 @@ class MissionState extends ChangeNotifier {
     egsState = envelope["egs_state"] as Map<String, dynamic>?;
     activeFindings = (envelope["active_findings"] as List?) ?? const [];
     activeDrones = (envelope["active_drones"] as List?) ?? const [];
-    // Promote received → confirmed when upstream marks the finding approved.
+    // Promote any non-confirmed/non-dismissed state to confirmed when
+    // upstream marks the finding approved. Forward-compat: if the EGS
+    // echo (via state_update with approved=true) arrives BEFORE the
+    // bridge ack (or after a `failed` state from a transient error),
+    // we still recognize the finding as confirmed instead of stranding
+    // the row in pending/failed forever.
     for (final raw in activeFindings) {
       if (raw is! Map<String, dynamic>) continue;
       final id = raw["finding_id"] as String?;
       if (id == null) continue;
-      if (_findingActions[id] == ApprovalState.received && raw["approved"] == true) {
-        _findingActions[id] = ApprovalState.confirmed;
+      if (raw["approved"] == true) {
+        final cur = _findingActions[id];
+        if (cur != null &&
+            cur != ApprovalState.confirmed &&
+            cur != ApprovalState.dismissed) {
+          _findingActions[id] = ApprovalState.confirmed;
+        }
       }
     }
     notifyListeners();
