@@ -124,3 +124,9 @@ def test_dispatch_does_not_accept_finding_approval_only_fields():
     }
     outcome = validate("operator_actions", payload)
     assert not outcome.valid
+    # Pin the rejection to the dispatch branch refusing leaked finding_approval-only
+    # fields via additionalProperties:false. Without this assertion, the test could
+    # keep passing if a future refactor broke oneOf discrimination for unrelated
+    # reasons.
+    joined = " ".join(e.message for e in outcome.errors).lower()
+    assert "additionalproperties" in joined or "finding_id" in joined or "action" in joined, [e.message for e in outcome.errors]
