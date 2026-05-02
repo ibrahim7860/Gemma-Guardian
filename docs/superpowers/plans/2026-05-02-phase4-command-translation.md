@@ -374,7 +374,7 @@ with open("shared/schemas/fixtures/invalid/operator_commands_envelope/02_raw_tex
 Run: `PYTHONPATH=. pytest shared/tests/test_operator_commands_envelope_schema.py -v`
 Expected: 8 failing.
 
-- [ ] **Step 5: Create the schema** (absolute `$ref` URIs per adversarial finding #3)
+- [ ] **Step 5: Create the schema** (relative `$ref`s match repo-wide convention; see "Schema $ref convention" note below the plan header)
 
 `shared/schemas/operator_commands_envelope.json`:
 
@@ -389,10 +389,10 @@ Expected: 8 failing.
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "operator_command"},
-    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
-    "language": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_lang_code"},
+    "command_id": {"$ref": "_common.json#/$defs/command_id"},
+    "language": {"$ref": "_common.json#/$defs/iso_lang_code"},
     "raw_text": {"type": "string", "minLength": 1, "maxLength": 4096},
-    "bridge_received_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
+    "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
   }
 }
@@ -618,7 +618,7 @@ def test_valid_false_with_recall_drone_rejected():
     assert not outcome.valid
 ```
 
-- [ ] **Step 4: Create the schema** (with absolute `$ref` URIs per adversarial finding #3 + `if/then` invariant per #2)
+- [ ] **Step 4: Create the schema** (relative `$ref`s + `if/then` invariant per adversarial finding #2)
 
 `shared/schemas/command_translations_envelope.json`:
 
@@ -633,12 +633,12 @@ def test_valid_false_with_recall_drone_rejected():
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "command_translation"},
-    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
-    "structured": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_commands.json"},
+    "command_id": {"$ref": "_common.json#/$defs/command_id"},
+    "structured": {"$ref": "operator_commands.json"},
     "valid": {"type": "boolean"},
     "preview_text": {"type": "string", "minLength": 1, "maxLength": 1024},
     "preview_text_in_operator_language": {"type": "string", "minLength": 1, "maxLength": 1024},
-    "egs_published_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
+    "egs_published_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
   },
   "allOf": [

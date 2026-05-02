@@ -57,6 +57,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Phase 3 added the `cancel-before-await` pattern; Phase 4 extends it to three tasks (emit, subscribe, translation_broadcaster). The fix is to also move `pubsub.aclose()` AFTER all task awaits.
 - **Owner:** Person 4.
 
+### Repo-wide $ref convention pass (Phase 5+)
+- **What:** Decide on a single `$ref` style for `shared/schemas/` — currently every schema uses relative refs (`_common.json#/$defs/...`). Either keep relative as the formal convention and document it, OR convert to absolute URIs (`https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/...`) across every schema in one coordinated PR.
+- **Why:** Surfaced by the Phase 4 Task 2 code review. Phase 4 originally tried to use absolute URIs in two new schemas (per adversarial finding #3 — concern that relative refs resolve by URI-base coincidence). Code review correctly noted that mixing styles in one directory is worse than the bug it tried to prevent. Phase 4 reverted to relative refs to match the existing convention. The forward-looking concern about $id moves still applies — it just applies uniformly to every schema, not just Phase 4's.
+- **Pros:** Consistency. Easier to refactor `$id` bases later (search-and-replace works without missing schemas).
+- **Cons:** Touches every schema in `shared/schemas/`. CI burden if any test depends on a specific $ref shape.
+- **Context:** Reverted in commit `<phase4-revert-sha>`. The Phase 4 spec §4.3 documents the deferral rationale.
+- **Owner:** Person 4 or whoever picks up shared/contracts work.
+
 ### Move `ValidationEventLogger.log` off the subscriber dispatch path (Phase 5+)
 - **What:** `frontend/ws_bridge/redis_subscriber.py:_log_validation_failure` calls `self._validation_logger.log(...)` synchronously inside `_handle_message`. The logger does sync disk I/O (`open(..., "a")`).
 - **Why:** Surfaced by the Phase 4 adversarial review (finding #7). A misbehaving EGS spamming malformed translations or findings could stall the subscriber's Redis drain on disk I/O latency, especially on slow disks or when the validation log is being rotated.

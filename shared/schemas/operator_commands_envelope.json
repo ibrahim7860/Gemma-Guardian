@@ -8,10 +8,10 @@
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "operator_command"},
-    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
-    "language": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_lang_code"},
+    "command_id": {"$ref": "_common.json#/$defs/command_id"},
+    "language": {"$ref": "_common.json#/$defs/iso_lang_code"},
     "raw_text": {"type": "string", "minLength": 1, "maxLength": 4096},
-    "bridge_received_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
+    "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
   }
 }

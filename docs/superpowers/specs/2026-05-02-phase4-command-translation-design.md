@@ -139,7 +139,7 @@ The bridge → EGS message:
 
 ### 4.3 New schema: `shared/schemas/command_translations_envelope.json`
 
-The EGS → bridge message. **Cross-file `$ref`s are absolute URIs** (adversarial finding #3 — bare relative refs only resolve by base-URI coincidence and are brittle if any `$id` changes). **`if/then` constraint enforces `valid==false ⇔ command=="unknown_command"`** so a buggy/malicious EGS cannot publish a logically contradictory translation that the bridge would forward to the operator (adversarial finding #2).
+The EGS → bridge message. **Relative `$ref`s** match the repo-wide convention (every existing schema in `shared/schemas/` uses relative refs to `_common.json`). The adversarial finding #3 about absolute URIs was reconsidered after Task 2's code review surfaced the inconsistency — a single Phase 4 schema using absolute refs offered illusory protection because the same brittleness applies to every schema. Repo-wide conversion to absolute URIs (or a different scheme) is now a separate TODO. **`if/then` constraint enforces `valid==false ⇔ command=="unknown_command"`** so a buggy/malicious EGS cannot publish a logically contradictory translation that the bridge would forward to the operator (adversarial finding #2 — kept).
 
 ```json
 {
@@ -151,12 +151,12 @@ The EGS → bridge message. **Cross-file `$ref`s are absolute URIs** (adversaria
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "command_translation"},
-    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
-    "structured": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_commands.json"},
+    "command_id": {"$ref": "_common.json#/$defs/command_id"},
+    "structured": {"$ref": "operator_commands.json"},
     "valid": {"type": "boolean"},
     "preview_text": {"type": "string", "minLength": 1, "maxLength": 1024},
     "preview_text_in_operator_language": {"type": "string", "minLength": 1, "maxLength": 1024},
-    "egs_published_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
+    "egs_published_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
   },
   "allOf": [
@@ -172,7 +172,7 @@ The EGS → bridge message. **Cross-file `$ref`s are absolute URIs** (adversaria
 }
 ```
 
-The same absolute-URI convention applies to `operator_commands_envelope.json` (§4.2) — update those `$ref`s to absolute URIs at implementation time.
+`operator_commands_envelope.json` (§4.2) also uses relative `$ref`s for the same reason. The cross-file `$ref` to `operator_commands.json` (relative form) resolves through the registry's URI base — verified working at Task 3 implementation time per the existing Phase 3 cross-file ref pattern.
 
 ### 4.4 `shared/contracts/topics.yaml`
 
