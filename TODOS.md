@@ -57,6 +57,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Phase 3 added the `cancel-before-await` pattern; Phase 4 extends it to three tasks (emit, subscribe, translation_broadcaster). The fix is to also move `pubsub.aclose()` AFTER all task awaits.
 - **Owner:** Person 4.
 
+### Bridge full-suite asyncio test pollution (Phase 5+)
+- **What:** `PYTHONPATH=. python3 -m pytest frontend/ws_bridge/tests/` reports 20 failures on `main` AND on the Phase 4 branch, but every failing test PASSES when run in isolation (`python3 -m pytest frontend/ws_bridge/tests/test_subscriber.py` etc). The failure is event-loop / fakeredis state pollution across test files when pytest collects them in one run.
+- **Why:** Surfaced during Phase 4 Task 6 review when I tried to verify a clean baseline. CI will look broken if anyone runs the full bridge suite as one job. Individual-file runs hide the issue. Phase 4's new tests use `httpx.AsyncClient + pytest_asyncio` (the test harness convention added for Tasks 7–10) which sidesteps the pollution, but the legacy Phase 2/3 tests still collide with each other.
+- **Pros:** Restores trust in `pytest -q frontend/ws_bridge/tests/` as a single command.
+- **Cons:** Touches multiple test files; the right fix is probably to add a `pytest.ini` `asyncio_mode = "auto"` plus per-test-file fakeredis fixtures with explicit teardown. Could be 1-2 hours of fiddling.
+- **Context:** Affected files: `test_subscriber.py`, `test_redis_publisher.py`, `test_outbound_publish.py`. Python 3.9.5, pytest-8.4.2, pytest-asyncio 1.2.0. Pattern matches https://github.com/pytest-dev/pytest-asyncio/issues/660 (loop-scope mismatch between fakeredis and pytest-asyncio strict mode).
+- **Owner:** Person 4.
+
 ### Repo-wide $ref convention pass (Phase 5+)
 - **What:** Decide on a single `$ref` style for `shared/schemas/` — currently every schema uses relative refs (`_common.json#/$defs/...`). Either keep relative as the formal convention and document it, OR convert to absolute URIs (`https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/...`) across every schema in one coordinated PR.
 - **Why:** Surfaced by the Phase 4 Task 2 code review. Phase 4 originally tried to use absolute URIs in two new schemas (per adversarial finding #3 — concern that relative refs resolve by URI-base coincidence). Code review correctly noted that mixing styles in one directory is worse than the bug it tried to prevent. Phase 4 reverted to relative refs to match the existing convention. The forward-looking concern about $id moves still applies — it just applies uniformly to every schema, not just Phase 4's.
