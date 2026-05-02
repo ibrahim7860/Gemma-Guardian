@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:provider/provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -14,6 +16,16 @@ import 'widgets/map_panel.dart';
 
 void main() {
   runApp(const FieldAgentDashboard());
+  // On web, Flutter ships a11y disabled by default for performance and only
+  // builds the semantics tree when the user clicks the off-screen
+  // "Enable accessibility" button. We always want it on: real operators
+  // benefit from screen-reader support, AND this is what makes browser
+  // automation (Playwright / chrome-devtools MCP) able to find buttons by
+  // role on the otherwise canvas-rendered UI.
+  // Doc: https://docs.flutter.dev/ui/accessibility/web-accessibility
+  if (kIsWeb) {
+    SemanticsBinding.instance.ensureSemantics();
+  }
 }
 
 class FieldAgentDashboard extends StatelessWidget {
@@ -42,6 +54,7 @@ class _DashboardShell extends StatefulWidget {
 class _DashboardShellState extends State<_DashboardShell> {
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
+  StreamSubscription<String>? _snackbarSub;
   Duration _backoff = const Duration(seconds: 1);
   Timer? _retryTimer;
   bool _disposed = false;
@@ -50,6 +63,16 @@ class _DashboardShellState extends State<_DashboardShell> {
   void initState() {
     super.initState();
     _connect();
+    final mission = context.read<MissionState>();
+    _snackbarSub = mission.snackbarStream.listen((message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    });
   }
 
   void _connect() {
@@ -58,6 +81,7 @@ class _DashboardShellState extends State<_DashboardShell> {
     mission.setConnectionStatus("connecting");
     try {
       _channel = WebSocketChannel.connect(Uri.parse(Channels.wsEndpoint));
+      mission.attachSink(_channel!.sink);
       _sub = _channel!.stream.listen(
         (frame) {
           mission.setConnectionStatus("connected");
@@ -78,6 +102,7 @@ class _DashboardShellState extends State<_DashboardShell> {
   void _scheduleReconnect() {
     if (_disposed) return;
     final mission = context.read<MissionState>();
+    mission.detachSink();
     mission.setConnectionStatus("reconnecting in ${_backoff.inSeconds}s");
     _sub?.cancel();
     _channel?.sink.close();
@@ -92,6 +117,7 @@ class _DashboardShellState extends State<_DashboardShell> {
     _disposed = true;
     _retryTimer?.cancel();
     _sub?.cancel();
+    _snackbarSub?.cancel();
     _channel?.sink.close();
     super.dispose();
   }

@@ -11,8 +11,9 @@ redis:
     visible_to:      {channel: "swarm.{drone_id}.visible_to.{drone_id}", payload: "json", json_schema: "peer_broadcast"}
     operator_alerts: {channel: "swarm.operator_alerts",                  payload: "json", json_schema: null}
   egs:
-    state:         {channel: "egs.state",         payload: "json", json_schema: "egs_state"}
-    replan_events: {channel: "egs.replan_events", payload: "json", json_schema: null}
+    state:            {channel: "egs.state",            payload: "json", json_schema: "egs_state"}
+    replan_events:    {channel: "egs.replan_events",    payload: "json", json_schema: null}
+    operator_actions: {channel: "egs.operator_actions", payload: "json", json_schema: "operator_actions"}
   mesh:
     adjacency: {channel: "mesh.adjacency_matrix", payload: "json", json_schema: null}
 websocket:
