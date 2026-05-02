@@ -81,6 +81,16 @@ class StateAggregator:
 
     # ---- reader ------------------------------------------------------------
 
+    def has_finding(self, finding_id: str) -> bool:
+        """Return True iff the aggregator currently holds a finding with this id.
+
+        Used by the bridge's finding_approval allowlist guard (Phase 4) to
+        reject inbound approvals for unknown or aged-out finding_ids before
+        republishing them onto egs.operator_actions. The check is O(1) on the
+        OrderedDict.
+        """
+        return finding_id in self._findings
+
     def snapshot(self, *, timestamp_iso: str) -> Dict[str, Any]:
         """Return a fresh ``state_update`` envelope reflecting current buckets.
 
