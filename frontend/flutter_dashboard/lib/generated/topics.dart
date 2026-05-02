@@ -16,5 +16,7 @@ class Channels {
   static const egsState = "egs.state";
   static const egsReplanEvents = "egs.replan_events";
   static const egsOperatorActions = "egs.operator_actions";
+  static const egsOperatorCommands = "egs.operator_commands";
+  static const egsCommandTranslations = "egs.command_translations";
   static const meshAdjacency = "mesh.adjacency_matrix";
 }

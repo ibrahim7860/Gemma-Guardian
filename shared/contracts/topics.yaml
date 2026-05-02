@@ -14,6 +14,8 @@ redis:
     state:            {channel: "egs.state",            payload: "json", json_schema: "egs_state"}
     replan_events:    {channel: "egs.replan_events",    payload: "json", json_schema: null}
     operator_actions: {channel: "egs.operator_actions", payload: "json", json_schema: "operator_actions"}
+    operator_commands:      {channel: "egs.operator_commands",      payload: "json", json_schema: "operator_commands_envelope"}
+    command_translations:   {channel: "egs.command_translations",   payload: "json", json_schema: "command_translations_envelope"}
   mesh:
     adjacency: {channel: "mesh.adjacency_matrix", payload: "json", json_schema: null}
 websocket:

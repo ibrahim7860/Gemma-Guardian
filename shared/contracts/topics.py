@@ -17,6 +17,8 @@ SWARM_OPERATOR_ALERTS = "swarm.operator_alerts"
 EGS_STATE = "egs.state"
 EGS_REPLAN_EVENTS = "egs.replan_events"
 EGS_OPERATOR_ACTIONS = "egs.operator_actions"
+EGS_OPERATOR_COMMANDS = "egs.operator_commands"
+EGS_COMMAND_TRANSLATIONS = "egs.command_translations"
 MESH_ADJACENCY = "mesh.adjacency_matrix"
 
 def per_drone_state_channel(drone_id: str) -> str:
