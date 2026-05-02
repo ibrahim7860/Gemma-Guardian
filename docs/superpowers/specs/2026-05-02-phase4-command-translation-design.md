@@ -139,28 +139,40 @@ The bridge → EGS message:
 
 ### 4.3 New schema: `shared/schemas/command_translations_envelope.json`
 
-The EGS → bridge message:
+The EGS → bridge message. **Cross-file `$ref`s are absolute URIs** (adversarial finding #3 — bare relative refs only resolve by base-URI coincidence and are brittle if any `$id` changes). **`if/then` constraint enforces `valid==false ⇔ command=="unknown_command"`** so a buggy/malicious EGS cannot publish a logically contradictory translation that the bridge would forward to the operator (adversarial finding #2).
 
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "...command_translations_envelope.json",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/command_translations_envelope.json",
   "title": "EGS → Bridge command translation envelope",
   "type": "object",
   "required": ["kind", "command_id", "structured", "valid", "preview_text", "preview_text_in_operator_language", "egs_published_at_iso_ms", "contract_version"],
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "command_translation"},
-    "command_id": {"$ref": "_common.json#/$defs/command_id"},
-    "structured": {"$ref": "operator_commands.json"},
+    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
+    "structured": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_commands.json"},
     "valid": {"type": "boolean"},
     "preview_text": {"type": "string", "minLength": 1, "maxLength": 1024},
     "preview_text_in_operator_language": {"type": "string", "minLength": 1, "maxLength": 1024},
-    "egs_published_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "egs_published_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"valid": {"const": false}}},
+      "then": {"properties": {"structured": {"properties": {"command": {"const": "unknown_command"}}}}}
+    },
+    {
+      "if": {"properties": {"structured": {"properties": {"command": {"const": "unknown_command"}}}}},
+      "then": {"properties": {"valid": {"const": false}}}
+    }
+  ]
 }
 ```
+
+The same absolute-URI convention applies to `operator_commands_envelope.json` (§4.2) — update those `$ref`s to absolute URIs at implementation time.
 
 ### 4.4 `shared/contracts/topics.yaml`
 
@@ -181,10 +193,16 @@ Extend `RedisSubscriber` to add a fourth pattern (`egs.command_translations` is 
 1. Validate against `command_translations_envelope`.
 2. Drop bridge-only fields (`kind`, `egs_published_at_iso_ms`).
 3. Translate `kind: "command_translation"` → `type: "command_translation"`.
-4. Push into a new aggregator slot `_pending_translations` keyed by `command_id`.
-5. Trigger immediate broadcast (out-of-band of the 1Hz emit loop) so the operator UX is responsive.
+4. **Push onto an `asyncio.Queue` (bounded, see below).** Do NOT call `registry.broadcast` synchronously from the subscriber loop.
 
-**Decision baked in:** translations are pushed immediately, not aggregated into the next `state_update`. Justification: a translation that lags 0.5s behind input feels broken; ticker-style aggregation makes sense for findings/drones (high-volume) but not for interactive request/response.
+**Decoupled-broadcaster architecture (adversarial finding #1):** the subscriber's only job is drain Redis fast. Calling `registry.broadcast` inline blocks the subscriber until every WS client either sends or times out. With slow clients + a busy `state_update` channel, the subscriber falls behind, Redis pubsub buffers fill (`client-output-buffer-limit pubsub 32mb 8mb 60`), and Redis disconnects the bridge — triggering a reconnect storm. To avoid this:
+
+- A new `asyncio.Queue[Dict[str, Any]]` with `maxsize=64` lives on `app.state` as `translation_queue`.
+- The subscriber's translation handler does `await translation_queue.put(ws_frame)` — fast, never blocks broadcasts.
+- A new lifespan task `_translation_broadcaster_loop` drains the queue and calls `registry.broadcast`. Slow clients only delay translation delivery, never `state_update` ingestion.
+- Queue overflow (`QueueFull` from a non-blocking `put_nowait`) is handled by dropping the oldest queued translation — operator gets the freshest result, bridge stays alive. Use `try/except QueueFull` with `get_nowait` + `put_nowait` to evict.
+
+**Decision baked in:** translations push as fast as possible but through a queue, not the subscriber's own coroutine. Three lifespan tasks now: emit_loop, subscriber, translation_broadcaster — all cancelled in lifespan teardown before any `await task`.
 
 ### 5.2 New: republish inbound `operator_command` to Redis
 
@@ -215,7 +233,14 @@ def has_finding(self, finding_id: str) -> bool:
 
 ### 5.5 Lifespan changes
 
-`subscriber.run()` already handles all psubscribed patterns; we just need to add `egs.command_translations` to the subscription list. No new background task. `publisher.close()` already runs in lifespan teardown — no changes there.
+`subscriber.run()` already handles all psubscribed patterns; we add `egs.command_translations` to the subscription list AND a new `_translation_broadcaster_loop` lifespan task that drains `translation_queue`. Teardown order (per adversarial finding #6 deferred TODO; we keep Phase 3's same-shape teardown but extend it cleanly):
+
+1. Cancel emit_task, subscribe_task, translation_broadcaster_task.
+2. Await `subscriber.stop()`.
+3. Await all three tasks (swallow CancelledError).
+4. `await app.state.publisher.close()`.
+
+`publisher.close()` already runs in lifespan teardown — unchanged.
 
 ## 6. Flutter changes (`frontend/flutter_dashboard/`)
 
@@ -245,7 +270,20 @@ Lifecycle:
 
 Translation timeout is a `Timer(Duration(seconds: 15), ...)` armed when `_commandActions[cid]=translating`, cancelled on ready/failed/dispatched.
 
-**Decision baked in:** `_activeCommandId` is single-slot — only one command in flight at a time. Operator can't have two translations racing in the panel. If they REPHRASE mid-flight, the prior command_id stays in `_commandActions` (so a late ack/translation gets logged but doesn't update the now-stale UI).
+**Decision baked in:** `_activeCommandId` is single-slot — only one command in flight at a time. Operator can't have two translations racing in the panel.
+
+**Orphan rule (adversarial finding #4):** when a fresh `submitOperatorCommand` is called while a prior cid is still in `sending`/`translating`, the prior cid is *immediately orphaned*: its Timer is cancelled, its `_commandActions[cid]` is dropped from the map (not flipped to `failed` — that would fire a misleading snackbar for a command the operator already moved on from), and its entry in `_commandTranslations` is removed. Late ack/translation frames for an orphaned cid pass through `handleEcho`/`applyTranslation` and find no entry; they are logged at debug level and dropped. This bounds memory growth under aggressive REPHRASE/resubmit cycles.
+
+**Dispatch is non-optimistic (adversarial finding #5):** `dispatchActiveCommand` does NOT optimistically transition `ready → dispatched`. Instead it transitions to a new intermediate state `dispatching` and shows a small spinner on the DISPATCH button. Only on receipt of `{ack: "operator_command_dispatch"}` from the bridge does the state advance to `dispatched`. On `redis_publish_failed` for the dispatch frame, state returns to `ready` (not `failed`) with a snackbar "Dispatch send failed — retry" — the translation is still valid, the operator just needs to re-tap. Without this, a transient Redis blip causes a "Dispatched ✓" UI to flip to `failed`, the operator retaps, and the EGS sees a duplicate dispatch on `egs.operator_actions`.
+
+Updated state machine:
+
+```
+(absent) → sending → translating → ready → dispatching → dispatched
+                                                       └→ ready (on redis_publish_failed echo)
+                  → failed (timeout, WS drop, bridge schema reject)
+                  └→ (orphaned & dropped on second submit)
+```
 
 ### 6.1.1 Late-arrival rule (1B)
 
@@ -262,7 +300,8 @@ Five visual states keyed off `_commandActions[_activeCommandId]`:
 | `translating` | Input disabled, "Translating with Gemma 4 E4B…" subtitle, spinner |
 | `ready` (valid=true) | Preview pane shows `preview_text` + `preview_text_in_operator_language`, DISPATCH enabled, REPHRASE enabled |
 | `ready` (valid=false → unknown_command) | Preview pane shows the model's `suggestion` in operator's language, DISPATCH disabled with tooltip "Command not understood — rephrase", REPHRASE enabled |
-| `dispatched` | Preview pane shows checkmark + "Dispatched", DISPATCH disabled, REPHRASE replaces with NEW COMMAND |
+| `dispatching` | Preview pane unchanged, DISPATCH button shows spinner + label "Dispatching…", REPHRASE disabled (operator can't bail mid-publish) |
+| `dispatched` | Preview pane shows checkmark + "Dispatched", DISPATCH hidden, NEW COMMAND replaces REPHRASE |
 | `failed` | Error banner with retry, REPHRASE re-enabled |
 
 The Translate button replaces today's stubbed DISPATCH button and is enabled when the input is non-empty + connected + no command in flight.
@@ -295,12 +334,12 @@ Behavior:
 - `redis-py` async client.
 - Subscribe to `egs.operator_commands`.
 - For each message, validate against `operator_commands_envelope`.
-- Hard-coded translation table (no Gemma 4 — this is plumbing, not the demo):
-  | `raw_text` (case-insensitive substring) | structured |
+- Hard-coded translation table (no Gemma 4 — this is plumbing, not the demo). **Adversarial finding #9:** drop the bare `"concentr"` substring (false-positives on `concentric`, `concentration`); use only full-word `concentrate` and `concéntrate` matches; normalize accents via `unicodedata.normalize("NFKD", text)` before comparing so `concéntrate` matches whether or not the operator types the accent.
+  | `raw_text` (lowercased + accent-folded) | structured |
   |---|---|
-  | "recall" + drone identifier | `{command: "recall_drone", args: {drone_id: detected, reason: "operator request"}}` |
-  | "restrict" / "concentr" / "focus" + zone | `{command: "restrict_zone", args: {zone_id: detected}}` |
-  | "exclude" / "avoid" + zone | `{command: "exclude_zone", args: {zone_id: detected}}` |
+  | "recall" / "regresa" / "vuelve" + drone | `{command: "recall_drone", args: {drone_id: detected, reason: "operator request"}}` |
+  | "restrict" / "focus" / "concentrate" / "concentrate"-folded-from-`concéntrate` + zone | `{command: "restrict_zone", args: {zone_id: detected}}` |
+  | "exclude" / "avoid" / "evita" + zone | `{command: "exclude_zone", args: {zone_id: detected}}` |
   | otherwise | `{command: "unknown_command", args: {operator_text, suggestion: "Try 'recall drone1' or 'focus on zone east'"}}` |
 - Build `command_translations_envelope`, validate it, publish to `egs.command_translations`.
 - Print one log line per message (`[stub-egs] cid=... raw='...' → command=...`).

@@ -30,7 +30,9 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Map panel uses pure CustomPaint with `_DroneMarker` and `_FindingMarker` private widgets passed projection coordinates.
 - **Owner:** Person 4 (later phase if time).
 
-### Bridge finding_id allowlist for `egs.operator_actions`
+### ~~Bridge finding_id allowlist for `egs.operator_actions`~~ (closed in Phase 4)
+**CLOSED Phase 4** — guard lives in `frontend/ws_bridge/main.py` finding_approval branch via `aggregator.has_finding()`. Original entry retained below for historical context.
+
 - **What:** When the bridge receives a `finding_approval`, cross-check the inbound `finding_id` against the aggregator's known-finding set before publishing to Redis. Reject unknown finding_ids with `unknown_finding_id` echo.
 - **Why:** Today the bridge republishes any well-formed finding_id verbatim. A buggy or malicious WS client can send fabricated finding_ids that get persisted on `egs.operator_actions`, polluting the EGS view of operator decision history.
 - **Pros:** Tighter integrity on the operator-decision audit trail.
@@ -39,11 +41,29 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Depends on:** Could land before Phase 4 EGS, but practically belongs in the same PR as the EGS subscriber.
 - **Owner:** Person 4 (bridge changes) and Person 3 (EGS coordination).
 
-### Validation event ticker on drone status panel
+### ~~Validation event ticker on drone status panel~~ (closed in Phase 4)
+**CLOSED Phase 4** — ticker line lives in `frontend/flutter_dashboard/lib/widgets/drone_status_panel.dart`, driven by `egs_state.recent_validation_events`. Original entry retained below for historical context.
+
 - **What:** Show recent validation failures per drone on the status card (count + last-event timestamp).
 - **Why:** Demo storytelling — "Gemma 4 self-corrects, you can see it." Day-10 work in the roadmap.
 - **Context:** `state_update.validation_events` already exists in the schema; bridge emits, dashboard ignores it. Needs a small panel addition.
 - **Owner:** Person 4 (Day 10).
+
+### Bridge lifespan teardown ordering (Phase 5+)
+- **What:** Reorder `frontend/ws_bridge/main.py` lifespan teardown so `_stopping=True` is set on the subscriber and tasks are awaited BEFORE `subscriber.stop()` calls `aclose()` on the pubsub. Today the cancel-then-stop-then-await sequence allows `subscribe_task` to be mid-`pubsub.get_message()` when `aclose()` runs.
+- **Why:** Surfaced by the Phase 4 adversarial review (finding #6). Functional impact today is noisy stderr on every shutdown; could become a real CI flake if `RuntimeError: Event loop is closed` traces start failing test runs.
+- **Pros:** Clean shutdown logs; resilient to future broadcaster additions.
+- **Cons:** Touches the lifespan ordering that Phase 3 was carefully fixed to behave a specific way. Test surface is thin (lifespan tests already exist; need to verify they catch the change).
+- **Context:** Phase 3 added the `cancel-before-await` pattern; Phase 4 extends it to three tasks (emit, subscribe, translation_broadcaster). The fix is to also move `pubsub.aclose()` AFTER all task awaits.
+- **Owner:** Person 4.
+
+### Move `ValidationEventLogger.log` off the subscriber dispatch path (Phase 5+)
+- **What:** `frontend/ws_bridge/redis_subscriber.py:_log_validation_failure` calls `self._validation_logger.log(...)` synchronously inside `_handle_message`. The logger does sync disk I/O (`open(..., "a")`).
+- **Why:** Surfaced by the Phase 4 adversarial review (finding #7). A misbehaving EGS spamming malformed translations or findings could stall the subscriber's Redis drain on disk I/O latency, especially on slow disks or when the validation log is being rotated.
+- **Pros:** Subscriber drain stays fast and predictable under any upstream noise.
+- **Cons:** Adds an `asyncio.Queue` + writer task (mirrors the Phase 4 translation_queue pattern). Crash-recovery: queued events lost on bridge crash — acceptable for a debug log, document as such.
+- **Context:** Logger lives in `shared/contracts/logging.py`. Either wrap each `.log()` call in `asyncio.get_running_loop().run_in_executor(None, ...)` or build a dedicated async writer. The latter is cleaner if other call sites also start hitting hot paths.
+- **Owner:** Person 4 (bridge changes) + minimal coordination with shared/contracts owners.
 
 ## Phase 3 in-scope work tracked here for breadcrumbs
 

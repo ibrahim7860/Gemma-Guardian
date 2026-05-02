@@ -374,7 +374,7 @@ with open("shared/schemas/fixtures/invalid/operator_commands_envelope/02_raw_tex
 Run: `PYTHONPATH=. pytest shared/tests/test_operator_commands_envelope_schema.py -v`
 Expected: 8 failing.
 
-- [ ] **Step 5: Create the schema**
+- [ ] **Step 5: Create the schema** (absolute `$ref` URIs per adversarial finding #3)
 
 `shared/schemas/operator_commands_envelope.json`:
 
@@ -389,10 +389,10 @@ Expected: 8 failing.
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "operator_command"},
-    "command_id": {"$ref": "_common.json#/$defs/command_id"},
-    "language": {"$ref": "_common.json#/$defs/iso_lang_code"},
+    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
+    "language": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_lang_code"},
     "raw_text": {"type": "string", "minLength": 1, "maxLength": 4096},
-    "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "bridge_received_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
   }
 }
@@ -572,7 +572,53 @@ def test_extra_field_rejected():
 
 Run: `PYTHONPATH=. pytest shared/tests/test_command_translations_envelope_schema.py -v`
 
-- [ ] **Step 4: Create the schema**
+- [ ] **Step 3.5: Add the contradiction-rejection test (adversarial finding #2)**
+
+Append to the same test file:
+
+```python
+def test_valid_true_with_unknown_command_rejected():
+    """Adversarial finding #2: valid=true + command=unknown_command is a
+    logical contradiction. Schema must reject it via if/then constraint."""
+    payload = {
+        "kind": "command_translation",
+        "command_id": "abcd-1700000000000-3",
+        "structured": {
+            "command": "unknown_command",
+            "args": {"operator_text": "asdf", "suggestion": "Try ..."},
+        },
+        "valid": True,  # contradicts unknown_command
+        "preview_text": "x",
+        "preview_text_in_operator_language": "x",
+        "egs_published_at_iso_ms": "2026-05-02T12:34:57.123Z",
+        "contract_version": "1.0.0",
+    }
+    outcome = validate("command_translations_envelope", payload)
+    assert not outcome.valid
+
+
+def test_valid_false_with_recall_drone_rejected():
+    """Inverse: valid=false but a real command (not unknown_command) — also
+    a contradiction; the bridge would otherwise show DISPATCH-disabled on a
+    perfectly good translation."""
+    payload = {
+        "kind": "command_translation",
+        "command_id": "abcd-1700000000000-3",
+        "structured": {
+            "command": "recall_drone",
+            "args": {"drone_id": "drone1", "reason": "x"},
+        },
+        "valid": False,
+        "preview_text": "x",
+        "preview_text_in_operator_language": "x",
+        "egs_published_at_iso_ms": "2026-05-02T12:34:57.123Z",
+        "contract_version": "1.0.0",
+    }
+    outcome = validate("command_translations_envelope", payload)
+    assert not outcome.valid
+```
+
+- [ ] **Step 4: Create the schema** (with absolute `$ref` URIs per adversarial finding #3 + `if/then` invariant per #2)
 
 `shared/schemas/command_translations_envelope.json`:
 
@@ -581,24 +627,36 @@ Run: `PYTHONPATH=. pytest shared/tests/test_command_translations_envelope_schema
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/command_translations_envelope.json",
   "title": "EGS → Bridge command_translation envelope",
-  "description": "EGS Gemma 4 E4B output for an operator_command. Bridge subscribes to egs.command_translations and forwards to WS clients as type=command_translation.",
+  "description": "EGS Gemma 4 E4B output for an operator_command. Bridge subscribes to egs.command_translations and forwards to WS clients as type=command_translation. The if/then constraints enforce that valid=false iff command=unknown_command.",
   "type": "object",
   "required": ["kind", "command_id", "structured", "valid", "preview_text", "preview_text_in_operator_language", "egs_published_at_iso_ms", "contract_version"],
   "additionalProperties": false,
   "properties": {
     "kind": {"const": "command_translation"},
-    "command_id": {"$ref": "_common.json#/$defs/command_id"},
-    "structured": {"$ref": "operator_commands.json"},
+    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
+    "structured": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_commands.json"},
     "valid": {"type": "boolean"},
     "preview_text": {"type": "string", "minLength": 1, "maxLength": 1024},
     "preview_text_in_operator_language": {"type": "string", "minLength": 1, "maxLength": 1024},
-    "egs_published_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "egs_published_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
     "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"valid": {"const": false}}, "required": ["valid"]},
+      "then": {"properties": {"structured": {"properties": {"command": {"const": "unknown_command"}}}}}
+    },
+    {
+      "if": {"properties": {"structured": {"properties": {"command": {"const": "unknown_command"}}}}, "required": ["structured"]},
+      "then": {"properties": {"valid": {"const": false}}}
+    }
+  ]
 }
 ```
 
-- [ ] **Step 5: Run the tests. Expect 7 passing.**
+**Note for the implementer:** if your jsonschema validator does not have `if/then/else` for Draft 2020-12, the equivalent is `oneOf` with two branches: `{valid:false, command:"unknown_command"}` vs `{valid:true, command:!"unknown_command"}`. Test the constraint actually rejects contradictions before declaring this task green.
+
+- [ ] **Step 5: Run the tests. Expect 9 passing.** (7 original + 2 contradiction tests)
 
 Run: `PYTHONPATH=. pytest shared/tests/test_command_translations_envelope_schema.py -v`
 
@@ -727,6 +785,74 @@ git add shared/contracts/topics.yaml shared/contracts/topics.py \
   frontend/flutter_dashboard/lib/generated/topics.dart
 git commit -m "Phase 4 contracts: add egs.operator_commands and egs.command_translations channels"
 ```
+
+---
+
+## Test harness convention for Tasks 7–10 (adversarial finding #8)
+
+**Do NOT use `TestClient` + `asyncio.new_event_loop()` for bridge tests.** That pattern binds `fakeredis.aioredis.FakeRedis()` to FastAPI's TestClient internal loop, then awaits on a different loop, producing either `RuntimeError: ... attached to a different loop` or silent no-message hangs. Phase 3 got away with it because all assertions were against a single-shot WS frame; Phase 4's tests need to publish-from-Redis-then-receive-on-WS, which exercises both loops.
+
+**Use `httpx.AsyncClient` + `pytest_asyncio` instead.** Single event loop owns the FastAPI app, the WebSocket transport, and the fakeredis client. Verified working with FastAPI ≥0.110 and httpx ≥0.27 (both in `requirements.txt`).
+
+Standard fixture pattern for every Task 7–10 test file:
+
+```python
+"""Phase 4 bridge test using single-loop httpx.AsyncClient + pytest_asyncio."""
+from __future__ import annotations
+
+import asyncio
+import json
+
+import fakeredis.aioredis as fakeredis_async
+import httpx
+import pytest
+import pytest_asyncio
+from httpx_ws import aconnect_ws  # pip install httpx-ws
+
+from frontend.ws_bridge.main import create_app
+
+
+@pytest_asyncio.fixture
+async def fake_client():
+    """Create the fakeredis client on the running test loop. The publisher
+    fixture below patches Redis.from_url to return THIS client, so app code
+    and test code share a single Redis state on a single loop.
+    """
+    client = fakeredis_async.FakeRedis()
+    yield client
+    await client.aclose()
+
+
+@pytest_asyncio.fixture
+async def app_with_fake_redis(monkeypatch, fake_client):
+    import redis.asyncio as redis_async
+    monkeypatch.setattr(
+        redis_async.Redis, "from_url",
+        staticmethod(lambda url, **kw: fake_client),
+    )
+    app = create_app()
+    async with httpx.AsyncClient(app=app, base_url="http://testserver") as ac:
+        # Trigger lifespan startup so emit_loop, subscriber, and the new
+        # translation_broadcaster all start on this loop.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, lifespan="on")) as _bound:
+            yield app, ac, fake_client
+
+
+@pytest_asyncio.fixture
+async def ws_client(app_with_fake_redis):
+    """Yield an open WebSocket session bound to the same loop."""
+    app, ac, fake = app_with_fake_redis
+    async with aconnect_ws("ws://testserver/", client=ac) as ws:
+        # Drain initial state envelope so subsequent receives are post-handshake.
+        await ws.receive_text()
+        yield ws, app, fake
+```
+
+If `httpx-ws` is unavailable, fall back to `httpx.AsyncClient` with manual ASGI WebSocket scope construction (see https://www.starlette.io/testclient/ for the spec). The dependency is small (`pip install httpx-ws`); add to `frontend/ws_bridge/requirements-dev.txt`.
+
+**Apply this fixture pattern to every test file in Tasks 7, 8, 9, 10.** The test bodies in those tasks reference these fixtures; do not duplicate setup boilerplate.
+
+If for any reason this harness cannot be made to work in your environment, the fallback is `pytest_asyncio` + manually awaiting the lifespan context (`async with app.router.lifespan_context(app):`) and bypassing the WS by injecting frames directly into `app.state.registry`. That bypass loses end-to-end coverage of the WS handler — flag it as a known gap and add a Chrome DevTools MCP case to compensate.
 
 ---
 
@@ -1350,7 +1476,7 @@ git commit -m "Phase 4 bridge: republish operator_command_dispatch to egs.operat
 - Modify: `frontend/ws_bridge/main.py` (wire the broadcast)
 - Create: `frontend/ws_bridge/tests/test_main_command_translation_forward.py`
 
-**Decision baked in (re-stated from spec §5.1):** translations are broadcast immediately, not aggregated into the next 1Hz tick. Implementation path: the subscriber's `_handle_message` for the translations channel calls a new callback `on_translation(payload)` provided by `main.py` at construction time, which then calls `registry.broadcast`.
+**Decision baked in (re-stated from spec §5.1):** translations are broadcast immediately, but **through an `asyncio.Queue`, not by calling `registry.broadcast` synchronously from the subscriber loop** (adversarial finding #1). The subscriber's job is drain Redis fast; broadcasting is owned by a dedicated lifespan task. Without this decoupling, slow WS clients can stall the subscriber, fill Redis pubsub buffers, and trigger Redis-side disconnects.
 
 - [ ] **Step 1: Add the failing test**
 
@@ -1472,11 +1598,11 @@ def test_invalid_translation_is_dropped(patched_from_url):
 
 - [ ] **Step 2: Run. Expect both failing.**
 
-- [ ] **Step 3: Extend `RedisSubscriber` with a translations callback**
+- [ ] **Step 3: Extend `RedisSubscriber` to enqueue translations (no synchronous broadcast)**
 
 In `frontend/ws_bridge/redis_subscriber.py`:
 
-3a. Add a constructor parameter:
+3a. Add a constructor parameter for the queue:
 
 ```python
     def __init__(
@@ -1485,13 +1611,11 @@ In `frontend/ws_bridge/redis_subscriber.py`:
         config: BridgeConfig,
         aggregator: StateAggregator,
         validation_logger: ValidationEventLogger,
-        on_translation: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
+        translation_queue: Optional[asyncio.Queue] = None,
     ) -> None:
 ```
 
-(Add `from typing import Awaitable, Callable` to imports.)
-
-Store: `self._on_translation = on_translation`.
+Store: `self._translation_queue = translation_queue`.
 
 3b. Add the channel constant:
 
@@ -1512,14 +1636,11 @@ _EGS_COMMAND_TRANSLATIONS_CHANNEL: str = topics.EGS_COMMAND_TRANSLATIONS
         return "command_translations_envelope", None
 ```
 
-3e. In `_handle_message`, after the existing dispatch block, add:
+3e. In `_handle_message`, after the existing dispatch block, add (note: `put_nowait` + drop-oldest-on-full so the subscriber NEVER blocks on broadcaster slowness):
 
 ```python
         elif schema_name == "command_translations_envelope":
-            if self._on_translation is not None:
-                # Strip bridge-internal fields before handing to the broadcast
-                # callback. Build the WS-shaped frame here, not at the call
-                # site, so transmission shape is owned by one place.
+            if self._translation_queue is not None:
                 ws_frame = {
                     "type": "command_translation",
                     "command_id": payload["command_id"],
@@ -1529,33 +1650,102 @@ _EGS_COMMAND_TRANSLATIONS_CHANNEL: str = topics.EGS_COMMAND_TRANSLATIONS
                     "preview_text_in_operator_language": payload["preview_text_in_operator_language"],
                     "contract_version": payload["contract_version"],
                 }
-                await self._on_translation(ws_frame)
+                try:
+                    self._translation_queue.put_nowait(ws_frame)
+                except asyncio.QueueFull:
+                    # Adversarial finding #1: under broadcast slowness, drop
+                    # the oldest queued translation to keep the subscriber
+                    # draining Redis. Operator gets the freshest result.
+                    try:
+                        self._translation_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    try:
+                        self._translation_queue.put_nowait(ws_frame)
+                    except asyncio.QueueFull:
+                        # Pathological: still full after evict (race with
+                        # other producer). Drop this frame.
+                        _LOG.warning(
+                            "RedisSubscriber: translation queue persistently "
+                            "full; dropped command_id=%s", payload.get("command_id"),
+                        )
 ```
 
-- [ ] **Step 4: Wire it in `main.py`'s `create_app`**
+- [ ] **Step 4: Add the broadcaster lifespan task in `main.py`**
 
-Just before constructing `subscriber`, define the callback closure. Replace the existing subscriber construction:
+In `create_app`, after constructing `registry`, add the queue and broadcaster:
 
 ```python
-    async def _on_translation(frame: Dict[str, Any]) -> None:
-        # Defensive validate against websocket_messages to make sure we never
-        # broadcast a malformed frame even if the inbound subscriber's check
-        # was somehow bypassed.
-        outcome = validate("websocket_messages", frame)
-        if not outcome.valid:
-            print(f"[ws_bridge] BUG: dropped translation frame post-strip: {outcome.errors}")
-            return
-        await registry.broadcast(frame)
+    translation_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
+    async def _translation_broadcaster_loop() -> None:
+        """Drain translation_queue and broadcast via registry.
+
+        Owns slowness: if a WS client is slow, this task waits — but the
+        subscriber and emit_loop keep running. Adversarial finding #1.
+        """
+        while True:
+            try:
+                frame = await translation_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                outcome = validate("websocket_messages", frame)
+                if not outcome.valid:
+                    print(f"[ws_bridge] BUG: dropped translation frame post-strip: {outcome.errors}")
+                    continue
+                await registry.broadcast(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Defensive: a single bad frame must not kill the broadcaster.
+                print(f"[ws_bridge] translation_broadcaster tick error: {type(exc).__name__}: {exc}")
+```
+
+Replace subscriber construction:
+
+```python
     subscriber = RedisSubscriber(
         config=config,
         aggregator=aggregator,
         validation_logger=validation_logger,
-        on_translation=_on_translation,
+        translation_queue=translation_queue,
     )
 ```
 
-(Move the `registry = _ConnectionRegistry(...)` line ABOVE the subscriber construction so the closure captures it.)
+(Move the `registry = _ConnectionRegistry(...)` line ABOVE the queue + subscriber construction.)
+
+Stash on app.state for the lifespan to manage:
+
+```python
+    app.state.translation_queue = translation_queue
+```
+
+In `lifespan`, add the third task and adjust teardown order to cancel before await:
+
+```python
+    emit_task = asyncio.create_task(
+        _emit_loop(registry=registry, aggregator=aggregator, tick_s=config.tick_s)
+    )
+    subscribe_task = asyncio.create_task(subscriber.run())
+    translation_task = asyncio.create_task(_translation_broadcaster_loop())
+    try:
+        yield
+    finally:
+        emit_task.cancel()
+        subscribe_task.cancel()
+        translation_task.cancel()
+        try:
+            await subscriber.stop()
+        except Exception:
+            pass
+        for task in (emit_task, subscribe_task, translation_task):
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        await app.state.publisher.close()
+```
 
 - [ ] **Step 5: Run. Expect both tests passing.**
 
@@ -1641,6 +1831,23 @@ def test_unknown_command_falls_back():
     assert "suggestion" in out["structured"]["args"]
 
 
+def test_concentric_does_not_trigger_restrict_zone():
+    """Adversarial finding #9: bare 'concentr' substring used to false-match
+    'concentric' or 'concentration'. With \\b word boundaries it should fall
+    through to unknown_command."""
+    out = build_translation(_envelope("look for concentric debris pattern in east"))
+    assert out["structured"]["command"] == "unknown_command"
+
+
+def test_accent_normalization_concéntrate_matches():
+    """Adversarial finding #9: NFKD fold means concéntrate matches
+    concentrate. Operator typing with or without the accent should hit the
+    same intent."""
+    out = build_translation(_envelope("concéntrate en zona este", language="es"))
+    assert out["structured"]["command"] == "restrict_zone"
+    assert out["structured"]["args"]["zone_id"] == "east"
+
+
 def test_envelope_validates_against_schema():
     """The entire output envelope must validate against
     command_translations_envelope.json."""
@@ -1681,6 +1888,8 @@ import redis.asyncio as redis_async
 from shared.contracts import validate, VERSION
 from shared.contracts.topics import EGS_OPERATOR_COMMANDS, EGS_COMMAND_TRANSLATIONS
 
+import unicodedata
+
 _ZONE_PATTERNS = [
     (re.compile(r"\b(north|south|east|west|central)\b", re.IGNORECASE), 1),
     (re.compile(r"zona\s+(norte|sur|este|oeste|central)", re.IGNORECASE), 1),
@@ -1689,10 +1898,37 @@ _ZONE_TRANSLATE = {"norte": "north", "sur": "south", "este": "east", "oeste": "w
 
 _DRONE_PATTERN = re.compile(r"\b(drone\d+)\b", re.IGNORECASE)
 
+# Adversarial finding #9: full-word matches only. Bare "concentr" was matching
+# concentric / concentration. Spanish "concéntrate" is handled via NFKD
+# normalization in _fold so the operator typing the accent (or not) is the
+# same matcher input.
+_RECALL_VERBS = ("recall", "regresa", "vuelve")
+_RESTRICT_VERBS = ("restrict", "focus", "concentrate")  # NOT "concentr"
+_EXCLUDE_VERBS = ("exclude", "avoid", "evita")
+
 
 def _now_iso_ms() -> str:
     dt = datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
+
+def _fold(text: str) -> str:
+    """Lowercase + strip accent marks via NFKD decomposition.
+
+    Adversarial finding #9: an operator typing "concéntrate" (with accent) and
+    "concentrate" (without) should match the same intent. NFKD splits each
+    accented character into a base + combining mark; we drop the marks.
+    """
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+def _has_word(text: str, words: tuple) -> bool:
+    """True iff any of `words` appears as a full word (\b boundaries)."""
+    for w in words:
+        if re.search(rf"\b{re.escape(w)}\b", text):
+            return True
+    return False
 
 
 def _detect_zone(text: str) -> Optional[str]:
@@ -1710,20 +1946,24 @@ def _detect_drone(text: str) -> Optional[str]:
 
 
 def _intent_from_text(text: str) -> Tuple[str, Dict[str, Any]]:
-    """Return (command, args) for the matched intent, or unknown_command."""
-    lower = text.lower()
-    drone = _detect_drone(lower)
-    zone = _detect_zone(lower)
+    """Return (command, args) for the matched intent, or unknown_command.
 
-    if any(k in lower for k in ("recall", "regresa", "vuelve")):
+    Word-boundary + accent-folded matching prevents false positives like
+    "concentric" → restrict_zone.
+    """
+    folded = _fold(text)
+    drone = _detect_drone(folded)
+    zone = _detect_zone(folded)
+
+    if _has_word(folded, _RECALL_VERBS):
         if drone:
             return "recall_drone", {"drone_id": drone, "reason": "operator request"}
 
-    if any(k in lower for k in ("restrict", "focus", "concéntrate", "concentrate", "concentr")):
+    if _has_word(folded, _RESTRICT_VERBS):
         if zone:
             return "restrict_zone", {"zone_id": zone}
 
-    if any(k in lower for k in ("exclude", "avoid", "evita", "no entres")):
+    if _has_word(folded, _EXCLUDE_VERBS):
         if zone:
             return "exclude_zone", {"zone_id": zone}
 
@@ -1995,12 +2235,89 @@ void main() {
       expect(state.commandState(cid), CommandState.failed);
     });
 
-    test('only one active command in flight at a time', () {
+    test('second submit orphans the first cid: timer cancelled, bookkeeping dropped', () async {
+      // Adversarial finding #4: prior cid's Timer must not fire after orphan.
+      // Use a short timeout so the test runs fast and a leaked timer would
+      // produce an observable snackbar.
+      final snackbarEvents = <String>[];
+      final sub = state.snackbarStream.listen(snackbarEvents.add);
+      final cid1 = state.submitOperatorCommand(
+        rawText: "first", language: "en",
+        translationTimeout: const Duration(milliseconds: 50),
+      );
+      final cid2 = state.submitOperatorCommand(rawText: "second", language: "en");
+      expect(state.activeCommandId, cid2);
+      // cid1 must be dropped from _commandActions entirely
+      expect(state.commandState(cid1), isNull);
+      // Wait past cid1's would-be timeout — no snackbar should fire
+      await Future.delayed(const Duration(milliseconds: 100));
+      expect(snackbarEvents, isEmpty);
+      await sub.cancel();
+    });
+
+    test('late translation for orphaned cid is dropped silently', () async {
+      // Adversarial finding #4 + late-arrival: a translation arriving for
+      // a cid that was orphaned (not in _commandActions) must not surface.
       final cid1 = state.submitOperatorCommand(rawText: "first", language: "en");
       final cid2 = state.submitOperatorCommand(rawText: "second", language: "en");
-      // Per spec §6.1 single-slot: second submit replaces active id; cid1 lingers in map.
+      // cid1 is orphaned. Apply a translation for it.
+      state.applyTranslation({
+        "type": "command_translation",
+        "command_id": cid1,
+        "structured": {"command": "recall_drone", "args": {"drone_id": "drone1", "reason": "x"}},
+        "valid": true,
+        "preview_text": "Will recall drone1",
+        "preview_text_in_operator_language": "Will recall drone1",
+        "contract_version": "1.0.0",
+      });
+      // Active panel must remain on cid2 (in sending — no echo yet)
       expect(state.activeCommandId, cid2);
-      expect(state.commandState(cid1), CommandState.sending);  // still tracked
+      expect(state.commandTranslation(cid1), isNull);
+      expect(state.commandState(cid1), isNull);
+    });
+
+    test('dispatch is non-optimistic: ready -> dispatching, ack -> dispatched', () {
+      // Adversarial finding #5: don't optimistically transition to dispatched.
+      final cid = state.submitOperatorCommand(rawText: "recall drone1", language: "en");
+      state.handleEcho({"type": "echo", "ack": "operator_command_received", "command_id": cid});
+      state.applyTranslation({
+        "type": "command_translation",
+        "command_id": cid,
+        "structured": {"command": "recall_drone", "args": {"drone_id": "drone1", "reason": "x"}},
+        "valid": true,
+        "preview_text": "Will recall drone1",
+        "preview_text_in_operator_language": "Will recall drone1",
+        "contract_version": "1.0.0",
+      });
+      state.dispatchActiveCommand();
+      expect(state.commandState(cid), CommandState.dispatching);  // not dispatched yet
+      state.handleEcho({"type": "echo", "ack": "operator_command_dispatch", "command_id": cid});
+      expect(state.commandState(cid), CommandState.dispatched);
+    });
+
+    test('redis_publish_failed on dispatch returns to ready (not failed)', () {
+      // Adversarial finding #5: a transient Redis blip on dispatch must not
+      // burn the translation; operator can re-tap DISPATCH from ready.
+      final cid = state.submitOperatorCommand(rawText: "recall drone1", language: "en");
+      state.handleEcho({"type": "echo", "ack": "operator_command_received", "command_id": cid});
+      state.applyTranslation({
+        "type": "command_translation",
+        "command_id": cid,
+        "structured": {"command": "recall_drone", "args": {"drone_id": "drone1", "reason": "x"}},
+        "valid": true,
+        "preview_text": "Will recall drone1",
+        "preview_text_in_operator_language": "Will recall drone1",
+        "contract_version": "1.0.0",
+      });
+      state.dispatchActiveCommand();
+      expect(state.commandState(cid), CommandState.dispatching);
+      state.handleEcho({
+        "type": "echo",
+        "error": "redis_publish_failed",
+        "command_id": cid,
+      });
+      // Returns to ready, NOT failed — translation is still valid
+      expect(state.commandState(cid), CommandState.ready);
     });
   });
 }
@@ -2017,10 +2334,12 @@ Open `frontend/flutter_dashboard/lib/state/mission_state.dart`. After the `Appro
 ```dart
 /// Per-command state machine for operator command translation.
 ///
-/// (absent) → sending → translating → ready → dispatched
+/// (absent) → sending → translating → ready → dispatching → dispatched
+///                                                       └→ ready (on redis_publish_failed echo, finding #5)
 ///                                          → (rephrase resets to absent)
 ///         → failed (on bridge error, WS drop, or 15s timeout)
-enum CommandState { sending, translating, ready, dispatched, failed }
+///         → (orphaned: dropped from map entirely on second submit, finding #4)
+enum CommandState { sending, translating, ready, dispatching, dispatched, failed }
 ```
 
 Then, inside the `MissionState` class, add the following fields and methods. Place them near the existing finding bookkeeping for symmetry:
@@ -2041,19 +2360,31 @@ Then, inside the `MissionState` class, add the following fields and methods. Pla
   /// Operator submitted a command for translation. Returns the command_id
   /// generated for this submission so the caller can correlate later.
   ///
-  /// Single-slot: a fresh submit overwrites _activeCommandId. The prior
-  /// command stays in _commandActions for late-arrival logging but is no
-  /// longer the foreground UI element.
+  /// Single-slot: a fresh submit replaces the active id. **Adversarial
+  /// finding #4 — orphan rule:** the prior cid is *dropped* from
+  /// `_commandActions`, `_commandTranslations`, and `_commandTimers` so its
+  /// Timer cannot fire later (no misleading snackbar) and so memory does not
+  /// grow under aggressive resubmit cycles. Late ack/translation frames for
+  /// the orphan find no entry and are silently dropped.
   String submitOperatorCommand({
     required String rawText,
     required String language,
     Duration translationTimeout = const Duration(seconds: 15),
   }) {
+    // Orphan the prior active command (if any) before overwriting.
+    final prior = _activeCommandId;
+    if (prior != null && _commandActions.containsKey(prior)) {
+      _commandTimers[prior]?.cancel();
+      _commandTimers.remove(prior);
+      _commandActions.remove(prior);
+      _commandTranslations.remove(prior);
+    }
+
     final commandId = _nextCommandId();
     _activeCommandId = commandId;
     _commandActions[commandId] = CommandState.sending;
     _commandTimers[commandId] = Timer(translationTimeout, () {
-      // Promote to failed only if still in a non-terminal state.
+      // Promote to failed only if still in a non-terminal pre-ready state.
       final cur = _commandActions[commandId];
       if (cur == CommandState.sending || cur == CommandState.translating) {
         _commandActions[commandId] = CommandState.failed;
@@ -2073,15 +2404,22 @@ Then, inside the `MissionState` class, add the following fields and methods. Pla
   }
 
   /// Apply a `command_translation` frame. Drops late frames for terminal-state
-  /// commands (Phase 4 spec §6.1.1, /plan-eng-review finding 1B).
+  /// commands (1B) AND for orphaned commands no longer in the map (finding #4).
   void applyTranslation(Map<String, dynamic> envelope) {
     if (envelope["type"] != "command_translation") return;
     final cid = envelope["command_id"] as String?;
     if (cid == null) return;
     final cur = _commandActions[cid];
-    if (cur == CommandState.failed || cur == CommandState.dispatched) {
-      // Late arrival — log and drop. Reviving the UI would contradict the
-      // already-shown timeout snackbar / dispatched checkmark.
+    if (cur == null) {
+      // Orphaned cid — silent drop (finding #4).
+      if (kDebugMode) {
+        debugPrint("[MissionState] dropped translation for orphaned $cid");
+      }
+      return;
+    }
+    if (cur == CommandState.failed || cur == CommandState.dispatched ||
+        cur == CommandState.dispatching) {
+      // Late arrival on terminal/in-flight-dispatch state — log and drop.
       if (kDebugMode) {
         debugPrint("[MissionState] dropped late translation for $cid (state=$cur)");
       }
@@ -2095,13 +2433,18 @@ Then, inside the `MissionState` class, add the following fields and methods. Pla
   }
 
   /// Operator clicked DISPATCH on the active command's preview pane.
+  ///
+  /// Adversarial finding #5 — non-optimistic: transition to `dispatching`
+  /// (button shows spinner, REPHRASE disabled) and wait for the bridge ack
+  /// before advancing to `dispatched`. On `redis_publish_failed` we return
+  /// to `ready` so the operator can re-tap without re-translating.
   void dispatchActiveCommand() {
     final cid = _activeCommandId;
     if (cid == null) return;
     if (_commandActions[cid] != CommandState.ready) return;
     final translation = _commandTranslations[cid];
     if (translation == null || translation["valid"] != true) return;
-    _commandActions[cid] = CommandState.dispatched;
+    _commandActions[cid] = CommandState.dispatching;
     notifyListeners();
     sendOutbound({
       "type": "operator_command_dispatch",
@@ -2156,11 +2499,25 @@ Update `handleEcho` to also handle `operator_command_received` and `operator_com
         return;
       }
       if (ack == "operator_command_dispatch") {
-        // Already optimistically set to dispatched on the client; this is a
-        // no-op confirmation. Clear bookkeeping.
+        // Adversarial finding #5: this is the canonical transition to
+        // dispatched (no longer optimistic). Only transition from dispatching.
+        if (_commandActions[commandId] == CommandState.dispatching) {
+          _commandActions[commandId] = CommandState.dispatched;
+          notifyListeners();
+        }
         return;
       }
       if (error != null) {
+        // Adversarial finding #5: redis_publish_failed during dispatching
+        // must NOT burn the translation. Return to ready so operator can
+        // re-tap. For non-dispatch errors, fall through to the failed path.
+        if (error == "redis_publish_failed" &&
+            _commandActions[commandId] == CommandState.dispatching) {
+          _commandActions[commandId] = CommandState.ready;
+          _snackbarController.add("Dispatch send failed — retry");
+          notifyListeners();
+          return;
+        }
         _commandActions[commandId] = CommandState.failed;
         _commandTimers[commandId]?.cancel();
         _commandTimers.remove(commandId);
@@ -2505,6 +2862,11 @@ class _CommandPanelState extends State<CommandPanel> {
                 const _StatusLine(text: "Translating with Gemma 4 E4B…", showSpinner: true),
               if (cs == CommandState.ready && translation != null)
                 _Preview(translation: translation),
+              if (cs == CommandState.dispatching && translation != null) ...[
+                _Preview(translation: translation),
+                const SizedBox(height: 4),
+                const _StatusLine(text: "Dispatching…", showSpinner: true),
+              ],
               if (cs == CommandState.dispatched)
                 const _StatusLine(text: "Dispatched ✓", showSpinner: false),
               if (cs == CommandState.failed)
@@ -2527,7 +2889,12 @@ class _CommandPanelState extends State<CommandPanel> {
                         child: const Text("DISPATCH"),
                       ),
                     ),
-                  if (cs == CommandState.ready) const SizedBox(width: 12),
+                  if (cs == CommandState.dispatching)
+                    const ElevatedButton(
+                      onPressed: null,
+                      child: Text("DISPATCHING…"),
+                    ),
+                  if (cs == CommandState.ready || cs == CommandState.dispatching) const SizedBox(width: 12),
                   if (cs == CommandState.ready || cs == CommandState.failed)
                     OutlinedButton(
                       onPressed: () => _onRephrase(state),
@@ -2881,15 +3248,17 @@ If any case fails, file a bug report citing the case number and rerun the failin
 **Files:**
 - Modify: `TODOS.md`
 
-- [ ] **Step 1: Update `TODOS.md` to reflect Phase 4 closing 3 deferred items**
+- [ ] **Step 1: Update `TODOS.md` to reflect Phase 4 closing 3 deferred items + filing 2 deferred adversarial findings**
 
 In `TODOS.md`:
-- Move "EGS subscriber for `egs.operator_actions`" — keep, but update context to note that the Phase 4 contract (operator_command_dispatch kind) is now also part of Person 3's scope.
-- Mark **closed by Phase 4** in the "Bridge finding_id allowlist for `egs.operator_actions`" entry — strikethrough with a note: `~~CLOSED Phase 4 (commit <SHA>) — guard lives in `main.py` allowlist branch.~~`
-- Mark **closed by Phase 4** in the "Validation event ticker on drone status panel" entry — strikethrough with a note.
-- Add a new entry for **Phase 5+:** "Translate `preview_text_in_operator_language` properly" — Phase 4 stub uses identical English text; real EGS uses Gemma 4 E4B per §11.
+- Update "EGS subscriber for `egs.operator_actions`" — note that the Phase 4 contract (operator_command_dispatch kind) is now also part of Person 3's scope.
+- Mark "Bridge finding_id allowlist for `egs.operator_actions`" as **CLOSED in Phase 4** — strikethrough with a one-line note pointing to the allowlist branch in `frontend/ws_bridge/main.py`.
+- Mark "Validation event ticker on drone status panel" as **CLOSED in Phase 4** — strikethrough with a one-line note pointing to `drone_status_panel.dart`.
+- Add **Phase 5+:** "Translate `preview_text_in_operator_language` properly" — Phase 4 stub uses identical English text; real EGS uses Gemma 4 E4B per §11.
+- Add **Phase 5+:** "Bridge lifespan teardown ordering" — adversarial finding #6. `subscriber.stop()` aclose's pubsub while `subscribe_task` may still be mid-await on it; produces noisy stderr on shutdown but no functional bug. Right fix: set `_stopping=True` first, await tasks, THEN aclose pubsub/client.
+- Add **Phase 5+:** "Move `ValidationEventLogger.log` off the dispatch path" — adversarial finding #7. Currently does sync disk I/O inside the subscriber's hot path; a misbehaving EGS spamming malformed translations could degrade Redis drain. Right fix: queue + executor or async writer.
 
-Concrete edit: open `TODOS.md` and apply the above changes.
+No `<SHA>` placeholders — use plain text closure notes (the implementer subagent doesn't have access to commit SHAs at write time).
 
 - [ ] **Step 2: Verify all tests still pass**
 
