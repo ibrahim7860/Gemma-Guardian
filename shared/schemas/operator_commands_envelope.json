@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/operator_commands_envelope.json",
+  "title": "Bridge → EGS operator_command envelope",
+  "description": "Republished onto egs.operator_commands by the WS bridge after validating the inbound websocket_messages.operator_command frame. Bridge stamps bridge_received_at_iso_ms.",
+  "type": "object",
+  "required": ["kind", "command_id", "language", "raw_text", "bridge_received_at_iso_ms", "contract_version"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {"const": "operator_command"},
+    "command_id": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/command_id"},
+    "language": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_lang_code"},
+    "raw_text": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "bridge_received_at_iso_ms": {"$ref": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/iso_timestamp_utc_ms"},
+    "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+  }
+}
