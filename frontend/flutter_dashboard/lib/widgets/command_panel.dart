@@ -128,7 +128,21 @@ class _CommandPanelState extends State<CommandPanel> {
                       onPressed: () => _onRephrase(state),
                       child: const Text("REPHRASE"),
                     ),
-                  if (cs == null || cs == CommandState.dispatched) ...[
+                  if (cs == CommandState.dispatched) ...[
+                    const SizedBox(width: 12),
+                    OutlinedButton(
+                      // "NEW COMMAND" per spec §6.2: clears the input AND
+                      // resets activeCommandId so TRANSLATE re-enables. Without
+                      // the rephrase call, the panel stays parked on the
+                      // dispatched cid and TRANSLATE never re-enables.
+                      onPressed: () {
+                        _controller.clear();
+                        state.rephraseActiveCommand();
+                      },
+                      child: const Text("NEW COMMAND"),
+                    ),
+                  ],
+                  if (cs == null) ...[
                     const SizedBox(width: 12),
                     OutlinedButton(
                       onPressed: () => _controller.clear(),
