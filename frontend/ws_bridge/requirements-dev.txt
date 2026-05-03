@@ -10,3 +10,7 @@
 # harness off the private API (see TODOS.md "Extract bridge WS test
 # helpers to conftest.py").
 httpx-ws>=0.7.0,<0.8
+
+# Hang protection: pytest.ini sets timeout = 30 (eng-review 4A). Without
+# this dep, the timeout setting is silently ignored.
+pytest-timeout>=2.3

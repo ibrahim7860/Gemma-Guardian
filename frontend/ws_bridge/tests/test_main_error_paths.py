@@ -21,18 +21,14 @@ schema-validated by Phase 1 tests, so seed-payload drift is impossible.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
 
-import fakeredis.aioredis as fakeredis_async
-import httpx
 import pytest
-import pytest_asyncio
 from httpx_ws import aconnect_ws
-from httpx_ws.transport import ASGIWebSocketTransport
+
+from frontend.ws_bridge.tests._helpers import drain_until
 
 
 _FINDING_FIXTURE = (
@@ -41,53 +37,7 @@ _FINDING_FIXTURE = (
 )
 
 
-# ---- fixtures --------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def fake_client():
-    client = fakeredis_async.FakeRedis()
-    yield client
-    await client.aclose()
-
-
-@pytest_asyncio.fixture
-async def app_and_client(monkeypatch, fake_client):
-    import redis.asyncio as redis_async
-
-    monkeypatch.setattr(
-        redis_async.Redis,
-        "from_url",
-        staticmethod(lambda url, **kw: fake_client),
-    )
-
-    from frontend.ws_bridge.main import create_app
-
-    app = create_app()
-    transport = ASGIWebSocketTransport(app=app)
-    client = httpx.AsyncClient(
-        transport=transport, base_url="http://testserver"
-    )
-    async with app.router.lifespan_context(app):
-        try:
-            yield app, client, fake_client
-        finally:
-            transport.exit_stack = None
-            await client.aclose()
-
-
 # ---- helpers ---------------------------------------------------------------
-
-
-async def _drain_until(ws, predicate, *, max_frames: int = 20) -> Dict[str, Any]:
-    for _ in range(max_frames):
-        raw = await ws.receive_text()
-        msg = json.loads(raw)
-        if predicate(msg):
-            return msg
-    raise AssertionError(
-        f"no frame matched predicate after {max_frames} frames"
-    )
 
 
 class _IsoMsCounter:
@@ -148,7 +98,7 @@ async def test_operator_command_redis_publish_failed_emits_echo(
     async with aconnect_ws("ws://testserver/", client=http_client) as ws:
         await ws.receive_text()  # initial state envelope
         await ws.send_text(json.dumps(frame))
-        echo = await _drain_until(
+        echo = await drain_until(
             ws, lambda m: m.get("error") == "redis_publish_failed"
         )
 
@@ -183,7 +133,7 @@ async def test_operator_command_bridge_internal_when_envelope_invalid(
     async with aconnect_ws("ws://testserver/", client=http_client) as ws:
         await ws.receive_text()
         await ws.send_text(json.dumps(frame))
-        echo = await _drain_until(
+        echo = await drain_until(
             ws, lambda m: m.get("error") == "bridge_internal"
         )
 
@@ -220,7 +170,7 @@ async def test_finding_approval_redis_publish_failed_emits_echo(
     async with aconnect_ws("ws://testserver/", client=http_client) as ws:
         await ws.receive_text()
         await ws.send_text(json.dumps(frame))
-        echo = await _drain_until(
+        echo = await drain_until(
             ws, lambda m: m.get("error") == "redis_publish_failed"
         )
 
@@ -251,7 +201,7 @@ async def test_finding_approval_bridge_internal_when_envelope_invalid(
     async with aconnect_ws("ws://testserver/", client=http_client) as ws:
         await ws.receive_text()
         await ws.send_text(json.dumps(frame))
-        echo = await _drain_until(
+        echo = await drain_until(
             ws, lambda m: m.get("error") == "bridge_internal"
         )
 
@@ -284,7 +234,7 @@ async def test_dispatch_redis_publish_failed_emits_echo(
     async with aconnect_ws("ws://testserver/", client=http_client) as ws:
         await ws.receive_text()
         await ws.send_text(json.dumps(frame))
-        echo = await _drain_until(
+        echo = await drain_until(
             ws, lambda m: m.get("error") == "redis_publish_failed"
         )
 
@@ -312,7 +262,7 @@ async def test_dispatch_bridge_internal_when_envelope_invalid(
     async with aconnect_ws("ws://testserver/", client=http_client) as ws:
         await ws.receive_text()
         await ws.send_text(json.dumps(frame))
-        echo = await _drain_until(
+        echo = await drain_until(
             ws, lambda m: m.get("error") == "bridge_internal"
         )
 

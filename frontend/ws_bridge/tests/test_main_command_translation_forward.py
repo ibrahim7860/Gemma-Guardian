@@ -25,53 +25,10 @@ import asyncio
 import json
 from typing import Any, Dict
 
-import fakeredis.aioredis as fakeredis_async
-import httpx
 import pytest
-import pytest_asyncio
 from httpx_ws import aconnect_ws
-from httpx_ws.transport import ASGIWebSocketTransport
 
-
-# ---- fixtures --------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def fake_client():
-    """A fakeredis client bound to the running pytest-asyncio loop."""
-    client = fakeredis_async.FakeRedis()
-    yield client
-    await client.aclose()
-
-
-@pytest_asyncio.fixture
-async def app_and_client(monkeypatch, fake_client):
-    """Start the bridge with a fakeredis-backed publisher + subscriber on
-    the running loop. Same pattern as the other Phase 4 bridge tests.
-    """
-    import redis.asyncio as redis_async
-
-    monkeypatch.setattr(
-        redis_async.Redis,
-        "from_url",
-        staticmethod(lambda url, **kw: fake_client),
-    )
-
-    from frontend.ws_bridge.main import create_app
-
-    app = create_app()
-    transport = ASGIWebSocketTransport(app=app)
-    client = httpx.AsyncClient(
-        transport=transport, base_url="http://testserver"
-    )
-    async with app.router.lifespan_context(app):
-        try:
-            yield app, client, fake_client
-        finally:
-            # See sibling Phase 4 bridge tests for the rationale on
-            # clearing ``transport.exit_stack`` before AsyncClient teardown.
-            transport.exit_stack = None
-            await client.aclose()
+from frontend.ws_bridge.tests._helpers import drain_until
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -103,19 +60,6 @@ def _invalid_envelope() -> Dict[str, Any]:
     return env
 
 
-async def _drain_until(ws, predicate, *, max_frames: int = 30) -> Dict[str, Any] | None:
-    """Receive up to ``max_frames`` frames; return the first that matches
-    ``predicate`` or None if none did. Other frames (e.g. periodic
-    ``state_update``) are skipped.
-    """
-    for _ in range(max_frames):
-        raw = await ws.receive_text()
-        msg = json.loads(raw)
-        if predicate(msg):
-            return msg
-    return None
-
-
 # ---- tests -----------------------------------------------------------------
 
 
@@ -138,8 +82,10 @@ async def test_command_translation_forwarded_to_ws_client(app_and_client):
             "egs.command_translations", json.dumps(envelope)
         )
 
-        forwarded = await _drain_until(
-            ws, lambda m: m.get("type") == "command_translation"
+        forwarded = await drain_until(
+            ws,
+            lambda m: m.get("type") == "command_translation",
+            max_frames=30,
         )
 
     assert forwarded is not None, "command_translation frame never arrived"
@@ -159,6 +105,10 @@ async def test_invalid_translation_is_dropped(app_and_client):
     """An envelope that fails ``command_translations_envelope`` validation
     must be dropped at the subscriber — not forwarded — and the subscriber
     task must keep running (the test would hang or error out otherwise).
+
+    With the shared ``drain_until`` helper, "no matching frame" surfaces as
+    an ``AssertionError`` from the helper itself, so this test asserts that
+    the predicate never matches by expecting that error.
     """
     app, http_client, fake = app_and_client
     bogus = _invalid_envelope()
@@ -172,13 +122,11 @@ async def test_invalid_translation_is_dropped(app_and_client):
         )
 
         # We should see only periodic state_update frames; never a
-        # command_translation. Drain a few frames and assert none match.
-        forwarded = await _drain_until(
-            ws,
-            lambda m: m.get("type") == "command_translation",
-            max_frames=10,
-        )
-
-    assert forwarded is None, (
-        f"invalid envelope unexpectedly forwarded: {forwarded!r}"
-    )
+        # command_translation. drain_until raises AssertionError when no
+        # frame matches within max_frames — that's the success condition.
+        with pytest.raises(AssertionError):
+            await drain_until(
+                ws,
+                lambda m: m.get("type") == "command_translation",
+                max_frames=10,
+            )
