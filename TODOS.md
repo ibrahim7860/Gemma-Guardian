@@ -81,6 +81,15 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Reverted in commit `<phase4-revert-sha>`. The Phase 4 spec §4.3 documents the deferral rationale.
 - **Owner:** Person 4 or whoever picks up shared/contracts work.
 
+### Extract bridge WS test helpers to `conftest.py` (Phase 5+)
+- **What:** `_drain_until`, `app_and_client`, and `fake_client` are duplicated across `frontend/ws_bridge/tests/test_main_operator_command_publish.py`, `test_main_operator_command_dispatch.py`, `test_main_command_translation_forward.py`, `test_main_finding_id_allowlist.py`, and (after the May 3 follow-up lands) `test_main_error_paths.py`. Hoist them into `frontend/ws_bridge/tests/conftest.py` (fixtures) plus a small helper module for the drain function.
+- **Why:** Surfaced by the May 3 plan-eng-review issue 2A. Each new bridge test file pays the duplication tax. `_drain_until` has already drifted slightly between files (different `max_frames` defaults). DRY violation flagged repeatedly across reviews.
+- **Pros:** Kills ~60 lines of duplication. Future bridge tests start lighter. Single source of truth for the harness convention added in Phase 4.
+- **Cons:** Touches 4 existing test files. Risk of interacting with the documented full-suite asyncio pollution if `conftest.py` introduces shared fixture state across files. Test in isolation per file before committing.
+- **Context:** Phase 4 standardised on `httpx.AsyncClient + pytest_asyncio + httpx-ws + fakeredis`. Best landed in the same PR as the asyncio pollution fix above so the whole bridge test surface gets one coordinated cleanup.
+- **Depends on:** Should bundle with "Bridge full-suite asyncio test pollution" above.
+- **Owner:** Person 4.
+
 ### Move `ValidationEventLogger.log` off the subscriber dispatch path (Phase 5+)
 - **What:** `frontend/ws_bridge/redis_subscriber.py:_log_validation_failure` calls `self._validation_logger.log(...)` synchronously inside `_handle_message`. The logger does sync disk I/O (`open(..., "a")`).
 - **Why:** Surfaced by the Phase 4 adversarial review (finding #7). A misbehaving EGS spamming malformed translations or findings could stall the subscriber's Redis drain on disk I/O latency, especially on slow disks or when the validation log is being rotated.
