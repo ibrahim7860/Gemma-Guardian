@@ -192,35 +192,45 @@ def test_e2e_approve_round_trip(page, static_server, bridge_and_producers):
     page.goto(static_server, wait_until="networkidle")
     page.wait_for_timeout(5000)
 
-    # Send a finding_approval directly via the page's existing WS connection.
-    # The dashboard maintains a WS at ws://localhost:9090; we open a separate
-    # WS in JS and send the envelope.
+    # Phase 4: the bridge's allowlist guard rejects approvals for finding_ids
+    # not in the aggregator's known set, so we can't hardcode a finding_id any
+    # more — it has to come from the live state_update stream. Capture the
+    # first real finding_id off the WS, then approve THAT id.
     page.evaluate("""
         () => {
             return new Promise((resolve, reject) => {
                 const ws = new WebSocket("ws://localhost:9090");
-                ws.onopen = () => {
-                    ws.send(JSON.stringify({
-                        type: "finding_approval",
-                        command_id: "e2e-test-001",
-                        finding_id: "f_drone1_42",
-                        action: "approve",
-                        contract_version: "1.0.0"
-                    }));
-                };
+                let approvedId = null;
+                ws.onopen = () => {};  // wait for first state_update with a finding
                 ws.onmessage = (event) => {
                     const msg = JSON.parse(event.data);
                     if (msg.ack === "finding_approval") {
                         ws.close();
                         resolve(msg);
-                    } else if (msg.error) {
+                        return;
+                    }
+                    if (msg.error) {
                         ws.close();
                         reject(new Error(msg.error));
+                        return;
                     }
-                    // Ignore state_update frames.
+                    if (approvedId) return;  // already approved; awaiting ack
+                    if (msg.type === "state_update" && Array.isArray(msg.active_findings)) {
+                        const finding = msg.active_findings.find(f => f && f.finding_id);
+                        if (finding) {
+                            approvedId = finding.finding_id;
+                            ws.send(JSON.stringify({
+                                type: "finding_approval",
+                                command_id: "e2e-test-001",
+                                finding_id: approvedId,
+                                action: "approve",
+                                contract_version: "1.0.0"
+                            }));
+                        }
+                    }
                 };
                 ws.onerror = (e) => reject(e);
-                setTimeout(() => reject(new Error("ws timeout")), 5000);
+                setTimeout(() => reject(new Error("ws timeout — no finding arrived")), 10000);
             });
         }
     """)
