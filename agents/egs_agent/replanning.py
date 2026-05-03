@@ -128,7 +128,7 @@ Rules:
             retries += 1
         except Exception as e:
             logger.error(f"Error during replanning: {e}")
-            retries += 1
+            raise e
             
     # Failed after retries - fallback deterministic (round robin)
     logger.error("LLM Replanning failed after retries, using deterministic fallback.")

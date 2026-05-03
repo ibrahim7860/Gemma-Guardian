@@ -104,7 +104,7 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
             retries += 1
         except Exception as e:
             logger.error(f"Error during command translation: {e}")
-            retries += 1
+            raise e
             
     # Failed after retries
     return {
