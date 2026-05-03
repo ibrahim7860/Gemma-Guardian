@@ -57,6 +57,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Phase 3 added the `cancel-before-await` pattern; Phase 4 extends it to three tasks (emit, subscribe, translation_broadcaster). The fix is to also move `pubsub.aclose()` AFTER all task awaits.
 - **Owner:** Person 4.
 
+### Translate `preview_text_in_operator_language` properly (Phase 5+)
+- **What:** The Phase 4 stub EGS emits identical English text in both `preview_text` and `preview_text_in_operator_language`. Person 3's real Gemma 4 E4B EGS will produce a localized translation in the operator's response language (per §11 of `docs/11-prompt-templates.md`).
+- **Why:** The "Reply in:" dropdown in the dashboard becomes meaningful only when the EGS actually translates. Today the dropdown is wired and validated end-to-end but the local preview rendering shows the same English string twice.
+- **Pros:** Headline demo moment ("Gemma 4 speaks Spanish natively") becomes legible to the judge.
+- **Cons:** Couples to Person 3's prompt engineering and language detection.
+- **Context:** Schema and wire path already permit distinct strings. The Flutter `_Preview` widget already renders both lines (collapses to one if equal). Stub at `scripts/dev_command_translator.py` documents this gap.
+- **Owner:** Person 3.
+
 ### Bridge full-suite asyncio test pollution (Phase 5+)
 - **What:** `PYTHONPATH=. python3 -m pytest frontend/ws_bridge/tests/` reports 20 failures on `main` AND on the Phase 4 branch, but every failing test PASSES when run in isolation (`python3 -m pytest frontend/ws_bridge/tests/test_subscriber.py` etc). The failure is event-loop / fakeredis state pollution across test files when pytest collects them in one run.
 - **Why:** Surfaced during Phase 4 Task 6 review when I tried to verify a clean baseline. CI will look broken if anyone runs the full bridge suite as one job. Individual-file runs hide the issue. Phase 4's new tests use `httpx.AsyncClient + pytest_asyncio` (the test harness convention added for Tasks 7–10) which sidesteps the pollution, but the legacy Phase 2/3 tests still collide with each other.
