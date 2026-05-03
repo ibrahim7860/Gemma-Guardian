@@ -24,18 +24,8 @@ jobs:
           pip install -r shared/requirements.txt
       - name: Run shared contracts tests
         run: PYTHONPATH=. python -m pytest shared/ -v
-      # Per-file invocation is the documented workaround for cross-file
-      # asyncio loop-binding pollution (TODOS.md "Bridge full-suite
-      # asyncio test pollution"). Each file passes in isolation; running
-      # them in one pytest invocation produces ~20 false failures.
-      - name: Run ws_bridge tests (per file)
-        run: |
-          set -e
-          for f in frontend/ws_bridge/tests/test_*.py; do
-            echo "::group::$f"
-            PYTHONPATH=. python -m pytest "$f" -v
-            echo "::endgroup::"
-          done
+      - name: Run ws_bridge tests
+        run: PYTHONPATH=. python -m pytest frontend/ws_bridge/tests/ -m "not e2e" -v
 
   flutter:
     name: flutter_dashboard
