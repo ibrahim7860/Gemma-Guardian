@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-import cv2
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 
 @dataclass
@@ -37,11 +37,13 @@ class PerceptionNode:
 
     def build(
         self,
-        raw_frame: np.ndarray,
+        raw_frame: "np.ndarray",
         state: DroneState,
         peer_broadcasts: list,
         operator_commands: list,
     ) -> PerceptionBundle:
+        import cv2  # heavy dep — lazy-import keeps the module importable in contract-only test lanes
+
         resized = cv2.resize(raw_frame, (self.downsample_size, self.downsample_size))
         ok, buf = cv2.imencode(".jpg", resized, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
         if not ok:
