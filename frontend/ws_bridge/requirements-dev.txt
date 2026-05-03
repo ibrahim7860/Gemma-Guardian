@@ -2,9 +2,11 @@
 # (TestClient + asyncio.new_event_loop binds fakeredis to the wrong loop;
 # see plan section "Test harness convention for Tasks 7-10").
 #
-# Upper-bound pin on httpx-ws: 0.9.0 changed ASGIWebSocketTransport's
-# internal API (exit_stack / _task_group), which the teardown in our
-# Phase 4 fixtures pokes at. Re-evaluate this pin when migrating the
-# test harness to public API (see TODOS.md "Extract bridge WS test
+# Upper-bound pin on httpx-ws: 0.8.0 introduced an API change to
+# ASGIWebSocketTransport (aconnect_ws now reads transport._task_group,
+# which is only set when the transport is entered as an async context
+# manager — our fixtures construct it directly). 0.7.2 is the version
+# we developed against. Re-evaluate this pin when migrating the test
+# harness off the private API (see TODOS.md "Extract bridge WS test
 # helpers to conftest.py").
-httpx-ws>=0.7.0,<0.9
+httpx-ws>=0.7.0,<0.8
