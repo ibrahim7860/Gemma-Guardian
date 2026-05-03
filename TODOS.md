@@ -4,6 +4,23 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## Phase 4+ (post-Dashboard MVP)
 
+### Migrate bridge tests off `httpx-ws` private API (Phase 5+)
+- **What:** `frontend/ws_bridge/tests/conftest.py`'s `app_and_client`
+  fixture pokes `transport.exit_stack = None` to break a circular ref at
+  shutdown. This reaches into private API; `httpx-ws` 0.8.0 already
+  changed `ASGIWebSocketTransport`'s internals (we pin `<0.8` in
+  requirements-dev.txt). Migrate to the public `aconnect_ws` lifecycle
+  pattern when the public API supports our use case.
+- **Why:** The pin will rot. Future security/perf releases of httpx-ws
+  will land behind 0.8, and we'll be stuck.
+- **Pros:** Removes the version pin; tests use only public API.
+- **Cons:** May require restructuring how the fixture exposes the WS
+  client to tests; non-trivial diff across all test_main_*.py files.
+- **Context:** Surfaced during Task 5 of chore/bridge-test-harness-cleanup
+  (this PR). The `transport.exit_stack = None` workaround was inherited
+  from the original 5 fixture copies; it now lives in conftest.py.
+- **Owner:** Person 4.
+
 ### EGS subscriber for `egs.operator_actions`
 - **What:** EGS-side subscriber that consumes `egs.operator_actions` Redis channel (operator approve/dismiss decisions on findings) and reflects approved findings into the next `state_update` envelope.
 - **Why:** Phase 3 ships the bridge → Redis publish path with a typed schema. Without an EGS subscriber, operator decisions land in Redis but never propagate back to the dashboard as confirmed state. Phase 3 visual UI uses two-stage feedback (grey check = bridge ack, green check = EGS-confirmed) precisely so this is forward-compatible.
@@ -65,7 +82,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Schema and wire path already permit distinct strings. The Flutter `_Preview` widget already renders both lines (collapses to one if equal). Stub at `scripts/dev_command_translator.py` documents this gap.
 - **Owner:** Person 3.
 
-### Bridge full-suite asyncio test pollution (Phase 5+)
+### ~~Bridge full-suite asyncio test pollution~~ (closed in chore/bridge-test-harness-cleanup)
+**CLOSED** — fixed by `pytest.ini` setting `asyncio_mode = auto` and
+`asyncio_default_fixture_loop_scope = function`, plus the conftest.py
+extraction (single fakeredis fixture binds to the running loop). CI
+now runs the full bridge suite in one pytest invocation. Confirmed
+on Linux+Python 3.11 in CI run #25287073503. Original entry retained
+below for historical context.
+
 - **What:** `PYTHONPATH=. python3 -m pytest frontend/ws_bridge/tests/` reports 20 failures on `main` AND on the Phase 4 branch, but every failing test PASSES when run in isolation (`python3 -m pytest frontend/ws_bridge/tests/test_subscriber.py` etc). The failure is event-loop / fakeredis state pollution across test files when pytest collects them in one run.
 - **Why:** Surfaced during Phase 4 Task 6 review when I tried to verify a clean baseline. CI will look broken if anyone runs the full bridge suite as one job. Individual-file runs hide the issue. Phase 4's new tests use `httpx.AsyncClient + pytest_asyncio` (the test harness convention added for Tasks 7–10) which sidesteps the pollution, but the legacy Phase 2/3 tests still collide with each other.
 - **Pros:** Restores trust in `pytest -q frontend/ws_bridge/tests/` as a single command.
@@ -81,7 +105,13 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Reverted in commit `<phase4-revert-sha>`. The Phase 4 spec §4.3 documents the deferral rationale.
 - **Owner:** Person 4 or whoever picks up shared/contracts work.
 
-### Extract bridge WS test helpers to `conftest.py` (Phase 5+)
+### ~~Extract bridge WS test helpers to `conftest.py`~~ (closed in chore/bridge-test-harness-cleanup)
+**CLOSED** — `frontend/ws_bridge/tests/conftest.py` hosts `fake_client`
+and `app_and_client`; `frontend/ws_bridge/tests/_helpers.py` hosts the
+`drain_until` async helper. Five test files migrated. ~270 lines of
+duplication removed. Original entry retained below for historical
+context.
+
 - **What:** `_drain_until`, `app_and_client`, and `fake_client` are duplicated across `frontend/ws_bridge/tests/test_main_operator_command_publish.py`, `test_main_operator_command_dispatch.py`, `test_main_command_translation_forward.py`, `test_main_finding_id_allowlist.py`, and (after the May 3 follow-up lands) `test_main_error_paths.py`. Hoist them into `frontend/ws_bridge/tests/conftest.py` (fixtures) plus a small helper module for the drain function.
 - **Why:** Surfaced by the May 3 plan-eng-review issue 2A. Each new bridge test file pays the duplication tax. `_drain_until` has already drifted slightly between files (different `max_frames` defaults). DRY violation flagged repeatedly across reviews.
 - **Pros:** Kills ~60 lines of duplication. Future bridge tests start lighter. Single source of truth for the harness convention added in Phase 4.
