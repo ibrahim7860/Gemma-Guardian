@@ -19,70 +19,11 @@ import asyncio
 import json
 from typing import Any, Dict
 
-import fakeredis.aioredis as fakeredis_async
-import httpx
 import pytest
-import pytest_asyncio
 from httpx_ws import aconnect_ws
-from httpx_ws.transport import ASGIWebSocketTransport
 
+from frontend.ws_bridge.tests._helpers import drain_until
 from shared.contracts import validate
-
-
-# ---- fixtures --------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def fake_client():
-    """A fakeredis client bound to the running pytest-asyncio loop."""
-    client = fakeredis_async.FakeRedis()
-    yield client
-    await client.aclose()
-
-
-@pytest_asyncio.fixture
-async def app_and_client(monkeypatch, fake_client):
-    """Start the bridge with a fakeredis-backed publisher + subscriber on
-    the running loop.
-
-    Patches ``redis.asyncio.Redis.from_url`` to return ``fake_client`` so the
-    bridge's ``RedisPublisher`` and ``RedisSubscriber`` share state with the
-    test's pubsub. Drives FastAPI lifespan manually via
-    ``app.router.lifespan_context`` so subscriber/emit tasks start on the
-    same loop the test runs on.
-    """
-    import redis.asyncio as redis_async
-
-    monkeypatch.setattr(
-        redis_async.Redis,
-        "from_url",
-        staticmethod(lambda url, **kw: fake_client),
-    )
-
-    # Import after the patch so any module-level client construction picks
-    # up the fakeredis factory.
-    from frontend.ws_bridge.main import create_app
-
-    app = create_app()
-    transport = ASGIWebSocketTransport(app=app)
-    client = httpx.AsyncClient(
-        transport=transport, base_url="http://testserver"
-    )
-    async with app.router.lifespan_context(app):
-        try:
-            yield app, client, fake_client
-        finally:
-            # Deviation note: ``ASGIWebSocketTransport`` retains a per-WS
-            # ``exit_stack`` whose anyio cancel scope was entered inside the
-            # ``aconnect_ws`` task. If we let ``httpx.AsyncClient.aclose()``
-            # re-enter that stack from the fixture's task, anyio raises
-            # "Attempted to exit cancel scope in a different task". The
-            # ``aconnect_ws`` context manager has already drained the
-            # network stream by the time it exits, so the residual
-            # ``exit_stack`` has no real cleanup left to do — clear it
-            # from the same task that owns it before AsyncClient teardown.
-            transport.exit_stack = None
-            await client.aclose()
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -107,20 +48,6 @@ def _command_frame(
     return frame
 
 
-async def _drain_until(ws, predicate, *, max_frames: int = 10) -> Dict[str, Any]:
-    """Receive frames until ``predicate(msg)`` is True. Skips state_update
-    frames emitted by ``_emit_loop``.
-    """
-    for _ in range(max_frames):
-        raw = await ws.receive_text()
-        msg = json.loads(raw)
-        if predicate(msg):
-            return msg
-    raise AssertionError(
-        f"no frame matched predicate after {max_frames} frames"
-    )
-
-
 # ---- tests -----------------------------------------------------------------
 
 
@@ -137,7 +64,7 @@ async def test_valid_operator_command_publishes_envelope(app_and_client):
         async with aconnect_ws("ws://testserver/", client=http_client) as ws:
             await ws.receive_text()  # initial state envelope
             await ws.send_text(json.dumps(_command_frame()))
-            ack = await _drain_until(
+            ack = await drain_until(
                 ws, lambda m: m.get("ack") == "operator_command_received"
             )
 
@@ -186,7 +113,7 @@ async def test_invalid_operator_command_no_publish(app_and_client):
         async with aconnect_ws("ws://testserver/", client=http_client) as ws:
             await ws.receive_text()  # initial state envelope
             await ws.send_text(json.dumps(_command_frame(drop_raw_text=True)))
-            echo = await _drain_until(
+            echo = await drain_until(
                 ws, lambda m: m.get("error") == "invalid_operator_command"
             )
 
