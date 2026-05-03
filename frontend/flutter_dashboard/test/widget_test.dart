@@ -7,7 +7,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dashboard/main.dart';
 import 'package:flutter_dashboard/state/mission_state.dart';
 
 void main() {
