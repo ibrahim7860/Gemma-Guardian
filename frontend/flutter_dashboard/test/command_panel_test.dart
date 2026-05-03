@@ -67,6 +67,7 @@ void main() {
       expect(dispatch, findsOneWidget);
       final ElevatedButton btn = tester.widget(dispatch);
       expect(btn.onPressed, isNotNull);
+      state.dispose();  // cancel pending translation Timer
     });
 
     testWidgets('ready state with valid=false (unknown_command) disables DISPATCH', (tester) async {
@@ -87,6 +88,7 @@ void main() {
       final dispatch = find.widgetWithText(ElevatedButton, "DISPATCH");
       final ElevatedButton btn = tester.widget(dispatch);
       expect(btn.onPressed, isNull);
+      state.dispose();  // cancel pending translation Timer
     });
 
     testWidgets('language dropdown round-trips into outbound payload via state', (tester) async {
@@ -108,8 +110,7 @@ void main() {
       final cid = state.activeCommandId;
       expect(cid, isNotNull);
       expect(state.commandState(cid!), CommandState.sending);
-      // Dispose to cancel the 15s translation timer pending from the submit.
-      state.dispose();
+      state.dispose();  // cancel pending translation Timer
     });
   });
 }

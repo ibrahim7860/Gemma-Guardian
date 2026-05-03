@@ -205,7 +205,13 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
-        await app.state.publisher.close()
+        # Wrap publisher.close() defensively — any exception here would
+        # leak to FastAPI shutdown after we've already torn down the
+        # background tasks that depend on it.
+        try:
+            await app.state.publisher.close()
+        except Exception:
+            pass
 
 
 def create_app() -> FastAPI:

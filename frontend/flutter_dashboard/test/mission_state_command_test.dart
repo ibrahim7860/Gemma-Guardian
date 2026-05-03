@@ -30,6 +30,12 @@ void main() {
       state.setConnectionStatus("connected");
     });
 
+    // NOTE: state.dispose() is called inline at the end of each test rather
+    // than in tearDown because the flutter_test pending-Timer check runs
+    // before tearDown executes. Tests that submit commands (which schedule
+    // 15s translation Timers) MUST dispose before exiting the test body.
+    // Tests that only send echoes / no Timers can skip this.
+
     test('submit command transitions sending -> translating on bridge ack', () {
       final cid = state.submitOperatorCommand(rawText: "recall drone1", language: "en");
       expect(state.commandState(cid), CommandState.sending);

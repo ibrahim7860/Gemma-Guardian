@@ -187,10 +187,17 @@ class MissionState extends ChangeNotifier {
   }
 
   /// Called by detachSink — flip in-flight commands to failed.
+  ///
+  /// Includes `dispatching` (review finding): on WS drop while waiting for
+  /// the dispatch ack, the cid would otherwise be stranded in `dispatching`
+  /// forever, leaving a permanent spinner with no recovery path (REPHRASE
+  /// is hidden during dispatching).
   void _failInFlightCommands() {
     final flipped = <String>[];
     _commandActions.forEach((id, st) {
-      if (st == CommandState.sending || st == CommandState.translating) {
+      if (st == CommandState.sending ||
+          st == CommandState.translating ||
+          st == CommandState.dispatching) {
         flipped.add(id);
       }
     });
