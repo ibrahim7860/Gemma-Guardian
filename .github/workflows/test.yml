@@ -1,0 +1,64 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  bridge:
+    name: ws_bridge + shared contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r frontend/ws_bridge/requirements.txt
+          pip install -r frontend/ws_bridge/requirements-dev.txt
+          pip install -r shared/requirements.txt
+      - name: Run shared contracts tests
+        run: PYTHONPATH=. python -m pytest shared/ -v
+      # Per-file invocation is the documented workaround for cross-file
+      # asyncio loop-binding pollution (TODOS.md "Bridge full-suite
+      # asyncio test pollution"). Each file passes in isolation; running
+      # them in one pytest invocation produces ~20 false failures.
+      - name: Run ws_bridge tests (per file)
+        run: |
+          set -e
+          for f in frontend/ws_bridge/tests/test_*.py; do
+            echo "::group::$f"
+            PYTHONPATH=. python -m pytest "$f" -v
+            echo "::endgroup::"
+          done
+
+  flutter:
+    name: flutter_dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pyyaml for topic-constants generator
+        run: pip install PyYAML
+      - name: Generate topic constants (Python + Dart)
+        run: PYTHONPATH=. python scripts/gen_topic_constants.py
+      - name: Flutter pub get
+        working-directory: frontend/flutter_dashboard
+        run: flutter pub get
+      - name: Flutter analyze
+        working-directory: frontend/flutter_dashboard
+        run: flutter analyze
+      - name: Flutter test
+        working-directory: frontend/flutter_dashboard
+        run: flutter test

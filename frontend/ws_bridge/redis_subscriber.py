@@ -44,6 +44,7 @@ _LOG = logging.getLogger(__name__)
 _DRONE_STATE_PATTERN: str = topics.PER_DRONE_STATE.replace("{drone_id}", "*")
 _DRONE_FINDINGS_PATTERN: str = topics.PER_DRONE_FINDINGS.replace("{drone_id}", "*")
 _EGS_STATE_CHANNEL: str = topics.EGS_STATE
+_EGS_COMMAND_TRANSLATIONS_CHANNEL: str = topics.EGS_COMMAND_TRANSLATIONS
 
 # Polling timeout for ``pubsub.get_message``. Small enough that the loop
 # checks ``self._stopping`` frequently for clean shutdown; large enough that
@@ -66,6 +67,8 @@ def _classify_channel(channel: str) -> Tuple[Optional[str], Optional[str]]:
     """
     if channel == _EGS_STATE_CHANNEL:
         return "egs_state", None
+    if channel == _EGS_COMMAND_TRANSLATIONS_CHANNEL:
+        return "command_translations_envelope", None
     if channel.startswith("drones.") and channel.endswith(".state"):
         parts = channel.split(".")
         if len(parts) == 3:
@@ -93,10 +96,18 @@ class RedisSubscriber:
         config: BridgeConfig,
         aggregator: StateAggregator,
         validation_logger: ValidationEventLogger,
+        translation_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         self._config: BridgeConfig = config
         self._aggregator: StateAggregator = aggregator
         self._validation_logger: ValidationEventLogger = validation_logger
+        # Adversarial finding #1 / spec §5.1: command_translations are not
+        # broadcast synchronously from this loop. Instead, the subscriber
+        # ``put_nowait`` onto this queue and a dedicated lifespan task in
+        # ``main.py`` drains and broadcasts. A slow WS client therefore
+        # cannot back-pressure Redis ingestion (which would otherwise risk
+        # Redis disconnecting us as a slow consumer).
+        self._translation_queue: Optional[asyncio.Queue] = translation_queue
         self._stopping: bool = False
         # Held across reconnect attempts so ``stop()`` can close them out.
         self._client: Optional[redis_async.Redis] = None
@@ -177,7 +188,9 @@ class RedisSubscriber:
         pubsub = client.pubsub()
         self._pubsub = pubsub
 
-        await pubsub.subscribe(_EGS_STATE_CHANNEL)
+        await pubsub.subscribe(
+            _EGS_STATE_CHANNEL, _EGS_COMMAND_TRANSLATIONS_CHANNEL,
+        )
         await pubsub.psubscribe(_DRONE_STATE_PATTERN)
         await pubsub.psubscribe(_DRONE_FINDINGS_PATTERN)
 
@@ -271,6 +284,46 @@ class RedisSubscriber:
             self._aggregator.update_drone_state(drone_id, payload)
         elif schema_name == "finding":
             self._aggregator.add_finding(payload)
+        elif schema_name == "command_translations_envelope":
+            # Strip bridge-only fields and re-shape ``kind`` -> ``type`` for
+            # the WS contract. Then enqueue for the broadcaster task. We do
+            # NOT call ``registry.broadcast`` here — see the constructor
+            # docstring on ``_translation_queue`` for the rationale.
+            if self._translation_queue is not None:
+                ws_frame: Dict[str, Any] = {
+                    "type": "command_translation",
+                    "command_id": payload["command_id"],
+                    "structured": payload["structured"],
+                    "valid": payload["valid"],
+                    "preview_text": payload["preview_text"],
+                    "preview_text_in_operator_language": payload[
+                        "preview_text_in_operator_language"
+                    ],
+                    "contract_version": payload["contract_version"],
+                }
+                try:
+                    self._translation_queue.put_nowait(ws_frame)
+                except asyncio.QueueFull:
+                    # Adversarial finding #1: under broadcaster slowness,
+                    # drop the OLDEST queued translation so the subscriber
+                    # keeps draining Redis. The operator gets the freshest
+                    # translation; back-pressure to Redis is what we must
+                    # never tolerate.
+                    try:
+                        self._translation_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    try:
+                        self._translation_queue.put_nowait(ws_frame)
+                    except asyncio.QueueFull:
+                        # Pathological: still full after evict (race with
+                        # another producer). Drop this frame outright and
+                        # log so we notice in production.
+                        _LOG.warning(
+                            "RedisSubscriber: translation queue persistently "
+                            "full; dropped command_id=%s",
+                            payload.get("command_id"),
+                        )
         # else: unreachable — _classify_channel returned a known schema_name.
 
     def _log_validation_failure(

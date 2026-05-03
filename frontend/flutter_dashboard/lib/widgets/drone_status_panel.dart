@@ -8,29 +8,71 @@ class DroneStatusPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Consumer<MissionState>(
-      builder: (_, mission, __) {
+      builder: (context, mission, child) {
         if (mission.activeDrones.isEmpty) {
           return const _EmptyPanel(label: "Drone Status", hint: "No drones online");
         }
+        final events = _validationEventsByDrone(mission.egsState);
         return ListView.separated(
           padding: const EdgeInsets.all(12),
           itemCount: mission.activeDrones.length,
-          separatorBuilder: (_, __) => const Divider(),
+          separatorBuilder: (_, _) => const Divider(),
           itemBuilder: (_, i) {
             final d = mission.activeDrones[i] as Map<String, dynamic>;
+            final droneId = d["drone_id"] as String? ?? "drone?";
+            final perDrone = events[droneId] ?? const <Map<String, dynamic>>[];
             return ListTile(
-              title: Text("${d["drone_id"]} — ${d["agent_status"]}"),
-              subtitle: Text(
-                "Battery ${d["battery_pct"]}% · "
-                "Task: ${d["current_task"] ?? "idle"} · "
-                "Findings: ${d["findings_count"]} · "
-                "Validation fails: ${d["validation_failures_total"]}",
+              isThreeLine: true,
+              title: Text("$droneId — ${d["agent_status"]}"),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Battery ${d["battery_pct"]}% · "
+                    "Task: ${d["current_task"] ?? "idle"} · "
+                    "Findings: ${d["findings_count"]} · "
+                    "Validation fails: ${d["validation_failures_total"]}",
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _tickerLine(perDrone),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: perDrone.isEmpty ? Colors.grey[600] : Colors.orange[800],
+                    ),
+                  ),
+                ],
               ),
             );
           },
         );
       },
     );
+  }
+
+  /// Group recent_validation_events by agent (drone_id). Returns empty map
+  /// when egs_state is null (reconnect window) so the panel renders cleanly.
+  Map<String, List<Map<String, dynamic>>> _validationEventsByDrone(Map<String, dynamic>? egs) {
+    if (egs == null) return const {};
+    final raw = egs["recent_validation_events"];
+    if (raw is! List) return const {};
+    final result = <String, List<Map<String, dynamic>>>{};
+    for (final entry in raw) {
+      if (entry is! Map<String, dynamic>) continue;
+      final agent = entry["agent"] as String?;
+      if (agent == null) continue;
+      result.putIfAbsent(agent, () => []).add(entry);
+    }
+    return result;
+  }
+
+  String _tickerLine(List<Map<String, dynamic>> events) {
+    if (events.isEmpty) return "Validation: 0 fails";
+    final last = events.first;
+    final ts = (last["timestamp"] as String?) ?? "";
+    final shortTs = ts.length >= 19 ? ts.substring(11, 19) : ts;
+    final issue = last["issue"] ?? "?";
+    return "Validation: ${events.length} fails (last: $shortTs — $issue)";
   }
 }
 

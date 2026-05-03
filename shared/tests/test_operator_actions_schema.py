@@ -96,3 +96,37 @@ def test_command_id_session_format_accepted():
     payload["command_id"] = "v046-1777751008388-2"  # ${4chars}-${ms}-${counter}
     outcome = validate("operator_actions", payload)
     assert outcome.valid, outcome.errors
+
+
+def test_dispatch_kind_validates():
+    payload = _load("valid/operator_actions/02_operator_command_dispatch.json")
+    outcome = validate("operator_actions", payload)
+    assert outcome.valid, outcome.errors
+
+
+def test_dispatch_missing_command_id_rejected():
+    payload = _load("invalid/operator_actions/03_dispatch_missing_command_id.json")
+    outcome = validate("operator_actions", payload)
+    assert not outcome.valid
+    assert outcome.errors
+
+
+def test_dispatch_does_not_accept_finding_approval_only_fields():
+    """A dispatch payload with finding_id+action must be rejected — those keys
+    are additionalProperties:false on the dispatch branch."""
+    payload = {
+        "kind": "operator_command_dispatch",
+        "command_id": "abcd-1700000000000-7",
+        "finding_id": "f_drone1_42",
+        "action": "approve",
+        "bridge_received_at_iso_ms": "2026-05-02T12:34:56.789Z",
+        "contract_version": "1.0.0",
+    }
+    outcome = validate("operator_actions", payload)
+    assert not outcome.valid
+    # Pin the rejection to the dispatch branch refusing leaked finding_approval-only
+    # fields via additionalProperties:false. Without this assertion, the test could
+    # keep passing if a future refactor broke oneOf discrimination for unrelated
+    # reasons.
+    joined = " ".join(e.message for e in outcome.errors).lower()
+    assert "additionalproperties" in joined or "finding_id" in joined or "action" in joined, [e.message for e in outcome.errors]

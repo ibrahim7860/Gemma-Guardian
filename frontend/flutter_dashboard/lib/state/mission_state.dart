@@ -17,6 +17,15 @@ import '../generated/contract_version.dart' as gen;
 ///                                       → failed (bridge error or WS drop)
 enum ApprovalState { pending, received, confirmed, dismissed, failed }
 
+/// Per-command state machine for operator command translation.
+///
+/// (absent) → sending → translating → ready → dispatching → dispatched
+///                                                       └→ ready (on redis_publish_failed echo, finding #5)
+///                                          → (rephrase resets to absent)
+///         → failed (on bridge error, WS drop, or 15s timeout)
+///         → (orphaned: dropped from map entirely on second submit, finding #4)
+enum CommandState { sending, translating, ready, dispatching, dispatched, failed }
+
 /// Mission state held in memory; updated by every WebSocket state_update
 /// message and by operator actions.
 ///
@@ -61,6 +70,147 @@ class MissionState extends ChangeNotifier {
 
   ApprovalState? findingState(String findingId) => _findingActions[findingId];
 
+  // ---- command translation state ------------------------------------------
+
+  final Map<String, CommandState> _commandActions = {};
+  final Map<String, Map<String, dynamic>> _commandTranslations = {};
+  final Map<String, Timer> _commandTimers = {};
+  String? _activeCommandId;
+
+  String? get activeCommandId => _activeCommandId;
+  CommandState? commandState(String commandId) => _commandActions[commandId];
+  Map<String, dynamic>? commandTranslation(String commandId) =>
+      _commandTranslations[commandId];
+
+  /// Operator submitted a command for translation. Returns the command_id
+  /// generated for this submission so the caller can correlate later.
+  ///
+  /// Single-slot: a fresh submit replaces the active id. **Adversarial
+  /// finding #4 — orphan rule:** the prior cid is *dropped* from
+  /// `_commandActions`, `_commandTranslations`, and `_commandTimers` so its
+  /// Timer cannot fire later (no misleading snackbar) and so memory does not
+  /// grow under aggressive resubmit cycles. Late ack/translation frames for
+  /// the orphan find no entry and are silently dropped.
+  String submitOperatorCommand({
+    required String rawText,
+    required String language,
+    Duration translationTimeout = const Duration(seconds: 15),
+  }) {
+    // Orphan the prior active command (if any) before overwriting.
+    final prior = _activeCommandId;
+    if (prior != null && _commandActions.containsKey(prior)) {
+      _commandTimers[prior]?.cancel();
+      _commandTimers.remove(prior);
+      _commandActions.remove(prior);
+      _commandTranslations.remove(prior);
+    }
+
+    final commandId = _nextCommandId();
+    _activeCommandId = commandId;
+    _commandActions[commandId] = CommandState.sending;
+    _commandTimers[commandId] = Timer(translationTimeout, () {
+      // Promote to failed only if still in a non-terminal pre-ready state.
+      final cur = _commandActions[commandId];
+      if (cur == CommandState.sending || cur == CommandState.translating) {
+        _commandActions[commandId] = CommandState.failed;
+        _snackbarController.add("Translation lost — retry");
+        notifyListeners();
+      }
+    });
+    notifyListeners();
+    sendOutbound({
+      "type": "operator_command",
+      "command_id": commandId,
+      "language": language,
+      "raw_text": rawText,
+      "contract_version": gen.contractVersion,
+    });
+    return commandId;
+  }
+
+  /// Apply a `command_translation` frame. Drops late frames for terminal-state
+  /// commands (1B) AND for orphaned commands no longer in the map (finding #4).
+  void applyTranslation(Map<String, dynamic> envelope) {
+    if (envelope["type"] != "command_translation") return;
+    final cid = envelope["command_id"] as String?;
+    if (cid == null) return;
+    final cur = _commandActions[cid];
+    if (cur == null) {
+      // Orphaned cid — silent drop (finding #4).
+      if (kDebugMode) {
+        debugPrint("[MissionState] dropped translation for orphaned $cid");
+      }
+      return;
+    }
+    if (cur == CommandState.failed || cur == CommandState.dispatched ||
+        cur == CommandState.dispatching) {
+      // Late arrival on terminal/in-flight-dispatch state — log and drop.
+      if (kDebugMode) {
+        debugPrint("[MissionState] dropped late translation for $cid (state=$cur)");
+      }
+      return;
+    }
+    _commandTranslations[cid] = Map<String, dynamic>.from(envelope);
+    _commandActions[cid] = CommandState.ready;
+    _commandTimers[cid]?.cancel();
+    _commandTimers.remove(cid);
+    notifyListeners();
+  }
+
+  /// Operator clicked DISPATCH on the active command's preview pane.
+  ///
+  /// Adversarial finding #5 — non-optimistic: transition to `dispatching`
+  /// (button shows spinner, REPHRASE disabled) and wait for the bridge ack
+  /// before advancing to `dispatched`. On `redis_publish_failed` we return
+  /// to `ready` so the operator can re-tap without re-translating.
+  void dispatchActiveCommand() {
+    final cid = _activeCommandId;
+    if (cid == null) return;
+    if (_commandActions[cid] != CommandState.ready) return;
+    final translation = _commandTranslations[cid];
+    if (translation == null || translation["valid"] != true) return;
+    _commandActions[cid] = CommandState.dispatching;
+    notifyListeners();
+    sendOutbound({
+      "type": "operator_command_dispatch",
+      "command_id": cid,
+      "contract_version": gen.contractVersion,
+    });
+  }
+
+  /// Operator clicked REPHRASE — clear the active command from the foreground.
+  /// The bookkeeping for the prior cid stays so a late ack/translation that
+  /// arrives can be dropped via the late-arrival rule.
+  void rephraseActiveCommand() {
+    _activeCommandId = null;
+    notifyListeners();
+  }
+
+  /// Called by detachSink — flip in-flight commands to failed.
+  ///
+  /// Includes `dispatching` (review finding): on WS drop while waiting for
+  /// the dispatch ack, the cid would otherwise be stranded in `dispatching`
+  /// forever, leaving a permanent spinner with no recovery path (REPHRASE
+  /// is hidden during dispatching).
+  void _failInFlightCommands() {
+    final flipped = <String>[];
+    _commandActions.forEach((id, st) {
+      if (st == CommandState.sending ||
+          st == CommandState.translating ||
+          st == CommandState.dispatching) {
+        flipped.add(id);
+      }
+    });
+    for (final id in flipped) {
+      _commandActions[id] = CommandState.failed;
+      _commandTimers[id]?.cancel();
+      _commandTimers.remove(id);
+    }
+    if (flipped.isNotEmpty) {
+      _snackbarController.add("Connection lost — translation cancelled");
+    }
+  }
+
   void attachSink(WebSocketSink sink) {
     _sink = sink;
   }
@@ -79,14 +229,13 @@ class MissionState extends ChangeNotifier {
     // grow unbounded under heavy disconnect/reconnect cycles.
     _pendingActions.clear();
     _commandToFinding.clear();
-    if (flipped.isEmpty) {
-      notifyListeners();
-      return;
+    _failInFlightCommands();
+    if (flipped.isNotEmpty) {
+      for (final id in flipped) {
+        _findingActions[id] = ApprovalState.failed;
+      }
+      _snackbarController.add("Reconnect: please re-tap any pending approvals");
     }
-    for (final id in flipped) {
-      _findingActions[id] = ApprovalState.failed;
-    }
-    _snackbarController.add("Reconnect: please re-tap any pending approvals");
     notifyListeners();
   }
 
@@ -134,19 +283,69 @@ class MissionState extends ChangeNotifier {
   void handleEcho(Map<String, dynamic> envelope) {
     if (envelope["type"] != "echo") return;
     final commandId = envelope["command_id"] as String?;
+    final ack = envelope["ack"];
+    final error = envelope["error"];
+
+    // ---- command translation echoes ----
+    if (commandId != null && _commandActions.containsKey(commandId)) {
+      if (ack == "operator_command_received") {
+        if (_commandActions[commandId] == CommandState.sending) {
+          _commandActions[commandId] = CommandState.translating;
+          notifyListeners();
+        }
+        return;
+      }
+      if (ack == "operator_command_dispatch") {
+        // Adversarial finding #5: this is the canonical transition to
+        // dispatched (no longer optimistic). Only transition from dispatching.
+        if (_commandActions[commandId] == CommandState.dispatching) {
+          _commandActions[commandId] = CommandState.dispatched;
+          notifyListeners();
+        }
+        return;
+      }
+      if (error != null) {
+        // Adversarial finding #5: redis_publish_failed during dispatching
+        // must NOT burn the translation. Return to ready so operator can
+        // re-tap. For non-dispatch errors, fall through to the failed path.
+        if (error == "redis_publish_failed" &&
+            _commandActions[commandId] == CommandState.dispatching) {
+          _commandActions[commandId] = CommandState.ready;
+          _snackbarController.add("Dispatch send failed — retry");
+          notifyListeners();
+          return;
+        }
+        _commandActions[commandId] = CommandState.failed;
+        _commandTimers[commandId]?.cancel();
+        _commandTimers.remove(commandId);
+        if (error == "redis_publish_failed") {
+          _snackbarController.add("Bridge could not reach Redis — retry");
+        } else {
+          _snackbarController.add("Command rejected — rephrase");
+        }
+        notifyListeners();
+        return;
+      }
+    }
+
+    // ---- finding approval echoes (existing Phase 3 path) ----
     String? findingId = envelope["finding_id"] as String?;
     if (findingId == null && commandId != null) {
       findingId = _commandToFinding[commandId];
     }
     if (findingId == null) return;
-    if (envelope["ack"] == "finding_approval") {
+    if (ack == "finding_approval") {
       final action = commandId != null ? _pendingActions[commandId] : null;
       _findingActions[findingId] = action == "dismiss"
           ? ApprovalState.dismissed
           : ApprovalState.received;
-    } else if (envelope["error"] != null) {
+    } else if (error != null) {
       _findingActions[findingId] = ApprovalState.failed;
-      _snackbarController.add("Approval not delivered — retry");
+      if (error == "unknown_finding_id") {
+        _snackbarController.add("Finding aged out — refresh and retry");
+      } else {
+        _snackbarController.add("Approval not delivered — retry");
+      }
     }
     if (commandId != null) {
       _pendingActions.remove(commandId);
@@ -196,8 +395,11 @@ class MissionState extends ChangeNotifier {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is Map<String, dynamic>) {
-        if (decoded["type"] == "echo") {
+        final t = decoded["type"];
+        if (t == "echo") {
           handleEcho(decoded);
+        } else if (t == "command_translation") {
+          applyTranslation(decoded);
         } else {
           applyStateUpdate(decoded);
         }
@@ -228,6 +430,10 @@ class MissionState extends ChangeNotifier {
 
   @override
   void dispose() {
+    for (final t in _commandTimers.values) {
+      t.cancel();
+    }
+    _commandTimers.clear();
     _snackbarController.close();
     super.dispose();
   }

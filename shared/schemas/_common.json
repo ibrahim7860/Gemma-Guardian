@@ -79,6 +79,12 @@
         "rejoining_swarm"
       ]
     },
+    "command_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
     "operator_status": {"enum": ["pending", "approved", "dismissed"]},
     "survey_point_status": {
       "enum": ["unassigned", "assigned", "completed", "failed"]

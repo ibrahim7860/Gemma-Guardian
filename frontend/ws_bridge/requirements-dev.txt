@@ -1,0 +1,4 @@
+# Phase 4 bridge test harness: httpx.AsyncClient + pytest_asyncio + httpx-ws
+# (TestClient + asyncio.new_event_loop binds fakeredis to the wrong loop;
+# see plan section "Test harness convention for Tasks 7-10").
+httpx-ws>=0.7.0

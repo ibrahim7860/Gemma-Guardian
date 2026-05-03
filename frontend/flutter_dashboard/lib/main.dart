@@ -132,7 +132,7 @@ class _DashboardShellState extends State<_DashboardShell> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Center(
               child: Consumer<MissionState>(
-                builder: (_, m, __) => Text(
+                builder: (_, m, _) => Text(
                   "v${gen.contractVersion} · ${m.connectionStatus}",
                   style: const TextStyle(fontSize: 12),
                 ),
@@ -158,12 +158,12 @@ class _FourPanelGrid extends StatelessWidget {
         return Column(
           children: [
             Row(children: [
-              SizedBox(width: w, height: h, child: const _Panel(child: MapPanel(), title: "Map")),
-              SizedBox(width: w, height: h, child: const _Panel(child: DroneStatusPanel(), title: "Drone Status")),
+              SizedBox(width: w, height: h, child: const _Panel(title: "Map", child: MapPanel())),
+              SizedBox(width: w, height: h, child: const _Panel(title: "Drone Status", child: DroneStatusPanel())),
             ]),
             Row(children: [
-              SizedBox(width: w, height: h, child: const _Panel(child: FindingsPanel(), title: "Findings")),
-              SizedBox(width: w, height: h, child: const _Panel(child: CommandPanel(), title: "Command")),
+              SizedBox(width: w, height: h, child: const _Panel(title: "Findings", child: FindingsPanel())),
+              SizedBox(width: w, height: h, child: const _Panel(title: "Command", child: CommandPanel())),
             ]),
           ],
         );

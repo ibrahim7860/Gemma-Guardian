@@ -4,7 +4,8 @@
   "title": "Redis payloads on egs.operator_actions",
   "description": "Operator-driven actions republished by the WS bridge to Redis after schema validation. Discriminated by `kind`.",
   "oneOf": [
-    {"$ref": "#/$defs/finding_approval"}
+    {"$ref": "#/$defs/finding_approval"},
+    {"$ref": "#/$defs/operator_command_dispatch"}
   ],
   "$defs": {
     "finding_approval": {
@@ -13,9 +14,20 @@
       "additionalProperties": false,
       "properties": {
         "kind": {"const": "finding_approval"},
-        "command_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]{1,128}$"},
+        "command_id": {"$ref": "_common.json#/$defs/command_id"},
         "finding_id": {"$ref": "_common.json#/$defs/finding_id"},
         "action": {"enum": ["approve", "dismiss"]},
+        "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+        "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    },
+    "operator_command_dispatch": {
+      "type": "object",
+      "required": ["kind", "command_id", "bridge_received_at_iso_ms", "contract_version"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "operator_command_dispatch"},
+        "command_id": {"$ref": "_common.json#/$defs/command_id"},
         "bridge_received_at_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
         "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
       }

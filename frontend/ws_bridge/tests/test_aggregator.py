@@ -236,3 +236,48 @@ def test_aggregator_uses_ordereddict_internally(seed_envelope, finding_payload):
     agg.add_finding(finding_payload)
     # Internal type guard: spec is explicit about OrderedDict semantics.
     assert isinstance(agg._findings, OrderedDict)  # type: ignore[attr-defined]
+
+
+# ---- has_finding accessor (Phase 4 allowlist-guard support) ----------------
+
+def test_has_finding_returns_true_for_known_id(seed_envelope):
+    agg = StateAggregator(max_findings=10, seed_envelope=seed_envelope)
+    finding = {
+        "finding_id": "f_drone1_42",
+        "source_drone_id": "drone1",
+        "timestamp": "2026-05-02T12:00:00.000Z",
+        "type": "victim",
+        "severity": 4,
+        "gps_lat": 34.12,
+        "gps_lon": -118.56,
+        "altitude": 0,
+        "confidence": 0.8,
+        "visual_description": "person prone in debris",
+        "image_path": "/tmp/x.jpg",
+        "validated": True,
+        "validation_retries": 0,
+        "operator_status": "pending",
+    }
+    agg.add_finding(finding)
+    assert agg.has_finding("f_drone1_42") is True
+
+
+def test_has_finding_returns_false_for_unknown_id(seed_envelope):
+    agg = StateAggregator(max_findings=10, seed_envelope=seed_envelope)
+    assert agg.has_finding("f_drone7_99") is False
+
+
+def test_has_finding_returns_false_after_eviction(seed_envelope):
+    """When max_findings cap evicts oldest, has_finding flips to False for it."""
+    agg = StateAggregator(max_findings=1, seed_envelope=seed_envelope)
+    base = {
+        "source_drone_id": "drone1", "timestamp": "2026-05-02T12:00:00.000Z",
+        "type": "victim", "severity": 4, "gps_lat": 34.12, "gps_lon": -118.56,
+        "altitude": 0, "confidence": 0.8, "visual_description": "person prone in debris",
+        "image_path": "/tmp/x.jpg", "validated": True, "validation_retries": 0,
+        "operator_status": "pending",
+    }
+    agg.add_finding({**base, "finding_id": "f_drone1_1"})
+    agg.add_finding({**base, "finding_id": "f_drone1_2"})  # evicts _1
+    assert agg.has_finding("f_drone1_1") is False
+    assert agg.has_finding("f_drone1_2") is True

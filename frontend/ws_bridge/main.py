@@ -177,29 +177,41 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     registry: _ConnectionRegistry = app.state.registry
     aggregator: StateAggregator = app.state.aggregator
     subscriber: RedisSubscriber = app.state.subscriber
+    translation_broadcaster = app.state.translation_broadcaster
 
     emit_task = asyncio.create_task(
         _emit_loop(registry=registry, aggregator=aggregator, tick_s=config.tick_s)
     )
     subscribe_task = asyncio.create_task(subscriber.run())
+    # Adversarial finding #1: command_translations are enqueued by the
+    # subscriber and broadcast by this dedicated task. Decoupling means a
+    # slow WS client cannot stall the Redis subscribe loop.
+    translation_task = asyncio.create_task(translation_broadcaster())
     try:
         yield
     finally:
-        # Cancel both tasks BEFORE awaiting either. If subscriber.stop()
+        # Cancel ALL THREE tasks BEFORE awaiting any. If subscriber.stop()
         # raises, ``await subscribe_task`` would block forever otherwise,
         # hanging FastAPI shutdown until SIGKILL.
         emit_task.cancel()
         subscribe_task.cancel()
+        translation_task.cancel()
         try:
             await subscriber.stop()
         except Exception:
             pass
-        for task in (emit_task, subscribe_task):
+        for task in (emit_task, subscribe_task, translation_task):
             try:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
-        await app.state.publisher.close()
+        # Wrap publisher.close() defensively — any exception here would
+        # leak to FastAPI shutdown after we've already torn down the
+        # background tasks that depend on it.
+        try:
+            await app.state.publisher.close()
+        except Exception:
+            pass
 
 
 def create_app() -> FastAPI:
@@ -211,13 +223,61 @@ def create_app() -> FastAPI:
         seed_envelope=seed_envelope,
     )
     validation_logger = ValidationEventLogger()
+
+    # Registry must be constructed BEFORE the broadcaster closure that
+    # captures it, and BEFORE the subscriber that shares the translation
+    # queue with the broadcaster.
+    registry = _ConnectionRegistry(broadcast_timeout_s=config.broadcast_timeout_s)
+
+    # Adversarial finding #1 / spec §5.1: bounded queue between subscriber
+    # and broadcaster. ``maxsize=64`` is generous for the bursty
+    # operator-translation traffic pattern; the subscriber's
+    # drop-oldest-on-full policy provides hard back-pressure relief.
+    translation_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+
+    async def _translation_broadcaster_loop() -> None:
+        """Drain ``translation_queue`` and broadcast via ``registry``.
+
+        Owns slowness: if a WS client is slow, this task waits — but the
+        subscriber and ``_emit_loop`` keep running. Same defensive
+        try/except shape as ``_emit_loop`` so a single bad frame never
+        kills the broadcaster.
+        """
+        while True:
+            try:
+                frame = await translation_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                # Defense in depth: re-validate the post-strip frame
+                # against the WS contract before broadcasting. If the
+                # subscriber's strip logic ever produces an invalid frame
+                # (a bridge bug), drop it with a log line rather than
+                # corrupt the WS clients.
+                outcome = validate("websocket_messages", frame)
+                if not outcome.valid:
+                    print(
+                        f"[ws_bridge] BUG: dropped translation frame "
+                        f"post-strip: {outcome.errors}"
+                    )
+                    continue
+                await registry.broadcast(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # A single bad frame must not kill the broadcaster.
+                print(
+                    f"[ws_bridge] translation_broadcaster tick error "
+                    f"(continuing): {type(exc).__name__}: {exc}"
+                )
+
     subscriber = RedisSubscriber(
         config=config,
         aggregator=aggregator,
         validation_logger=validation_logger,
+        translation_queue=translation_queue,
     )
     publisher = RedisPublisher(redis_url=config.redis_url)
-    registry = _ConnectionRegistry(broadcast_timeout_s=config.broadcast_timeout_s)
 
     app = FastAPI(title="FieldAgent WS Bridge (Phase 2)", lifespan=lifespan)
     app.state.config = config
@@ -225,6 +285,8 @@ def create_app() -> FastAPI:
     app.state.subscriber = subscriber
     app.state.registry = registry
     app.state.publisher = publisher
+    app.state.translation_queue = translation_queue
+    app.state.translation_broadcaster = _translation_broadcaster_loop
 
     @app.get("/health")
     async def health() -> Dict[str, str]:
@@ -260,24 +322,63 @@ def create_app() -> FastAPI:
                     continue
                 if isinstance(parsed, dict) and parsed.get("type") == "operator_command":
                     outcome = validate("websocket_messages", parsed)
-                    if outcome.valid:
-                        # Phase 4 will translate via the EGS and republish onto
-                        # Redis. For now, just acknowledge.
-                        await websocket.send_text(
-                            json.dumps({
-                                "type": "echo",
-                                "ack": "operator_command_received",
-                                "command_id": parsed.get("command_id"),
-                                "contract_version": VERSION,
-                            })
-                        )
-                    else:
+                    if not outcome.valid:
                         await _echo_error(
                             websocket,
                             error="invalid_operator_command",
                             detail=[e.message for e in outcome.errors],
                             command_id=parsed.get("command_id"),
                         )
+                        continue
+                    # Phase 4: republish to ``egs.operator_commands`` so the
+                    # EGS translator can pick it up and emit a structured
+                    # ``command_translation``. The bridge stamps
+                    # ``bridge_received_at_iso_ms`` so downstream consumers
+                    # can measure end-to-end latency without trusting the
+                    # client clock.
+                    redis_payload: Dict[str, Any] = {
+                        "kind": "operator_command",
+                        "command_id": parsed["command_id"],
+                        "language": parsed["language"],
+                        "raw_text": parsed["raw_text"],
+                        "bridge_received_at_iso_ms": _now_iso_ms(),
+                        "contract_version": VERSION,
+                    }
+                    # Defensive: validate the payload we're about to publish.
+                    bridge_outcome = validate(
+                        "operator_commands_envelope", redis_payload,
+                    )
+                    if not bridge_outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="bridge_internal",
+                            detail=[e.message for e in bridge_outcome.errors],
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    try:
+                        await app.state.publisher.publish(
+                            "egs.operator_commands", redis_payload,
+                        )
+                    except Exception:
+                        # See finding_approval branch — bare ``except
+                        # Exception`` is safe here because
+                        # ``asyncio.CancelledError`` is a ``BaseException``,
+                        # not an ``Exception``.
+                        await _echo_error(
+                            websocket,
+                            error="redis_publish_failed",
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "echo",
+                            "ack": "operator_command_received",
+                            "command_id": parsed["command_id"],
+                            "contract_version": VERSION,
+                        })
+                    )
                 elif isinstance(parsed, dict) and parsed.get("type") == "finding_approval":
                     outcome = validate("websocket_messages", parsed)
                     if not outcome.valid:
@@ -285,6 +386,19 @@ def create_app() -> FastAPI:
                             websocket,
                             error="invalid_finding_approval",
                             detail=[e.message for e in outcome.errors],
+                            command_id=parsed.get("command_id"),
+                            finding_id=parsed.get("finding_id"),
+                        )
+                        continue
+                    # Phase 4: allowlist guard. The bridge's aggregator holds
+                    # the canonical "known findings" set (the same set the
+                    # dashboard renders). Reject approvals for unknown ids
+                    # before publishing to keep the operator-decision audit
+                    # trail clean — closes the Phase 3 adversarial finding.
+                    if not app.state.aggregator.has_finding(parsed["finding_id"]):
+                        await _echo_error(
+                            websocket,
+                            error="unknown_finding_id",
                             command_id=parsed.get("command_id"),
                             finding_id=parsed.get("finding_id"),
                         )
@@ -332,6 +446,61 @@ def create_app() -> FastAPI:
                             "ack": "finding_approval",
                             "command_id": parsed["command_id"],
                             "finding_id": parsed["finding_id"],
+                            "contract_version": VERSION,
+                        })
+                    )
+                elif isinstance(parsed, dict) and parsed.get("type") == "operator_command_dispatch":
+                    # Phase 4: the operator clicked DISPATCH on a translated
+                    # command. Mirror the ``finding_approval`` path — validate,
+                    # stamp ``bridge_received_at_iso_ms``, defensively
+                    # re-validate against ``operator_actions`` (whose ``oneOf``
+                    # covers both ``finding_approval`` and
+                    # ``operator_command_dispatch`` kinds), then republish
+                    # onto the same ``egs.operator_actions`` channel.
+                    outcome = validate("websocket_messages", parsed)
+                    if not outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="invalid_operator_command_dispatch",
+                            detail=[e.message for e in outcome.errors],
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    redis_payload: Dict[str, Any] = {
+                        "kind": "operator_command_dispatch",
+                        "command_id": parsed["command_id"],
+                        "bridge_received_at_iso_ms": _now_iso_ms(),
+                        "contract_version": VERSION,
+                    }
+                    bridge_outcome = validate("operator_actions", redis_payload)
+                    if not bridge_outcome.valid:
+                        await _echo_error(
+                            websocket,
+                            error="bridge_internal",
+                            detail=[e.message for e in bridge_outcome.errors],
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    try:
+                        await app.state.publisher.publish(
+                            "egs.operator_actions", redis_payload,
+                        )
+                    except Exception:
+                        # See finding_approval branch — bare ``except
+                        # Exception`` is safe here because
+                        # ``asyncio.CancelledError`` is a ``BaseException``,
+                        # not an ``Exception``.
+                        await _echo_error(
+                            websocket,
+                            error="redis_publish_failed",
+                            command_id=parsed.get("command_id"),
+                        )
+                        continue
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "echo",
+                            "ack": "operator_command_dispatch",
+                            "command_id": parsed["command_id"],
                             "contract_version": VERSION,
                         })
                     )

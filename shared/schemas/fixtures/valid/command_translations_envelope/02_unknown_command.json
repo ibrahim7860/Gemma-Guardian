@@ -1,0 +1,13 @@
+{
+  "kind": "command_translation",
+  "command_id": "abcd-1700000000000-4",
+  "structured": {
+    "command": "unknown_command",
+    "args": {"operator_text": "asdf nonsense", "suggestion": "Try 'recall drone1' or 'focus on zone east'"}
+  },
+  "valid": false,
+  "preview_text": "Command not understood",
+  "preview_text_in_operator_language": "Command not understood",
+  "egs_published_at_iso_ms": "2026-05-02T12:34:57.123Z",
+  "contract_version": "1.0.0"
+}
