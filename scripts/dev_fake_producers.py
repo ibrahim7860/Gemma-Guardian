@@ -1,20 +1,27 @@
-"""Dev-only Redis fake-producer for the Phase 2 WebSocket bridge.
+"""Dev-only Redis fake-producer for the Phase 2+ WebSocket bridge.
 
-This script is scaffolding so Ibrahim (Frontend + Demo) can develop and
-Playwright-test the WS bridge before Hazim (sim) and Qasim (EGS) ship
-their real producers. It connects to Redis and emits contract-valid messages
-on the channels the bridge subscribes to:
+Originally scaffolding for Phase 2 dashboard development before any real
+producers existed. Now also serves as a fallback during the bridge cutover
+to Hazim's sim: each instance can be scoped to a subset of channels via
+``--emit``, so the real sim owns ``drones.<id>.state`` while this script
+keeps emitting ``egs.state`` and per-drone ``findings`` until Qasim
+(EGS) and Kaleel (drone agent) ship their real publishers.
 
-    egs.state                       (every 2s, schema: egs_state)
-    drones.<drone_id>.state         (every 1s, schema: drone_state)
-    drones.<drone_id>.findings      (every 8s, schema: finding)
+Channel families (gated by --emit):
+    state       drones.<drone_id>.state         (every tick, schema: drone_state)
+    egs         egs.state                       (every 2 ticks, schema: egs_state)
+    findings    drones.<drone_id>.findings      (every 8 ticks, schema: finding)
 
-WARNING: This is dev-only scaffolding, not production code. It hardcodes
-fixture-derived payloads, has no real disaster logic, and must not be wired
-into the demo pipeline. In real runs, sim/waypoint_runner.py and the EGS
-coordinator replace this script entirely. Channel and schema bindings come
-from shared.contracts.topics and shared.contracts.validate; do not hardcode
+WARNING: Still dev-only scaffolding. Channel and schema bindings come from
+shared.contracts.topics and shared.contracts.validate; do not hardcode
 channel strings or payload shapes.
+
+Hybrid demo recipe (orchestrated by scripts/run_hybrid_demo.sh):
+    sim/waypoint_runner.py --scenario disaster_zone_v1   # state, real
+    dev_fake_producers.py --emit=egs                     # egs.state, fake
+    dev_fake_producers.py --emit=findings --drone-id drone1
+    dev_fake_producers.py --emit=findings --drone-id drone2
+    dev_fake_producers.py --emit=findings --drone-id drone3
 
 drone_id default note (deviation from spec):
     The Phase 2 design spec proposed `dev_drone1` as the default to avoid
@@ -23,12 +30,13 @@ drone_id default note (deviation from spec):
     `^drone\\d+$`, which excludes any `dev_` prefix. To keep the script's
     output schema-valid by default while still avoiding collision with
     Hazim's `drone1`/`drone2`/`drone3` IDs, the default is `drone99`.
-    Override with --drone-id at the CLI if you need a specific value (e.g.
-    matching a Playwright test fixture).
+    Override with --drone-id at the CLI if you need a specific value
+    (e.g. matching a sim drone in hybrid mode or a Playwright fixture).
 
 Usage:
     python scripts/dev_fake_producers.py
-    python scripts/dev_fake_producers.py --drone-id drone98 --tick-s 0.5
+    python scripts/dev_fake_producers.py --emit=findings --drone-id drone1
+    python scripts/dev_fake_producers.py --emit=egs --tick-s 0.5
     python scripts/dev_fake_producers.py --redis-url redis://localhost:6379
 """
 from __future__ import annotations
@@ -297,19 +305,26 @@ def _run(args: argparse.Namespace) -> int:
     finding_counter: int = 0
 
     try:
+        emit_state: bool = "state" in args.emit
+        emit_egs: bool = "egs" in args.emit
+        emit_findings: bool = "findings" in args.emit
         while True:
-            # Drone state: every tick.
-            ds_payload = _build_drone_state(drone_id, tick)
-            if validate_payloads:
-                _validate_or_die("drone_state", ds_payload)
-            _publish(client, drone_state_channel, ds_payload)
-            print(
-                f"[fake_producer] tick={tick} channel={drone_state_channel} "
-                f"battery={ds_payload['battery_pct']}"
-            )
+            # Drone state: every tick. Skipped when --emit excludes "state"
+            # (hybrid mode: sim/waypoint_runner.py owns drones.<id>.state).
+            if emit_state:
+                ds_payload = _build_drone_state(drone_id, tick)
+                if validate_payloads:
+                    _validate_or_die("drone_state", ds_payload)
+                _publish(client, drone_state_channel, ds_payload)
+                print(
+                    f"[fake_producer] tick={tick} channel={drone_state_channel} "
+                    f"battery={ds_payload['battery_pct']}"
+                )
 
-            # EGS state: every 2 ticks.
-            if tick % 2 == 0:
+            # EGS state: every 2 ticks. Skipped when --emit excludes "egs"
+            # (replaced by Qasim's agents/egs_agent/main.py once it aligns
+            # zone_polygon to the active scenario YAML).
+            if emit_egs and tick % 2 == 0:
                 egs_payload = _build_egs_state(tick)
                 if validate_payloads:
                     _validate_or_die("egs_state", egs_payload)
@@ -319,8 +334,10 @@ def _run(args: argparse.Namespace) -> int:
                     f"mission_id={egs_payload['mission_id']}"
                 )
 
-            # Finding: every 8 ticks.
-            if tick % 8 == 0:
+            # Finding: every 8 ticks. Skipped when --emit excludes "findings"
+            # (replaced by Kaleel's drone agent once action.py publishes to
+            # Redis instead of stdout).
+            if emit_findings and tick % 8 == 0:
                 finding_payload = _build_finding(drone_id, finding_counter)
                 if validate_payloads:
                     _validate_or_die("finding", finding_payload)
