@@ -102,6 +102,12 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         default=str(_PROJECT_ROOT / "sim" / "fixtures" / "frames"),
         help="Directory containing JPEGs referenced by scenario.frame_mappings",
     )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Self-terminate cleanly after N seconds. Omit to run forever (until SIGINT).",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -125,17 +131,25 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     print(
         f"[frame_server] scenario={scenario.scenario_id} "
         f"drones_with_frames={list(server._mappings.keys())} "
-        f"frame_hz={args.frame_hz} redis={args.redis_url}",
+        f"frame_hz={args.frame_hz} redis={args.redis_url} duration={args.duration}",
         flush=True,
     )
     start = time.monotonic()
+    duration = args.duration
     try:
         while True:
             elapsed = time.monotonic() - start
+            if duration is not None and elapsed >= duration:
+                print(f"[frame_server] reached --duration={duration}s; exiting cleanly.", flush=True)
+                return 0
             tick_index = int(elapsed)
             server.tick(tick_index=tick_index)
             next_boundary = start + (math.floor(elapsed / period) + 1) * period
-            time.sleep(max(0.0, next_boundary - time.monotonic()))
+            sleep_for = max(0.0, next_boundary - time.monotonic())
+            if duration is not None:
+                remaining = (start + duration) - time.monotonic()
+                sleep_for = min(sleep_for, max(0.0, remaining))
+            time.sleep(sleep_for)
     except KeyboardInterrupt:
         print("[frame_server] stopped via SIGINT", flush=True)
         return 0

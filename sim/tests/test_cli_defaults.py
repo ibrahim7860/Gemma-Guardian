@@ -109,3 +109,70 @@ def test_check_drone_count_message_names_scenario_id(monkeypatch, smoke_scenario
     with pytest.raises(SystemExit) as exc_info:
         wr._check_drone_count(smoke_scenario)
     assert smoke_scenario.scenario_id in str(exc_info.value)
+
+
+# --- --duration flag (slice E) -------------------------------------------------
+
+
+def test_waypoint_runner_duration_default_is_none():
+    args = wr._parse_args(["--scenario", "single_drone_smoke"])
+    assert args.duration is None
+
+
+def test_waypoint_runner_duration_parsed_as_float():
+    args = wr._parse_args(["--scenario", "single_drone_smoke", "--duration", "12.5"])
+    assert args.duration == 12.5
+
+
+def test_frame_server_duration_default_is_none():
+    args = fs._parse_args(["--scenario", "single_drone_smoke"])
+    assert args.duration is None
+
+
+def test_frame_server_duration_parsed_as_float():
+    args = fs._parse_args(["--scenario", "single_drone_smoke", "--duration", "7"])
+    assert args.duration == 7.0
+
+
+def test_waypoint_runner_main_exits_after_duration(monkeypatch, fake_redis):
+    """End-to-end: main() must return 0 within roughly --duration seconds
+    when the flag is set. We use a very short duration + fast tick rate so
+    the test wraps up under the 30s pytest timeout cap."""
+    import time
+
+    monkeypatch.setattr(CONFIG.mission, "drone_count", 1)  # smoke has 1 drone
+    monkeypatch.setattr("redis.Redis.from_url", staticmethod(lambda url, **kw: fake_redis))
+
+    t0 = time.monotonic()
+    rc = wr.main(
+        [
+            "--scenario", "single_drone_smoke",
+            "--duration", "0.3",
+            "--tick-hz", "10",
+        ]
+    )
+    elapsed = time.monotonic() - t0
+    assert rc == 0
+    # Should exit within ~duration plus one tick — generous upper bound for
+    # CI noise. Lower bound: at least the duration itself.
+    assert 0.2 <= elapsed <= 2.0, f"elapsed={elapsed}"
+
+
+def test_frame_server_main_exits_after_duration(monkeypatch, fake_redis, tmp_path):
+    """Same end-to-end check on frame_server — needs the fixtures dir present
+    (single_drone_smoke references one frame file)."""
+    import time
+
+    monkeypatch.setattr("redis.Redis.from_url", staticmethod(lambda url, **kw: fake_redis))
+
+    t0 = time.monotonic()
+    rc = fs.main(
+        [
+            "--scenario", "single_drone_smoke",
+            "--duration", "0.3",
+            "--frame-hz", "10",
+        ]
+    )
+    elapsed = time.monotonic() - t0
+    assert rc == 0
+    assert 0.2 <= elapsed <= 2.0, f"elapsed={elapsed}"

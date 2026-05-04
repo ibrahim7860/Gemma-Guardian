@@ -244,6 +244,12 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument("--redis-url", default=CONFIG.transport.redis_url)
     parser.add_argument("--tick-hz", type=float, default=2.0)
     parser.add_argument("--battery-drain", type=float, default=0.1, help="Battery %% drain per second")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Self-terminate cleanly after N seconds. Omit to run forever (until SIGINT).",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -285,17 +291,25 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     period = 1.0 / args.tick_hz
     print(
         f"[waypoint_runner] scenario={scenario.scenario_id} drones={[d.drone_id for d in scenario.drones]} "
-        f"tick_hz={args.tick_hz} redis={args.redis_url}",
+        f"tick_hz={args.tick_hz} redis={args.redis_url} duration={args.duration}",
         flush=True,
     )
     start = time.monotonic()
+    duration = args.duration
     try:
         while True:
             t = time.monotonic() - start
+            if duration is not None and t >= duration:
+                print(f"[waypoint_runner] reached --duration={duration}s; exiting cleanly.", flush=True)
+                return 0
             runner.tick(t_seconds=t)
-            # Sleep until next tick boundary.
+            # Sleep until next tick boundary, but never past the deadline.
             next_boundary = start + (math.floor(t / period) + 1) * period
-            time.sleep(max(0.0, next_boundary - time.monotonic()))
+            sleep_for = max(0.0, next_boundary - time.monotonic())
+            if duration is not None:
+                remaining = (start + duration) - time.monotonic()
+                sleep_for = min(sleep_for, max(0.0, remaining))
+            time.sleep(sleep_for)
     except KeyboardInterrupt:
         print("[waypoint_runner] stopped via SIGINT", flush=True)
         return 0
