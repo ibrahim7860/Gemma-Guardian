@@ -76,3 +76,54 @@ def test_launch_swarm_dry_run_skips_missing_components():
     assert result.returncode == 0
     # Output mentions every drone agent we'd launch (drone1, drone2, drone3 by default).
     assert "drone1" in result.stdout
+
+
+def test_launch_swarm_auto_derives_three_drones_from_disaster_zone_v1():
+    """Default --drones=auto reads the scenario YAML and expands to its full
+    drone roster, so add/remove drones in scenario YAML without editing the
+    bash script."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    for drone_id in ("drone1", "drone2", "drone3"):
+        assert f"--drone-id {drone_id}" in result.stdout, (
+            f"expected agent invocation for {drone_id}; stdout was:\n{result.stdout}"
+        )
+
+
+def test_launch_swarm_auto_derives_single_drone_from_smoke_scenario():
+    """When the scenario only has one drone, only one agent is planned."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "single_drone_smoke", "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert "--drone-id drone1" in result.stdout
+    assert "--drone-id drone2" not in result.stdout
+    assert "--drone-id drone3" not in result.stdout
+
+
+def test_launch_swarm_explicit_drones_override_disables_auto():
+    """``--drones=drone1,drone2`` should win over the scenario's full roster."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "disaster_zone_v1", "--drones=drone1,drone2", "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert "--drone-id drone1" in result.stdout
+    assert "--drone-id drone2" in result.stdout
+    assert "--drone-id drone3" not in result.stdout

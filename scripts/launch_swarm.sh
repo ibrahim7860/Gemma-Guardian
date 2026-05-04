@@ -8,7 +8,11 @@
 # logged as "skipping" rather than blocking the launch.
 #
 # Usage:
-#   scripts/launch_swarm.sh [scenario] [--dry-run] [--drones=drone1,drone2,drone3]
+#   scripts/launch_swarm.sh [scenario] [--dry-run] [--drones=auto|drone1,drone2,...]
+#
+# --drones default is "auto" — the roster is derived from the scenario YAML's
+# drones[].drone_id list via sim/list_drones.py. Pass --drones=drone1,drone2
+# explicitly to launch a subset.
 #
 # Env overrides:
 #   GG_NO_TMUX=1   — skip the actual tmux invocation; just print plans (used by --dry-run and tests)
@@ -23,7 +27,7 @@ REDIS_URL="${GG_REDIS_URL:-redis://localhost:6379/0}"
 
 DRY_RUN=0
 SCENARIO="disaster_zone_v1"
-DRONES="drone1,drone2,drone3"
+DRONES="auto"
 
 for arg in "$@"; do
   case "$arg" in
@@ -33,6 +37,13 @@ for arg in "$@"; do
     *)   SCENARIO="$arg" ;;
   esac
 done
+
+if [ "$DRONES" = "auto" ]; then
+  if ! DRONES="$(PYTHONPATH="$REPO_ROOT" python3 "$REPO_ROOT/sim/list_drones.py" "$SCENARIO")"; then
+    echo "[error] failed to derive drone roster from scenario '$SCENARIO'" >&2
+    exit 1
+  fi
+fi
 
 # Helper: in dry-run, just print the command. Else, send-keys into tmux.
 emit() {
