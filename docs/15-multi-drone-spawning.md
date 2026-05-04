@@ -93,8 +93,46 @@ To drop back to 2 drones for the demo, edit `sim/scenarios/disaster_zone_v1.yaml
 
 **Port conflict on 9090 (WebSocket bridge).** The FastAPI process fails to bind. Fix: `lsof -i :9090` to find the conflicting process, kill it, or override the port with `WS_BRIDGE_PORT=9091 python frontend/ws_bridge/main.py` and update the Flutter dashboard's WebSocket URL accordingly.
 
+## Manual pilot — interactive drone-agent stand-in
+
+When Person 2 is iterating on the real drone agent and you need a fast loop
+to drive findings / broadcasts into a live sim by hand,
+[`sim/manual_pilot.py`](../sim/manual_pilot.py) is the REPL.
+
+Recipe:
+
+```bash
+# Pane 1 — sim with two drones running the resilience scenario (drone1 stays
+# unattended so manual_pilot can take its seat).
+scripts/launch_swarm.sh resilience_v1 --drones=drone2,drone3
+
+# Pane 2 — REPL bound to drone1, talking to the same Redis broker.
+uv run python sim/manual_pilot.py --drone-id drone1
+```
+
+Inside the REPL: `help` lists every command. `state` / `frame` / `peers`
+inspect what the listener has cached from `drones.<id>.state`,
+`drones.<id>.camera`, and `swarm.<id>.visible_to.<id>`. `finding ...` builds
+a Contract 4 finding payload, validates it against `shared/schemas/finding.json`
+(same loader the real validator uses), and publishes on
+`drones.<id>.findings` on success. `broadcast ...` publishes a `task_complete`
+broadcast on `swarm.broadcasts.<id>`. `explored / assist / rtb / continue`
+build the matching `drone_function_calls.json` envelopes and validate them
+without republishing — the agent contract has no canonical wire channel for
+raw function calls.
+
+The validation floor is JSON-Schema only. Semantic checks (battery actually
+low, GPS-in-zone, duplicate-finding, severity↔confidence) live in
+`agents/drone_agent/validation.py` and are Person 2's territory — see the
+`SchemaValidationError` TODO in `sim/manual_pilot.py`.
+
+`--frames-out-dir` (default `/tmp`) is where `frame` writes the latest JPEG
+so you can open it in your viewer of choice; the saved file is named
+`manual_pilot_<drone_id>.jpg`.
+
 ## Cross-References
 
 - Dev environment setup: [`docs/13-runtime-setup.md`](13-runtime-setup.md)
 - Scenario YAML format and disaster scene layout: [`docs/14-disaster-scene-design.md`](14-disaster-scene-design.md)
 - Redis channel names and JSON schemas: [`docs/20-integration-contracts.md`](20-integration-contracts.md) Contract 9
+- Function-call schemas the REPL emits: [`docs/09-function-calling-schema.md`](09-function-calling-schema.md)
