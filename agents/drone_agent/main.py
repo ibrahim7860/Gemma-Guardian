@@ -10,11 +10,11 @@ import json
 import logging
 from pathlib import Path
 
-from .action import ActionNode, StdoutPublisher
-from .memory import MemoryStore
-from .perception import PerceptionBundle, PerceptionNode
-from .reasoning import ReasoningNode, render_user_message
-from .validation import ValidationNode
+from agents.drone_agent.action import ActionNode, StdoutPublisher
+from agents.drone_agent.memory import MemoryStore
+from agents.drone_agent.perception import PerceptionBundle, PerceptionNode
+from agents.drone_agent.reasoning import ReasoningNode, render_user_message
+from agents.drone_agent.validation import ValidationNode
 
 VALIDATION_LOG_PATH = Path("/tmp/fieldagent_logs/validation_events.jsonl")
 

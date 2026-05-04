@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax for tracking. Each task ends with a commit. Do NOT batch commits across tasks.
 
-**Goal:** Ship the multilingual operator command translation round-trip on the dashboard (the headline demo moment), plus the bridge `finding_id` allowlist hardening and the validation event ticker on the drone status panel. All Person-4 lane work; Person 3's real EGS plugs in unchanged via the locked Redis contract.
+**Goal:** Ship the multilingual operator command translation round-trip on the dashboard (the headline demo moment), plus the bridge `finding_id` allowlist hardening and the validation event ticker on the drone status panel. All Person-4 lane work; Qasim's real EGS plugs in unchanged via the locked Redis contract.
 
-**Architecture:** Discriminated `oneOf` Redis envelopes on two new channels (`egs.operator_commands` outbound, `egs.command_translations` inbound), plus a third `kind` (`operator_command_dispatch`) on the existing `egs.operator_actions` channel. Flutter gains a parallel command state machine modeled on Phase 3's finding state machine, with a 15s timeout, a single-active-command slot, a late-arrival drop rule, and an input-retention guarantee on Redis publish failure. Stub EGS at `scripts/dev_command_translator.py` makes the path locally testable without Person 3's real EGS.
+**Architecture:** Discriminated `oneOf` Redis envelopes on two new channels (`egs.operator_commands` outbound, `egs.command_translations` inbound), plus a third `kind` (`operator_command_dispatch`) on the existing `egs.operator_actions` channel. Flutter gains a parallel command state machine modeled on Phase 3's finding state machine, with a 15s timeout, a single-active-command slot, a late-arrival drop rule, and an input-retention guarantee on Redis publish failure. Stub EGS at `scripts/dev_command_translator.py` makes the path locally testable without Qasim's real EGS.
 
 **Tech Stack:** Python 3.11 (FastAPI + redis.asyncio + jsonschema 2020-12), Dart/Flutter (Provider + ChangeNotifier + web_socket_channel), pytest + fakeredis (Python tests), `flutter test` (Dart tests), Chrome DevTools MCP (e2e visual gate).
 
@@ -1866,7 +1866,7 @@ def test_envelope_validates_against_schema():
 """Phase 4 stub EGS: subscribe to egs.operator_commands, publish translations
 to egs.command_translations with hard-coded substring matching.
 
-Stand-in for Person 3's real Gemma 4 E4B translator. Identical Redis contract
+Stand-in for Qasim's real Gemma 4 E4B translator. Identical Redis contract
 on both sides — drop-in replaceable.
 
 Usage:
@@ -1996,7 +1996,7 @@ def build_translation(envelope: Dict[str, Any]) -> Dict[str, Any]:
         preview = "Command not understood"
 
     # Stub does not actually translate the preview into other languages.
-    # Person 3's real EGS replaces this with Gemma 4 output.
+    # Qasim's real EGS replaces this with Gemma 4 output.
     preview_local = preview
 
     return {
@@ -3251,7 +3251,7 @@ If any case fails, file a bug report citing the case number and rerun the failin
 - [ ] **Step 1: Update `TODOS.md` to reflect Phase 4 closing 3 deferred items + filing 2 deferred adversarial findings**
 
 In `TODOS.md`:
-- Update "EGS subscriber for `egs.operator_actions`" — note that the Phase 4 contract (operator_command_dispatch kind) is now also part of Person 3's scope.
+- Update "EGS subscriber for `egs.operator_actions`" — note that the Phase 4 contract (operator_command_dispatch kind) is now also part of Qasim's scope.
 - Mark "Bridge finding_id allowlist for `egs.operator_actions`" as **CLOSED in Phase 4** — strikethrough with a one-line note pointing to the allowlist branch in `frontend/ws_bridge/main.py`.
 - Mark "Validation event ticker on drone status panel" as **CLOSED in Phase 4** — strikethrough with a one-line note pointing to `drone_status_panel.dart`.
 - Add **Phase 5+:** "Translate `preview_text_in_operator_language` properly" — Phase 4 stub uses identical English text; real EGS uses Gemma 4 E4B per §11.
@@ -3305,10 +3305,10 @@ No silent failures. No untested error paths.
 
 ## What's NOT in scope (re-stated)
 
-- Real Gemma 4 E4B inference at the EGS — Person 3
+- Real Gemma 4 E4B inference at the EGS — Qasim
 - Voice operator commands — stretch (post-submission)
-- `set_priority` / `set_language` execution semantics — Person 3
-- EGS state echo for confirmed dispatch — Person 3 (forward-compat hooks present)
+- `set_priority` / `set_language` execution semantics — Qasim
+- EGS state echo for confirmed dispatch — Qasim (forward-compat hooks present)
 - Map marker tap/hover interactivity — separate TODO
 - Static aerial base image — separate TODO
 - Translating preview text into operator language properly — Phase 5+ (stub uses identity)

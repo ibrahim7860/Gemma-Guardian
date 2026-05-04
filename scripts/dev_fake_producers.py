@@ -1,7 +1,7 @@
 """Dev-only Redis fake-producer for the Phase 2 WebSocket bridge.
 
-This script is scaffolding so Person 4 (Frontend + Demo) can develop and
-Playwright-test the WS bridge before Person 1 (sim) and Person 3 (EGS) ship
+This script is scaffolding so Ibrahim (Frontend + Demo) can develop and
+Playwright-test the WS bridge before Hazim (sim) and Qasim (EGS) ship
 their real producers. It connects to Redis and emits contract-valid messages
 on the channels the bridge subscribes to:
 
@@ -18,11 +18,11 @@ channel strings or payload shapes.
 
 drone_id default note (deviation from spec):
     The Phase 2 design spec proposed `dev_drone1` as the default to avoid
-    collision with Person 1's `drone1`. However the locked v1 contract
+    collision with Hazim's `drone1`. However the locked v1 contract
     schema (`shared/schemas/_common.json`) requires drone_id to match
     `^drone\\d+$`, which excludes any `dev_` prefix. To keep the script's
     output schema-valid by default while still avoiding collision with
-    Person 1's `drone1`/`drone2`/`drone3` IDs, the default is `drone99`.
+    Hazim's `drone1`/`drone2`/`drone3` IDs, the default is `drone99`.
     Override with --drone-id at the CLI if you need a specific value (e.g.
     matching a Playwright test fixture).
 
@@ -74,7 +74,7 @@ _FINDING_TYPE_ROTATION: List[str] = [
 
 
 # Default schema-valid drone_id for the dev producer. See module docstring
-# for the rationale (regex constraint vs. avoiding Person 1 collision).
+# for the rationale (regex constraint vs. avoiding Hazim collision).
 _DEFAULT_DRONE_ID: str = "drone99"
 
 
@@ -183,8 +183,8 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         description=(
             "Dev-only Redis fake-producer for the Phase 2 WS bridge. "
             "Emits contract-valid egs.state, drones.<id>.state, and "
-            "drones.<id>.findings messages so Person 4 can develop and "
-            "Playwright-test the dashboard before Persons 1 and 3 ship "
+            "drones.<id>.findings messages so Ibrahim can develop and "
+            "Playwright-test the dashboard before Hazim and Qasim ship "
             "their real producers. NOT for production use."
         ),
     )
@@ -199,7 +199,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help=(
             "drone_id for the synthetic drone. Must match ^drone\\d+$ per "
             f"the v1 contract. Default {_DEFAULT_DRONE_ID!r} avoids "
-            "collision with Person 1's drone1/drone2/drone3."
+            "collision with Hazim's drone1/drone2/drone3."
         ),
     )
     parser.add_argument(

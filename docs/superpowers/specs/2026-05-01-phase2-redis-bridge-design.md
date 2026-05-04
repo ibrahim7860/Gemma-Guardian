@@ -1,7 +1,7 @@
 # Phase 2: Redis-backed WebSocket Bridge — Design Spec
 
 **Date:** 2026-05-01
-**Owner:** Person 4 (Ibrahim)
+**Owner:** Ibrahim
 **Branch:** `feat/ws-bridge-skeleton` (continues from Phase 1)
 **Predecessor:** [`2026-04-30-integration-contracts-design.md`](2026-04-30-integration-contracts-design.md)
 **Replaces:** Phase 1A `_ticker` fake-publisher in `frontend/ws_bridge/main.py`
@@ -10,7 +10,7 @@
 
 Replace the Phase 1A fake-publisher inside `frontend/ws_bridge/main.py` with a real Redis pub/sub subscriber that aggregates per-drone state and findings into the `state_update` envelope defined by Contract 8 of `docs/20-integration-contracts.md`. The Flutter dashboard from Phase 1B continues to consume the same envelope at the same `ws://localhost:9090` endpoint at the same 1Hz cadence; nothing on the dashboard side needs to change.
 
-The output of this phase is a bridge that, given a running Redis with valid contract messages on `egs.state`, `drones.*.state`, and `drones.*.findings`, produces schema-valid `state_update` envelopes that reflect upstream activity in real time, plus a standalone fake-producer script so Person 4 can develop and Playwright-test before Persons 1 and 3 ship their producers.
+The output of this phase is a bridge that, given a running Redis with valid contract messages on `egs.state`, `drones.*.state`, and `drones.*.findings`, produces schema-valid `state_update` envelopes that reflect upstream activity in real time, plus a standalone fake-producer script so Ibrahim can develop and Playwright-test before Hazim and Qasim ship their producers.
 
 ## Non-goals
 
@@ -169,7 +169,7 @@ Default behavior:
 - Publishes `drones.drone99.state` every 1s with battery decreasing slowly.
 - Every 8s, publishes a `drones.drone99.findings` event with rotating `finding_type` and `finding_id="f_drone99_<counter>"`.
 
-Why `drone99` (not `drone1`): when Person 1's sim ships and starts publishing on `drones.drone1.state` / `drones.drone2.state` / `drones.drone3.state`, the dev fake-producer must not collide. **Original spec said `dev_drone1` but the locked Contract 9 `drone_id` regex `^drone\d+$` rejects underscores**, so we use a high-numbered id outside the real-sim range instead. The `--drone-id` CLI flag overrides for tests that need to pin a specific id.
+Why `drone99` (not `drone1`): when Hazim's sim ships and starts publishing on `drones.drone1.state` / `drones.drone2.state` / `drones.drone3.state`, the dev fake-producer must not collide. **Original spec said `dev_drone1` but the locked Contract 9 `drone_id` regex `^drone\d+$` rejects underscores**, so we use a high-numbered id outside the real-sim range instead. The `--drone-id` CLI flag overrides for tests that need to pin a specific id.
 
 CLI:
 ```
@@ -235,7 +235,7 @@ Run order for development:
 # Terminal 1: Redis
 redis-server
 
-# Terminal 2: Fake producers (Phase 2 only — replaced by Person 1 + Person 3 in real runs)
+# Terminal 2: Fake producers (Phase 2 only — replaced by Hazim + Qasim in real runs)
 python scripts/dev_fake_producers.py
 
 # Terminal 3: Bridge
@@ -245,14 +245,14 @@ uvicorn frontend.ws_bridge.main:app --host 0.0.0.0 --port 9090
 cd frontend/flutter_dashboard && flutter run -d chrome
 ```
 
-In real (Person 1 + Person 3 shipped) runs, Terminal 2 is replaced by `sim/waypoint_runner.py` and the EGS coordinator. Bridge code is identical. That's the whole point of Contract 9.
+In real (Hazim + Qasim shipped) runs, Terminal 2 is replaced by `sim/waypoint_runner.py` and the EGS coordinator. Bridge code is identical. That's the whole point of Contract 9.
 
 Logging: existing `shared.contracts.logging.setup_logging("ws_bridge")` plus `ValidationEventLogger("ws_bridge")` for invalid-payload events written as JSONL per Contract 11.
 
 ## Boundaries with other team members
 
-- **Person 1 (sim) interface:** publishes `drones.<id>.state` with payloads validating against `drone_state` schema. Bridge couldn't care less which process publishes; the Contract 9 channel name and Contract 2 payload shape are the only contract.
-- **Person 3 (EGS) interface:** publishes `egs.state` and `drones.<id>.findings`. Same indifference. The bridge subscribes to those channels and validates payloads. If EGS publishes anything that fails the schema, the bridge drops it and writes a validation event — Person 3 can read those JSONL files to debug.
+- **Hazim (sim) interface:** publishes `drones.<id>.state` with payloads validating against `drone_state` schema. Bridge couldn't care less which process publishes; the Contract 9 channel name and Contract 2 payload shape are the only contract.
+- **Qasim (EGS) interface:** publishes `egs.state` and `drones.<id>.findings`. Same indifference. The bridge subscribes to those channels and validates payloads. If EGS publishes anything that fails the schema, the bridge drops it and writes a validation event — Qasim can read those JSONL files to debug.
 - **No new shared contracts.** All schemas exist; topics.yaml stays unchanged. Phase 2 is pure consumer.
 
 ## Open follow-ups (deferred)

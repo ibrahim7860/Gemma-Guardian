@@ -1,0 +1,70 @@
+# Resilience scenario v1 — 3 drones fanning radially out of mesh range so the
+# Phase D / Phase E demos have a real before-and-after for mesh dropout, EGS
+# link loss, scripted drone failure, and fire-spread replan triggers.
+#
+# Geometry (tuned against shared/config.yaml: mesh.range_meters=200,
+# mesh.egs_link_range_meters=500):
+#
+#   - All drones start within ~25m of each other (full-mesh adjacency at t=0).
+#   - drone1 fans north, drone3 fans south, both at 5 m/s.
+#       d(drone1, drone3) ≈ 22 + 10·t meters → past 200m mesh by t≈18s,
+#       past 600m well before t=60s. Mesh adjacency drops the pair.
+#   - drone1 and drone3 each cross the 500m EGS link radius at t≈98s, so the
+#       EGS standalone-mode rehearsal has a real link-loss trigger.
+#   - drone2 fans east briefly then is killed at t=30s by the scripted
+#       drone_failure event, freezing in place ~150m E of origin.
+#
+# Frame mappings reuse only existing placeholders in sim/fixtures/frames/ —
+# Thayyil's xBD swap stays orthogonal (filenames preserved, bytes change).
+# All five finding types are surfaced across the run: victim, fire, smoke,
+# damaged_structure, blocked_route.
+#
+# Format documented in docs/14-disaster-scene-design.md (lines 30–68);
+# loaded via sim/scenario.py.
+scenario_id: resilience_v1
+origin: {lat: 34.0000, lon: -118.5000}
+area_m: 1500   # wider than disaster_zone_v1 because drones intentionally fly out
+
+drones:
+  - drone_id: drone1
+    home: {lat: 34.0001, lon: -118.5000, alt: 0}
+    waypoints:
+      - {id: sp_001, lat: 34.0028, lon: -118.5000, alt: 25}   # ~300m N of home, t≈60s
+      - {id: sp_002, lat: 34.0072, lon: -118.5000, alt: 25}   # ~800m N of home, t≈160s
+      - {id: sp_003, lat: 34.0108, lon: -118.5000, alt: 25}   # ~1200m N of home, t≈240s
+    speed_mps: 5
+
+  - drone_id: drone2
+    home: {lat: 34.0000, lon: -118.4999, alt: 0}
+    waypoints:
+      - {id: sp_010, lat: 34.0000, lon: -118.4990, alt: 25}   # ~100m E of home, t≈20s
+      - {id: sp_011, lat: 34.0000, lon: -118.4972, alt: 25}   # ~300m E of home (drone fails at t=30 before reaching this)
+    speed_mps: 5
+
+  - drone_id: drone3
+    home: {lat: 33.9999, lon: -118.5000, alt: 0}
+    waypoints:
+      - {id: sp_020, lat: 33.9990, lon: -118.5000, alt: 25}   # ~100m S of home, t≈20s
+      - {id: sp_021, lat: 33.9963, lon: -118.5000, alt: 25}   # ~400m S of home, t≈80s
+      - {id: sp_022, lat: 33.9919, lon: -118.5000, alt: 25}   # ~900m S of home, t≈180s
+      - {id: sp_023, lat: 33.9892, lon: -118.5000, alt: 25}   # ~1200m S of home, t≈240s
+    speed_mps: 5
+
+frame_mappings:
+  drone1:
+    - {tick_range: [0, 30],   frame_file: placeholder_intact_01.jpg}
+    - {tick_range: [31, 90],  frame_file: placeholder_victim_01.jpg}
+    - {tick_range: [91, 240], frame_file: placeholder_block_a_02.jpg}
+  drone2:
+    - {tick_range: [0, 240],  frame_file: placeholder_block_b_01.jpg}
+  drone3:
+    - {tick_range: [0, 60],   frame_file: placeholder_fire_01.jpg}
+    - {tick_range: [61, 120], frame_file: placeholder_smoke_01.jpg}
+    - {tick_range: [121, 240], frame_file: placeholder_debris_01.jpg}
+
+scripted_events:
+  - {t: 30,  type: drone_failure,    drone_id: drone2, detail: battery_depleted}
+  - {t: 60,  type: fire_spread,      detail: fire_polygon_expands_southwest}
+  - {t: 120, type: egs_link_drop,    drone_id: drone3, detail: drone3_beyond_egs_range}
+  - {t: 180, type: egs_link_restore, drone_id: drone3, detail: link_recovered}
+  - {t: 240, type: mission_complete}

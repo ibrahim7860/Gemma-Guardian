@@ -238,7 +238,7 @@ The EGS translates operator natural language into these structured commands. **E
 
 ### Layer 3 semantic / stateful rules
 
-The structural rules above are enforced by `shared/schemas/operator_commands.json`. Additional semantic rules live in `agents/egs_agent/validation.py` (and Person 3's `command_translator.py` once that ships) and are tagged with these `RuleID` values from `shared/contracts/rules.py`:
+The structural rules above are enforced by `shared/schemas/operator_commands.json`. Additional semantic rules live in `agents/egs_agent/validation.py` (and Qasim's `command_translator.py` once that ships) and are tagged with these `RuleID` values from `shared/contracts/rules.py`:
 
 | RuleID | Trigger |
 |---|---|

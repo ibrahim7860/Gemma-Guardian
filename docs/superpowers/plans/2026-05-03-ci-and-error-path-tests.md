@@ -14,7 +14,7 @@
 
 Phase 4 is in the bag and Day 8–9 (May 8–9) is the only realistic slack window before the multi-drone crunch. Both items came out of the `/review` skill on the 23-commit Phase 4 lane:
 
-1. **CI** is the highest-leverage TODO because the team is about to start landing two more workstreams (Person 3's real EGS subscriber, Person 5's drone agent) onto `main`. Without CI, regressions in the bridge contract surface as "the dashboard mysteriously broke during the demo."
+1. **CI** is the highest-leverage TODO because the team is about to start landing two more workstreams (Qasim's real EGS subscriber, Thayyil's drone agent) onto `main`. Without CI, regressions in the bridge contract surface as "the dashboard mysteriously broke during the demo."
 2. **Error-path tests** are the highest-leverage code-quality gap because the unhappy paths in the bridge are exactly the paths a Redis hiccup or a schema drift would exercise live. They are also small (one file, ~150 lines) and test patterns already proven by the Phase 4 harness.
 
 The third `/review` recommendation (DRY refactor of the three near-identical bridge command branches) is explicitly NOT in scope here. A refactor needs its own design pass and would muddy the diff.

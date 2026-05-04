@@ -1,7 +1,7 @@
 # Integration Contracts — Design Spec (v1.0.0)
 
 **Date:** 2026-04-30
-**Owner:** Project lead (Ibrahim) — Person 4 also consumes; Persons 1/2/3 produce.
+**Owner:** Ibrahim (The Elevator Watcher) — also consumes; Hazim/Kaleel/Qasim produce.
 **Source docs:** [`docs/20-integration-contracts.md`](../../20-integration-contracts.md), [`docs/09-function-calling-schema.md`](../../09-function-calling-schema.md), [`docs/10-validation-and-retry-loop.md`](../../10-validation-and-retry-loop.md)
 
 ## Goal
@@ -383,7 +383,7 @@ CI guard: `scripts/gen_topic_constants.py --check` regenerates into a tempdir an
 
 - **`agents/drone_agent/validation.py`** — every `ValidationResult.failure_reason` becomes a `RuleID` value. Structural pieces (`severity_out_of_range`, `confidence_out_of_range`, `visual_description_too_short`, `invalid_argument_type`) are removed from Python and delegated to `shared.contracts.schemas.validate("drone_function_calls", call)` at the top of `validate()`; structural failure returns `RuleID.STRUCTURAL_VALIDATION_FAILED` with the field path so the corrective prompt can still cite the bad field. Stateful checks (duplicates, coverage, GPS-in-zone, RTB battery/mission gates) stay in Python.
 - **`agents/drone_agent/reasoning.py`** — after Ollama returns, normalize tool-call shape and `format`-output shape into the canonical `{"function": ..., "arguments": ...}` form, then construct the matching Pydantic model. Construction failure = `RuleID.STRUCTURAL_VALIDATION_FAILED`.
-- **`agents/egs_agent/`** — this plan only creates `__init__.py` plus a thin `validation.py` that imports from `shared.contracts` and exposes `validate(call, state) -> ValidationResult` for both Layer-2 and Layer-3 calls (structural via jsonschema, semantic/stateful in Python, every failure tagged with a `RuleID`). `coordinator.py`, `command_translator.py`, and `replanning.py` are Person 3's territory per `docs/18-team-roles.md` and are explicitly out of scope for the contracts plan; Person 3 builds them on top of the locked `shared.contracts` API.
+- **`agents/egs_agent/`** — this plan only creates `__init__.py` plus a thin `validation.py` that imports from `shared.contracts` and exposes `validate(call, state) -> ValidationResult` for both Layer-2 and Layer-3 calls (structural via jsonschema, semantic/stateful in Python, every failure tagged with a `RuleID`). `coordinator.py`, `command_translator.py`, and `replanning.py` are Qasim's territory per `docs/18-team-roles.md` and are explicitly out of scope for the contracts plan; Qasim builds them on top of the locked `shared.contracts` API.
 
   `agents/egs_agent/validation.py` owns the cross-drone dedup rule `EGS_DUPLICATE_FINDING`: when an incoming finding from one drone has the same `type` within 10m and 30s of an already-validated finding from a *different* drone, mark it as a duplicate (same thresholds as the per-drone rule). Findings are accepted on first-seen-wins; duplicates are dropped and a validation event is logged.
 - **`agents/drone_agent/memory.py`** — owns the per-drone `finding_id` counter. `next_finding_id() -> str` returns `f_{drone_id}_{count}` where `count` is monotonic.

@@ -6,7 +6,7 @@ recipients via ``swarm.<receiver_id>.visible_to.<receiver_id>``.
 
 Also publishes a JSON adjacency snapshot on ``mesh.adjacency_matrix`` once per
 second (configurable). The snapshot is debug-only — agents do not consume it,
-but Person 4's dashboard can render the live mesh topology.
+but Ibrahim's dashboard can render the live mesh topology.
 
 Public surface for tests:
     MeshSimulator(redis, range_m, egs_link_range_m)

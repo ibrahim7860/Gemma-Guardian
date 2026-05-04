@@ -1,6 +1,6 @@
 # Demo scenario v1 — 3 drones, 200m × 200m grid in LA wildfire narrative.
 # Format documented in docs/14-disaster-scene-design.md (lines 30–68).
-# Frame files reference placeholders under sim/fixtures/frames/. Person 5
+# Frame files reference placeholders under sim/fixtures/frames/. Thayyil
 # replaces the file contents with real xBD imagery on Days 3–5; this YAML
 # stays unchanged.
 scenario_id: disaster_zone_v1

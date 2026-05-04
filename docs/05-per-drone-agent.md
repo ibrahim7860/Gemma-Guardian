@@ -202,6 +202,41 @@ Each drone's state is published on `drones.<id>.state` (Redis) at 2 Hz by `sim/w
 }
 ```
 
+## Optional: Manual REPL Stand-In While Iterating
+
+[`sim/manual_pilot.py`](../sim/manual_pilot.py) is a single-drone REPL that
+takes the per-drone agent's seat against a live Redis broker. It is **not
+required** to build the real agent — the demo always runs the real Gemma 4
+loop above. It exists as a recommendation for the moments when you want to
+*see what a drone is actually doing* on the wire without standing up Ollama
+or your full reasoning node.
+
+Useful when:
+
+- You want to confirm a finding payload you're about to emit lands in the
+  correct Contract 4 shape on `drones.<id>.findings` — type one in by hand
+  and watch it (and the EGS / dashboard, once those are wired) react.
+- You're debugging the WebSocket bridge or EGS aggregation and need finding
+  traffic without spinning up the real agent.
+- You want to feel out the schema-validation path the real validator will
+  share — the REPL goes through `shared.contracts.schemas.validate` against
+  the same `shared/schemas/*.json` files your validation node will import.
+
+The REPL deliberately stops at the JSON-Schema floor; the semantic
+constraints in [Node 3: Validation](#node-3-validation) above (battery
+actually low, GPS-in-zone, duplicate-finding, severity↔confidence) belong
+to your `agents/drone_agent/validation.py` and should not be re-implemented
+in the REPL — see the `SchemaValidationError` TODO in `manual_pilot.py`.
+
+Run it in a second pane while the sim is up:
+
+```bash
+scripts/launch_swarm.sh resilience_v1 --drones=drone2,drone3
+uv run python sim/manual_pilot.py --drone-id drone1
+```
+
+Full command list lives in [`docs/15-multi-drone-spawning.md`](15-multi-drone-spawning.md).
+
 ## What Could Go Wrong
 
 | Failure | Mitigation |

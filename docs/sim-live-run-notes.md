@@ -4,7 +4,7 @@ First end-to-end live run of `scripts/launch_swarm.sh` against a real
 `redis-server` (not fakeredis), validating the polish-queue work on
 `feature/sim-polish`. Captured here because Phase A on
 [`sim/ROADMAP.md`](../sim/ROADMAP.md) calls for one before integration
-sessions with Persons 2/3/4.
+sessions with Kaleel/Qasim/Ibrahim.
 
 ## Setup
 
@@ -38,9 +38,9 @@ sessions with Persons 2/3/4.
 
 ## Observations
 
-### Sim + mesh (Person 1 surface)
+### Sim + mesh (Hazim surface)
 
-All three Person 1 components started cleanly, published on the contract
+All three Hazim components started cleanly, published on the contract
 channels, and behaved as expected:
 
 - **`sim/waypoint_runner.py`** — published `drones.drone{1,2,3}.state` at
@@ -90,12 +90,12 @@ These are not blockers for this PR but worth flagging:
 2. **`agents/drone_agent/main.py` relative-import error.** `drone1.log`
    et al. failed with
    `ImportError: attempted relative import with no known parent package`
-   on every drone-agent window. Out of Person 1's scope (agent
-   ownership = Person 2); flagged for them to fix at the next handoff.
+   on every drone-agent window. Out of Hazim's scope (agent
+   ownership = Kaleel); flagged for them to fix at the next handoff.
 3. **`stop_demo.sh` shuts down Redis even when it didn't start it.**
    The script unconditionally runs `redis-cli shutdown nosave` if any
    Redis is running. On boxes where Redis is a long-lived system
-   service (Person 1's WSL2 setup uses `sudo service redis-server start`),
+   service (Hazim's WSL2 setup uses `sudo service redis-server start`),
    this is a small irritation — `redis-cli ping` afterward returns
    "Connection refused" until the service is restarted. Worth a follow-up
    to only stop Redis we daemonized ourselves; not blocking this PR.

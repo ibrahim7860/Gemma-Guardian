@@ -200,6 +200,37 @@ This is fine because EGS calls are infrequent:
 
 If Gemma 4 E4B is too slow, fall back to E2B for the EGS too. Frame it in the writeup as "the EGS LLM is also lightweight to enable deployment on smaller portable edge hardware." This is an acceptable degradation.
 
+## Optional: Driving Findings Without the Drone Agent
+
+Until Kaleel's `agents/drone_agent/main.py` lands, you can rehearse Task 6
+(Aggregated Finding Management) and Task 7 (Telemetry Monitoring) end-to-end
+by piping hand-typed findings onto `drones.<id>.findings` from
+[`sim/manual_pilot.py`](../sim/manual_pilot.py). It's a recommendation, not
+a dependency — the demo always runs the real drone agent — but it's the
+fastest way to *see what a drone is actually doing* on the wire while the
+EGS aggregator is being built.
+
+Recipe:
+
+```bash
+# Pane 1 — sim publishing state + camera, plus mesh forwarder.
+scripts/launch_swarm.sh resilience_v1 --drones=drone2,drone3
+
+# Pane 2 — REPL standing in for drone1's reasoning step.
+uv run python sim/manual_pilot.py --drone-id drone1
+
+# Inside the REPL — emit findings the EGS should aggregate, deduplicate,
+# and surface to the operator.
+(drone1) > finding victim 4 34.0028 -118.5000 0.85 Person prone, partial cover
+(drone1) > finding victim 4 34.0028 -118.5000 0.82 Same target re-spotted
+(drone1) > finding fire 3 33.9986 -118.5000 0.7 Smoke plume rising
+```
+
+Full command list in [`docs/15-multi-drone-spawning.md`](15-multi-drone-spawning.md).
+Validation in the REPL is JSON-Schema only, so it's a useful loopback for
+the *structural* contract on the channel; semantic dedup / priority logic
+described in Task 6 above is yours to verify.
+
 ## What's Mocked at the EGS Layer
 
 - U-Net wildfire segmentation → predefined polygons, optionally expanding on a timer

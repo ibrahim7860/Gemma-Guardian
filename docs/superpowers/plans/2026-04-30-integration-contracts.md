@@ -3455,7 +3455,7 @@ validation goes through shared.contracts. The cross-drone duplicate-finding
 rule (EGS_DUPLICATE_FINDING) lives here because it requires an EGS-wide
 view of recently accepted findings.
 
-This module is the thin contracts plan stub. Person 3 builds coordinator.py,
+This module is the thin contracts plan stub. Qasim builds coordinator.py,
 command_translator.py, and replanning.py on top.
 """
 from __future__ import annotations
@@ -3574,7 +3574,7 @@ feat: stub agents/egs_agent with validation + EGS_DUPLICATE_FINDING
 
 Cross-drone dedup uses 10m / 30s thresholds, first-seen-wins. Layer 2
 and Layer 3 structural checks delegate to shared.contracts.validate.
-Person 3 builds coordinator.py, command_translator.py, replanning.py
+Qasim builds coordinator.py, command_translator.py, replanning.py
 on top of this stub.
 EOF
 )"
@@ -3912,7 +3912,7 @@ git tag contracts-v1.0.0
 
 **Type consistency:** `RuleID` enum members used in tests match those defined in Task 14. `validate(name, payload)` signature is consistent across all tests. `ValidationOutcome` and `ValidationResult` are distinct types (the former is structural-only from `shared.contracts.schemas`; the latter is the per-validator result that includes `RuleID`). `DroneFunctionCall.parse(payload)` and `EGSFunctionCall.parse(payload)` and `OperatorCommand.parse(payload)` use consistent dispatcher pattern.
 
-**Out of scope (explicit, deferred):** EGS coordinator/command-translator/replanning logic (Person 3), Flutter widget code (Person 4), real Ollama integration tests, `drones.<id>.cmd` payload schema (sim-internal motion commands), `swarm.operator_alerts` and `egs.replan_events` payloads (no v1 consumer).
+**Out of scope (explicit, deferred):** EGS coordinator/command-translator/replanning logic (Qasim), Flutter widget code (Ibrahim), real Ollama integration tests, `drones.<id>.cmd` payload schema (sim-internal motion commands), `swarm.operator_alerts` and `egs.replan_events` payloads (no v1 consumer).
 
 ---
 

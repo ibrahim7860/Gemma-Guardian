@@ -11,7 +11,7 @@ Every team member needs a working dev environment before contributing code. This
 | Python | 3.11+ | Agents, sim scripts, ML pipeline |
 | Redis | 7+ | Inter-process pub/sub bus (all channels — see Contract 9 in `docs/20-integration-contracts.md`) |
 | Ollama | latest | Runs Gemma 4 E2B (drone agent) and Gemma 4 E4B (EGS) locally |
-| NVIDIA CUDA | optional | Person 5's fine-tuning workstream only; not needed for any other role |
+| NVIDIA CUDA | optional | Thayyil's fine-tuning workstream only; not needed for any other role |
 
 No Gazebo. No PX4. No ROS 2. No WSL2 requirement.
 
@@ -137,16 +137,16 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 Then install the slice your role needs (uv creates `.venv/` automatically):
 
 ```bash
-# Person 1 (Sim Lead): sim + mesh simulator
+# Hazim (Sim Lead): sim + mesh simulator
 uv sync --extra sim --extra mesh --extra dev
 
-# Person 2 (Drone Agent + ML): drone agent + ML fine-tuning
+# Kaleel (Drone Agent + ML): drone agent + ML fine-tuning
 uv sync --extra drone --extra ml --extra dev
 
-# Person 3 (EGS): EGS coordinator
+# Qasim (EGS): EGS coordinator
 uv sync --extra egs --extra dev
 
-# Person 4 (Frontend / Bridge): FastAPI WebSocket bridge
+# Ibrahim (Frontend / Bridge): FastAPI WebSocket bridge
 uv sync --extra ws_bridge --extra dev
 
 # Everyone, full graph (e2e / integration / "install all of them if unsure"):
@@ -178,10 +178,10 @@ python3 -m venv .venv
 source .venv/bin/activate                  # macOS / Linux / WSL2
 # .venv\Scripts\activate                   # Windows PowerShell
 pip install --upgrade pip
-pip install -e ".[sim,mesh,dev]"           # Person 1
-pip install -e ".[drone,ml,dev]"           # Person 2
-pip install -e ".[egs,dev]"                # Person 3
-pip install -e ".[ws_bridge,dev]"          # Person 4
+pip install -e ".[sim,mesh,dev]"           # Hazim
+pip install -e ".[drone,ml,dev]"           # Kaleel
+pip install -e ".[egs,dev]"                # Qasim
+pip install -e ".[ws_bridge,dev]"          # Ibrahim
 # Or everything:
 pip install -e ".[sim,mesh,drone,egs,ws_bridge,ml,dev]"
 ```
@@ -214,9 +214,9 @@ ollama run gemma4:e2b "Reply with one word: ready"
 
 If both pass, your environment is ready.
 
-## NVIDIA CUDA (Person 5 / Fine-Tuning Only)
+## NVIDIA CUDA (Thayyil / Fine-Tuning Only)
 
-Person 5's Unsloth fine-tuning workstream requires an NVIDIA GPU with CUDA 12+. This is not needed for any other role. Options:
+Thayyil's Unsloth fine-tuning workstream requires an NVIDIA GPU with CUDA 12+. This is not needed for any other role. Options:
 
 - **Native Linux with NVIDIA GPU:** install CUDA Toolkit from https://developer.nvidia.com/cuda-downloads, then `uv sync --extra ml --extra dev` (the `ml` extra pulls torch / transformers / unsloth / bitsandbytes from `pyproject.toml`).
 - **WSL2 on Windows 11 with NVIDIA GPU:** install the latest NVIDIA Windows driver; CUDA passthrough works automatically inside WSL2. Same `uv sync --extra ml --extra dev` once you're inside the WSL2 distro.

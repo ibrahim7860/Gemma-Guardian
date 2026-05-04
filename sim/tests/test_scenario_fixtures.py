@@ -1,6 +1,6 @@
 """Tests that the shipped scenario YAMLs and ground-truth JSON load cleanly.
 
-These are the files Person 5 / Person 1 hand-author and the demo runs against;
+These are the files Thayyil / Hazim hand-author and the demo runs against;
 breaking them in a refactor would silently kill scenarios. Treat as canaries.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ FRAMES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "frames"
 SHIPPED_SCENARIOS = [
     "disaster_zone_v1.yaml",
     "single_drone_smoke.yaml",
+    "resilience_v1.yaml",
 ]
 
 

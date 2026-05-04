@@ -170,32 +170,56 @@ waypoints at the configured speed; there is no flight dynamics simulation.
 
 1 meter ≈ 0.0000089° latitude/longitude (rough conversion, sufficient for a 200m grid).
 
-## Building the Scenario (Person 1 + Person 5, paired daily)
+## Authoring Workflow (Hazim + Thayyil, paired)
 
-Day 1-2:
-- Set up `sim/waypoint_runner.py` and `sim/frame_server.py` skeleton
-- Curate initial frame library from xBD dataset; confirm frames are readable and visually distinct
-- Draft `disaster_zone_v1.yaml` with drone home positions and first waypoint tracks
+A new scenario lands in three steps; each step has a stable artifact, so the
+work parallelises across the pair.
 
-Day 3-5:
-- Wire frame mappings to waypoints
-- Draft `disaster_zone_v1_groundtruth.json` with victims, fires, damaged structures
-- Smoke-test: Python subscriber prints `drones.<id>.state` and `drones.<id>.camera` messages
+**Step 1 — Skeleton (mostly Hazim).** Set up the Pydantic-validated YAML
+under `sim/scenarios/<name>.yaml` with drone home positions, waypoint
+tracks, and `speed_mps`. Smoke-load it with `sim.scenario.load_scenario`
+(the test harness in `sim/tests/test_scenario_fixtures.py` is the canary).
 
-Day 6-7:
-- Finalize scripted events (drone failure at T+45s, fire spread at T+60s)
-- Validate that Gemma 4 correctly interprets frames at integration time (Person 2 runs frames
-  through the drone agent manually)
-- Generate final ground-truth manifest JSON
+**Step 2 — Frame mappings + ground truth (mostly Thayyil).** Curate xBD
+crops or public-domain aerials into `sim/fixtures/frames/` (filenames
+preserved if a swap is replacing existing placeholders — see
+[`sim/tests/test_frames_directory.py`](../sim/tests/test_frames_directory.py)
+for the JPEG-sanity guard). Wire `frame_mappings.<drone_id>` to the
+scripted waypoint timeline. Author `<name>_groundtruth.json` with victims,
+fires, damaged structures, and blocked routes consistent with the imagery.
 
-Day 8 onwards:
-- Iterate frame selections based on what the drone agent actually identifies
-- Add fallback composite frames where Gemma 4 struggles on raw xBD imagery
-- Maybe simplify scripted event timing if integration exposes sync issues
+**Step 3 — Scripted events (paired).** Add `scripted_events` for the
+narrative beats (drone failures, fire spread, EGS link drops, mission
+complete). Cross-check timing against the geometry: e.g. the
+`resilience_v1` scenario's t=30 `drone_failure` lands a few seconds
+*after* the geometric mesh dropout at t≈18s, which the writeup can either
+narrate or stay silent on.
+
+Reference scenarios already shipped:
+
+- [`disaster_zone_v1.yaml`](../sim/scenarios/disaster_zone_v1.yaml) —
+  3-drone everyday demo on a 200×200m grid.
+- [`resilience_v1.yaml`](../sim/scenarios/resilience_v1.yaml) — 3-drone
+  fan-out tuned so mesh dropout, EGS link loss, and scripted drone
+  failure all fire inside a 240s run; substrate for Phase D / E
+  rehearsals. See [`docs/sim-live-run-notes.md`](sim-live-run-notes.md)
+  for the wall-clock validation.
+- [`single_drone_smoke.yaml`](../sim/scenarios/single_drone_smoke.yaml) —
+  fast CI / smoke fixture.
+
+When iterating on a live scenario:
+
+- Start with `scripts/launch_swarm.sh <scenario> --duration=N` against a
+  real Redis broker — the WaypointRunner and FrameServer self-terminate
+  cleanly at the deadline.
+- Use `sim/manual_pilot.py --drone-id droneN` in a side pane to type
+  findings/broadcasts into the live channels by hand.
+- Fold any new constraints surfaced during iteration back into the
+  scenario YAML or the `_groundtruth.json` manifest before the next run.
 
 ## Validation: Does Gemma 4 See It?
 
-Before integrating with the full agent loop, Person 2 manually:
+Before integrating with the full agent loop, Kaleel manually:
 1. Takes 20 frames from `sim/fixtures/frames/` (the same files the frame server will serve)
 2. Sends each to Gemma 4 base model with the system prompt from `shared/prompts/`
 3. Verifies the model identifies the right targets with reasonable confidence
@@ -216,12 +240,17 @@ the substitution in the frame mapping comment.
 
 ## Iterating
 
-The scenario is iterative. Don't lock frame mappings in Week 1. Adjust based on:
-- What Gemma 4 reliably identifies
-- How long missions take (adjust waypoint density)
-- Whether the demo video looks good (camera angles, frame diversity)
+Scenarios are iterative — adjust based on:
 
-Lock the final scenario by Day 16 (May 14). After that, only fix bugs.
+- What Gemma 4 reliably identifies (frame selection, mapping density).
+- How long missions take (waypoint density, `speed_mps`).
+- Whether the demo video looks good (camera angles, frame diversity).
+
+Once the scenario is committed to the demo storyboard, freeze it. After
+that point, only fix bugs in scripted-event timing or ground-truth
+consistency — don't reshape the geometry mid-recording. The submission
+checklist ([`docs/23-submission-checklist.md`](23-submission-checklist.md))
+is the canonical source for the freeze date.
 
 ## Cross-References
 
