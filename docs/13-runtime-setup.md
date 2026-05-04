@@ -218,9 +218,9 @@ If both pass, your environment is ready.
 
 Person 5's Unsloth fine-tuning workstream requires an NVIDIA GPU with CUDA 12+. This is not needed for any other role. Options:
 
-- **Native Linux with NVIDIA GPU:** install CUDA Toolkit from https://developer.nvidia.com/cuda-downloads, then `pip install -r ml/requirements.txt`.
-- **WSL2 on Windows 11 with NVIDIA GPU:** install the latest NVIDIA Windows driver; CUDA passthrough works automatically inside WSL2.
-- **Rented GPU (Lambda Labs / Paperspace / Runpod):** the ml/requirements.txt installs cleanly on any Ubuntu 22.04 cloud GPU instance. See `docs/12-fine-tuning-plan.md` for the go/no-go gate.
+- **Native Linux with NVIDIA GPU:** install CUDA Toolkit from https://developer.nvidia.com/cuda-downloads, then `uv sync --extra ml --extra dev` (the `ml` extra pulls torch / transformers / unsloth / bitsandbytes from `pyproject.toml`).
+- **WSL2 on Windows 11 with NVIDIA GPU:** install the latest NVIDIA Windows driver; CUDA passthrough works automatically inside WSL2. Same `uv sync --extra ml --extra dev` once you're inside the WSL2 distro.
+- **Rented GPU (Lambda Labs / Paperspace / Runpod):** the `ml` extra installs cleanly on any Ubuntu 22.04 cloud GPU instance. See `docs/12-fine-tuning-plan.md` for the go/no-go gate.
 
 ## Cross-References
 
