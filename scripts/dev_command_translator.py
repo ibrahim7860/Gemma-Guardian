@@ -2,7 +2,7 @@
 """Phase 4 stub EGS: subscribe to egs.operator_commands, publish translations
 to egs.command_translations with hard-coded substring matching.
 
-Stand-in for Person 3's real Gemma 4 E4B translator. Identical Redis contract
+Stand-in for Qasim's real Gemma 4 E4B translator. Identical Redis contract
 on both sides — drop-in replaceable.
 
 Usage:
@@ -136,7 +136,7 @@ def build_translation(envelope: Dict[str, Any]) -> Dict[str, Any]:
         preview = "Command not understood"
 
     # Stub does not actually translate the preview into other languages.
-    # Person 3's real EGS replaces this with Gemma 4 output.
+    # Qasim's real EGS replaces this with Gemma 4 output.
     preview_local = preview
 
     return {

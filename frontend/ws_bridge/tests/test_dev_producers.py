@@ -1,7 +1,7 @@
 """Schema-conformance tests for `scripts/dev_fake_producers.py`.
 
-The dev fake-producer is the stand-in publisher Person 4 runs while Persons 1
-and 3 are still building their real producers. If anything it emits drifts
+The dev fake-producer is the stand-in publisher Ibrahim runs while Hazim
+and Qasim are still building their real producers. If anything it emits drifts
 out of contract spec, the bridge will silently drop messages and the
 dashboard will look broken — so we pin its payload builders down here, with
 no Redis required (pure functions in / pure functions out).

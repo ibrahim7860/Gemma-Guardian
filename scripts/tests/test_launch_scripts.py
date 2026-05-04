@@ -220,7 +220,7 @@ def test_launch_swarm_default_no_duration_flag_anywhere():
 #
 # Live-run anomaly #3 (docs/sim-live-run-notes.md): stop_demo.sh would happily
 # `redis-cli shutdown nosave` a system-managed Redis it never started, leaving
-# Person 1's WSL2 box without a broker until the service was kicked. The fix
+# Hazim's WSL2 box without a broker until the service was kicked. The fix
 # is to record ownership at launch time and only shut down what we daemonized.
 # ---------------------------------------------------------------------------
 
@@ -349,7 +349,7 @@ def test_stop_demo_leaves_redis_alone_when_sentinel_absent(tmp_path):
 def test_run_resilience_scenario_dry_run_targets_resilience_v1(tmp_path):
     """``run_resilience_scenario.sh --dry-run`` must hand off to launch_swarm
     with the resilience_v1 scenario id (and a sensible default --duration)
-    so Person 3 can rehearse the EGS replan loop without remembering flags."""
+    so Qasim can rehearse the EGS replan loop without remembering flags."""
     script = SCRIPTS_DIR / "run_resilience_scenario.sh"
     log_dir = tmp_path / "logs"
     log_dir.mkdir()

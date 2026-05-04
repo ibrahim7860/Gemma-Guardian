@@ -12,7 +12,7 @@
 
 ## Why now
 
-Phase 4 is on `main`. Day 5 is tomorrow (Mon May 5) but the next blocking-on-others work for Person 4 is Day 8 (May 8: multilingual command box — already shipped). That gives a real ~5-day window with no inbound dependencies. The CI per-file workaround is documented but ugly: every new bridge test file inherits the duplication tax (already bit us — `_drain_until.max_frames` defaults have drifted to {10, 10, 10, 20, 30} across five files). Person 3's EGS subscriber and Person 5's drone agent are about to start landing PRs against `main`; cleaning the test harness BEFORE that traffic hits is the right ordering.
+Phase 4 is on `main`. Day 5 is tomorrow (Mon May 5) but the next blocking-on-others work for Ibrahim is Day 8 (May 8: multilingual command box — already shipped). That gives a real ~5-day window with no inbound dependencies. The CI per-file workaround is documented but ugly: every new bridge test file inherits the duplication tax (already bit us — `_drain_until.max_frames` defaults have drifted to {10, 10, 10, 20, 30} across five files). Qasim's EGS subscriber and Thayyil's drone agent are about to start landing PRs against `main`; cleaning the test harness BEFORE that traffic hits is the right ordering.
 
 The user explicitly asked for both unit-test verification AND Playwright coverage. Today CI exercises zero Playwright — `test_e2e_playwright.py` is `@pytest.mark.e2e` and excluded by `pytest.ini`. We have the test file, just no CI job. This plan adds it.
 
@@ -125,7 +125,7 @@ Expected: 68 passed. (If anything fails, the most likely cause is a fixture that
 
 - [ ] **Step 5: Verify the config change does NOT break other test directories (eng-review 2A)**
 
-The `pytest.ini` change is repo-wide. Other test surfaces exist at `agents/drone_agent/tests/`, `agents/egs_agent/tests/`, `shared/tests/`, and `scripts/`. If `asyncio_mode = auto` or the timeout breaks Person 3's or Person 5's tests, we ship a regression onto main.
+The `pytest.ini` change is repo-wide. Other test surfaces exist at `agents/drone_agent/tests/`, `agents/egs_agent/tests/`, `shared/tests/`, and `scripts/`. If `asyncio_mode = auto` or the timeout breaks Qasim's or Thayyil's tests, we ship a regression onto main.
 
 ```bash
 PYTHONPATH=. python3 -m pytest shared/ -q
@@ -721,7 +721,7 @@ Add a new entry under "Phase 4+" for the Playwright job's residual concern:
   pattern when the public API supports our use case.
 - **Why:** The pin will rot. Future security/perf releases of httpx-ws
   will land behind 0.8, and we'll be stuck.
-- **Owner:** Person 4.
+- **Owner:** Ibrahim.
 ```
 
 - [ ] **Step 2: Commit and push**

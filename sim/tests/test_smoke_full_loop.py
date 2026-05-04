@@ -7,7 +7,7 @@ Runs against fakeredis. Exercises the path:
     MeshSimulator.ingest_state → position cache
     MeshSimulator.forward_broadcast → swarm.<rid>.visible_to.<rid>
 
-This is the regression net Person 1 leans on at Day 7 Gate 2. Marked ``e2e``
+This is the regression net Hazim leans on at Day 7 Gate 2. Marked ``e2e``
 so quick runs (``pytest -m "not e2e"``) skip it; CI runs the full suite.
 """
 from __future__ import annotations

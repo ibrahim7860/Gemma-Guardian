@@ -4,7 +4,7 @@ and is a structurally-valid, sensibly-sized JPEG.
 Two failure modes the assertions guard against:
 
 1. Scenario references a frame that's missing from sim/fixtures/frames/.
-   When Person 5 swaps placeholder JPEGs for real xBD imagery, the file
+   When Thayyil swaps placeholder JPEGs for real xBD imagery, the file
    *names* must stay the same — this test enforces that. New scenario
    references without matching files fail before merge.
 2. A swapped-in image is corrupt, empty, or single-pixel. Without these

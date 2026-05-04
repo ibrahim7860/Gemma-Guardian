@@ -10,14 +10,14 @@ Schema-only validation floor: payloads validate against
 ``shared/schemas/<name>.json`` via the same loader the real validator will
 use. Semantic checks (battery actually low, GPS-in-zone, duplicate-finding,
 severity↔confidence) are intentionally NOT implemented here — they are
-Person 2's territory in ``agents/drone_agent/validation.py`` per
+Kaleel's territory in ``agents/drone_agent/validation.py`` per
 docs/10-validation-and-retry-loop.md. Mirroring them would fork the source
 of truth. See the TODO on :class:`SchemaValidationError`.
 
-Why this exists: when Person 2 is iterating on the drone agent and Person 1
+Why this exists: when Kaleel is iterating on the drone agent and Hazim
 is iterating on scenarios, having a fast loop where a human can type one
 finding into a live sim and watch it land on Redis (and on the EGS, once
-that's wired) shortens every debug cycle. Also useful for Person 4 verifying
+that's wired) shortens every debug cycle. Also useful for Ibrahim verifying
 the WebSocket bridge mirrors ``drones.<id>.findings`` correctly.
 
 Usage:
@@ -79,7 +79,7 @@ Commands:
   quit | Ctrl-D                                  Clean exit.
 
 Validation floor is JSON-Schema. Semantic checks (battery, GPS-in-zone, etc.)
-land in agents/drone_agent/validation.py — Person 2 owns them.
+land in agents/drone_agent/validation.py — Kaleel owns them.
 """
 
 

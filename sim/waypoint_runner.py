@@ -5,7 +5,7 @@ configured speed, and publishes a contract-conformant ``drone_state`` message
 on Redis channel ``drones.<id>.state`` at 2 Hz.
 
 Per Contract 2 (docs/20-integration-contracts.md), the sim owns *kinematic*
-fields; Person 2's drone_agent overwrites the agent-state fields on the same
+fields; Kaleel's drone_agent overwrites the agent-state fields on the same
 channel as a merged record. To stay schema-valid in the meantime, this runner
 emits safe defaults for those fields:
 

@@ -5,7 +5,7 @@ validation goes through shared.contracts. The cross-drone duplicate-finding
 rule (EGS_DUPLICATE_FINDING) lives here because it requires an EGS-wide
 view of recently accepted findings.
 
-This module is the thin contracts plan stub. Person 3 builds coordinator.py,
+This module is the thin contracts plan stub. Qasim builds coordinator.py,
 command_translator.py, and replanning.py on top.
 """
 from __future__ import annotations
@@ -98,7 +98,7 @@ class EGSValidationNode:
 
     def validate_egs_function_call(self, call: dict) -> ValidationResult:
         """Layer-2 structural delegation. Stateful checks (assignment balance,
-        replan polygon, etc.) belong to Person 3's coordinator.py."""
+        replan polygon, etc.) belong to Qasim's coordinator.py."""
         outcome = schema_validate("egs_function_calls", call)
         if not outcome.valid:
             return ValidationResult(
@@ -110,7 +110,7 @@ class EGSValidationNode:
 
     def validate_operator_command(self, command: dict) -> ValidationResult:
         """Layer-3 structural delegation. Stateful checks (recall_drone_not_active,
-        etc.) belong to Person 3's command_translator.py."""
+        etc.) belong to Qasim's command_translator.py."""
         outcome = schema_validate("operator_commands", command)
         if not outcome.valid:
             return ValidationResult(

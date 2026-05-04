@@ -15,7 +15,7 @@
 #       drone_failure event, freezing in place ~150m E of origin.
 #
 # Frame mappings reuse only existing placeholders in sim/fixtures/frames/ —
-# Person 5's xBD swap stays orthogonal (filenames preserved, bytes change).
+# Thayyil's xBD swap stays orthogonal (filenames preserved, bytes change).
 # All five finding types are surfaced across the run: victim, fire, smoke,
 # damaged_structure, blocked_route.
 #

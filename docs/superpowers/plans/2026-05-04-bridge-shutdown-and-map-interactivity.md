@@ -4,7 +4,7 @@
 
 **Goal:** Eliminate `RuntimeError: Event loop is closed` shutdown noise from the WS bridge AND make map markers cross-highlight rows in the Findings and Drone Status panels.
 
-**Architecture:** Two independent unblocked workstreams from `TODOS.md` bundled into one PR because they share the same owner (Person 4) and neither touches shared/contracts:
+**Architecture:** Two independent unblocked workstreams from `TODOS.md` bundled into one PR because they share the same owner (Ibrahim) and neither touches shared/contracts:
 
 1. **Bridge teardown ordering** (`frontend/ws_bridge/main.py:174-214`): set `subscriber._stopping=True` and await all three background tasks BEFORE calling `subscriber.stop()` (which calls `pubsub.aclose()`). Today's sequence — cancel → stop (closes pubsub) → await tasks — lets `subscribe_task` be mid-`pubsub.get_message()` when `aclose()` runs, producing stderr noise on every shutdown.
 

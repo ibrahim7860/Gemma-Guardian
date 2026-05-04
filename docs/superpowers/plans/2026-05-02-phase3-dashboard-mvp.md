@@ -1019,7 +1019,7 @@ Suggested message:
 ```
 feat(scripts): add dev_actions_logger.py to verify bridge → Redis publish path
 
-Stand-in for Person 3's EGS subscriber. Subscribes to egs.operator_actions, validates
+Stand-in for Qasim's EGS subscriber. Subscribes to egs.operator_actions, validates
 against operator_actions schema, pretty-prints each message. Lets us verify the
 Phase 3 publish path locally without a full EGS.
 ```
@@ -2029,7 +2029,7 @@ Suggested message:
 ```
 feat(dashboard): disable CommandPanel DISPATCH with "coming soon" tooltip
 
-Command box wiring depends on Person 3's EGS translation path (Phase 4). Disable
+Command box wiring depends on Qasim's EGS translation path (Phase 4). Disable
 the button now so operators can't tap a no-op.
 ```
 
