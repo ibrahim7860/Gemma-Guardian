@@ -178,6 +178,7 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     aggregator: StateAggregator = app.state.aggregator
     subscriber: RedisSubscriber = app.state.subscriber
     translation_broadcaster = app.state.translation_broadcaster
+    validation_log_writer = app.state.validation_log_writer
 
     emit_task = asyncio.create_task(
         _emit_loop(registry=registry, aggregator=aggregator, tick_s=config.tick_s)
@@ -187,17 +188,36 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     # subscriber and broadcast by this dedicated task. Decoupling means a
     # slow WS client cannot stall the Redis subscribe loop.
     translation_task = asyncio.create_task(translation_broadcaster())
+    # Eng-review 2A: validation log events are enqueued by the dispatch path
+    # (put_nowait) and written to disk by this dedicated task. Decoupling
+    # means slow disk I/O cannot back-pressure the Redis subscribe loop.
+    validation_log_task = asyncio.create_task(validation_log_writer())
     try:
         yield
     finally:
-        # Signal the subscriber to stop (sync; safe to call even after cancel).
+        # Phase 5+ teardown ordering. The old sequence
+        # (cancel → subscriber.stop → await tasks) closed the
+        # subscriber's pubsub while the subscribe task was still mid-
+        # ``pubsub.get_message()``, producing
+        # ``RuntimeError: Event loop is closed`` on every shutdown.
+        #
+        # New order (eng-review 1B + 2A):
+        #   1. Flip the subscriber's stop flag (NO pubsub close yet)
+        #   2. Cancel ALL FOUR tasks. signal_stop gives the subscribe
+        #      loop a clean exit on its next read-timeout; cancel()
+        #      handles the case where get_message() is parked.
+        #   3. Await ALL FOUR tasks so the subscribe task has fully
+        #      exited its read loop before we touch its pubsub
+        #   4. ONLY THEN close the subscriber (pubsub.aclose())
+        #   5. Close the publisher
         subscriber.signal_stop()
-        # Cancel ALL THREE tasks BEFORE awaiting any so a hung await cannot
-        # block the others from being cancelled.
         emit_task.cancel()
         subscribe_task.cancel()
         translation_task.cancel()
-        for task in (emit_task, subscribe_task, translation_task):
+        validation_log_task.cancel()
+        for task in (
+            emit_task, subscribe_task, translation_task, validation_log_task,
+        ):
             try:
                 await task
             except (asyncio.CancelledError, Exception):
@@ -275,11 +295,55 @@ def create_app() -> FastAPI:
                     f"(continuing): {type(exc).__name__}: {exc}"
                 )
 
+    # Eng-review 2A: bounded queue between dispatch and disk-write.
+    # ``maxsize=128`` is generous for the validation-event traffic
+    # pattern; drop-on-full policy lives on the producer side
+    # (``_safe_enqueue_validation`` in redis_subscriber.py — Task 4).
+    # Single writer task = no JSONL interleaving on the log file.
+    validation_log_queue: asyncio.Queue = asyncio.Queue(maxsize=128)
+
+    async def _validation_log_writer_loop() -> None:
+        """Drain ``validation_log_queue`` and write to disk via the
+        synchronous ``ValidationEventLogger``. Single writer = ordered
+        JSONL output, no atomicity concerns from concurrent appends.
+
+        Owns slowness: if disk I/O is slow, this task waits — but the
+        subscriber's read loop keeps draining Redis (it only does
+        ``put_nowait`` on the queue, never awaits a write).
+
+        Mirrors the defensive shape of ``_translation_broadcaster_loop``:
+        a single bad record never kills the writer.
+        """
+        while True:
+            try:
+                record = await validation_log_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                # Run the synchronous file write off the event loop so
+                # the next ``queue.get()`` doesn't park behind disk I/O.
+                # Even though this writer is single-tenant (no
+                # interleaving), a slow write would block subsequent
+                # ``put_nowait`` calls if the queue fills.
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None, lambda r=record: validation_logger.log(**r)
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # A single bad record must not kill the writer.
+                print(
+                    f"[ws_bridge] validation_log_writer tick error "
+                    f"(continuing): {type(exc).__name__}: {exc}"
+                )
+
     subscriber = RedisSubscriber(
         config=config,
         aggregator=aggregator,
         validation_logger=validation_logger,
         translation_queue=translation_queue,
+        validation_log_queue=validation_log_queue,
     )
     publisher = RedisPublisher(redis_url=config.redis_url)
 
@@ -291,6 +355,9 @@ def create_app() -> FastAPI:
     app.state.publisher = publisher
     app.state.translation_queue = translation_queue
     app.state.translation_broadcaster = _translation_broadcaster_loop
+    # Eng-review 2A: validation log queue + single-writer task.
+    app.state.validation_log_queue = validation_log_queue
+    app.state.validation_log_writer = _validation_log_writer_loop
 
     @app.get("/health")
     async def health() -> Dict[str, str]:

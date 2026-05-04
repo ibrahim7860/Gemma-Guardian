@@ -14,6 +14,23 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Owner:** Person 4.
 
 ### Migrate bridge tests off `httpx-ws` private API (Phase 5+)
+
+**Update 2026-05-04:** Attempted in feat/bridge-and-schemas-cleanup
+and reverted. httpx-ws 0.8 requires `async with ASGIWebSocketTransport(...)`
+to initialise `_task_group`, but anyio 4.x's strict same-task cancel
+scope check rejects the fixture pattern: pytest-asyncio splits setup
+and teardown across separate `runner.run()` invocations, so the task
+that enters the transport in setup is not `current_task()` at
+teardown. This produces 13 fixture-teardown errors on Linux+CPython
+3.11 even though local macOS+CPython 3.12 passes. Three workarounds
+were tried (transport-only wrap, transport+lifespan wrap, removing
+the redundant `client.aclose()` call in the lifecycle task) — all
+failed CI. Real fix likely requires either: (a) refactoring tests to
+not need a shared http_client (each test opens its own transport
+under `async with`), or (b) waiting for httpx-ws to ship a fixture-
+friendly entry pattern. Until then, keep the `transport.exit_stack
+= None` workaround on httpx-ws<0.8.
+
 - **What:** `frontend/ws_bridge/tests/conftest.py`'s `app_and_client`
   fixture pokes `transport.exit_stack = None` to break a circular ref at
   shutdown. This reaches into private API; `httpx-ws` 0.8.0 already
@@ -123,7 +140,13 @@ below for historical context.
 - **Context:** Affected files: `test_subscriber.py`, `test_redis_publisher.py`, `test_outbound_publish.py`. Python 3.9.5, pytest-8.4.2, pytest-asyncio 1.2.0. Pattern matches https://github.com/pytest-dev/pytest-asyncio/issues/660 (loop-scope mismatch between fakeredis and pytest-asyncio strict mode).
 - **Owner:** Person 4.
 
-### Repo-wide $ref convention pass (Phase 5+)
+### ~~Repo-wide $ref convention pass (Phase 5+)~~ (closed in feat/bridge-and-schemas-cleanup)
+**CLOSED** — verified by grep that all 14 schemas in
+`shared/schemas/` already use relative `$ref` and absolute `$id`.
+Documented the convention in `shared/schemas/CONVENTIONS.md` with
+verification commands future PRs can run. Original entry retained
+below for historical context.
+
 - **What:** Decide on a single `$ref` style for `shared/schemas/` — currently every schema uses relative refs (`_common.json#/$defs/...`). Either keep relative as the formal convention and document it, OR convert to absolute URIs (`https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/_common.json#/$defs/...`) across every schema in one coordinated PR.
 - **Why:** Surfaced by the Phase 4 Task 2 code review. Phase 4 originally tried to use absolute URIs in two new schemas (per adversarial finding #3 — concern that relative refs resolve by URI-base coincidence). Code review correctly noted that mixing styles in one directory is worse than the bug it tried to prevent. Phase 4 reverted to relative refs to match the existing convention. The forward-looking concern about $id moves still applies — it just applies uniformly to every schema, not just Phase 4's.
 - **Pros:** Consistency. Easier to refactor `$id` bases later (search-and-replace works without missing schemas).
@@ -146,7 +169,18 @@ context.
 - **Depends on:** Should bundle with "Bridge full-suite asyncio test pollution" above.
 - **Owner:** Person 4.
 
-### Move `ValidationEventLogger.log` off the subscriber dispatch path (Phase 5+)
+### ~~Move `ValidationEventLogger.log` off the subscriber dispatch path (Phase 5+)~~ (closed in feat/bridge-and-schemas-cleanup)
+**CLOSED** — `_log_validation_failure` now pushes records onto
+`validation_log_queue` via `put_nowait` (sync, microseconds). A new
+`_validation_log_writer_loop` task in `main.py` drains the queue and
+writes to disk via the default thread pool executor (single writer =
+no JSONL interleaving, ordered output). Drop-on-full policy for
+sustained burst with stderr warning. Mirrors the
+`translation_queue` + `_translation_broadcaster_loop` pattern from
+Phase 4. Two new tests assert dispatch latency stays bounded under a
+slow logger AND the writer survives logger exceptions. Original entry
+retained below for historical context.
+
 - **What:** `frontend/ws_bridge/redis_subscriber.py:_log_validation_failure` calls `self._validation_logger.log(...)` synchronously inside `_handle_message`. The logger does sync disk I/O (`open(..., "a")`).
 - **Why:** Surfaced by the Phase 4 adversarial review (finding #7). A misbehaving EGS spamming malformed translations or findings could stall the subscriber's Redis drain on disk I/O latency, especially on slow disks or when the validation log is being rotated.
 - **Pros:** Subscriber drain stays fast and predictable under any upstream noise.

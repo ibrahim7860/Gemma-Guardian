@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from typing import Any, Dict, Optional, Tuple
 
 import redis.asyncio as redis_async
@@ -97,6 +98,7 @@ class RedisSubscriber:
         aggregator: StateAggregator,
         validation_logger: ValidationEventLogger,
         translation_queue: Optional[asyncio.Queue] = None,
+        validation_log_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         self._config: BridgeConfig = config
         self._aggregator: StateAggregator = aggregator
@@ -108,6 +110,13 @@ class RedisSubscriber:
         # cannot back-pressure Redis ingestion (which would otherwise risk
         # Redis disconnecting us as a slow consumer).
         self._translation_queue: Optional[asyncio.Queue] = translation_queue
+        # Bounded queue for validation event records. Pushed by the dispatch
+        # path (sync, via put_nowait), drained by main.py's
+        # _validation_log_writer_loop. Single writer = no interleaving on the
+        # JSONL file. Maxsize=128 is generous for the validation event traffic
+        # pattern (~1 event per malformed frame); drop-on-full policy
+        # documented in _safe_enqueue_validation below.
+        self._validation_log_queue: Optional[asyncio.Queue] = validation_log_queue
         self._stopping: bool = False
         # Held across reconnect attempts so ``close()`` can tear them down.
         self._client: Optional[redis_async.Redis] = None
@@ -354,7 +363,20 @@ class RedisSubscriber:
         detail: str,
         raw_call: Optional[Dict[str, Any]],
     ) -> None:
-        """Best-effort write to the validation event log.
+        """Best-effort enqueue of a validation event for the writer task.
+
+        Eng-review 2A Option B: the dispatch path must not block on disk
+        I/O. We push a record dict onto ``self._validation_log_queue`` via
+        ``put_nowait`` (sync, microseconds). ``main.py``'s
+        ``_validation_log_writer_loop`` drains it on a dedicated task,
+        serializing writes to the JSONL file (no interleaving) and running
+        the actual disk I/O in the default thread pool executor (so even
+        the writer task doesn't block on disk).
+
+        Drop-on-full policy: if the bounded queue is at capacity (default
+        maxsize=128), the record is dropped with a stderr warning. This
+        only happens under sustained burst — at steady state the queue
+        drains faster than dispatch fills it.
 
         Schema constraint: ``agent_id`` must be a drone_id or the literal
         ``"egs"``; ``layer`` must be ``drone`` / ``egs`` / ``operator``. We
@@ -369,16 +391,29 @@ class RedisSubscriber:
         else:
             agent_id = "egs"
             layer = "egs"
+        record = {
+            "agent_id": agent_id,
+            "layer": layer,
+            "function_or_command": f"{schema_name}@{channel}: {detail}",
+            "attempt": 1,
+            "valid": False,
+            "rule_id": rule_id,
+            "outcome": "failed_after_retries",
+            "raw_call": raw_call,
+        }
+        if self._validation_log_queue is None:
+            # Queue not wired (e.g., in unit tests that don't pass the kwarg).
+            # Fall back to a no-op rather than crash dispatch.
+            return
         try:
-            self._validation_logger.log(
-                agent_id=agent_id,
-                layer=layer,
-                function_or_command=f"{schema_name}@{channel}: {detail}",
-                attempt=1,
-                valid=False,
-                rule_id=rule_id,
-                outcome="failed_after_retries",
-                raw_call=raw_call,
+            self._validation_log_queue.put_nowait(record)
+        except asyncio.QueueFull:
+            # Sustained burst — queue can't keep up with dispatch. The
+            # validation log is debug telemetry, so dropping is acceptable.
+            # Log to stderr so the fact that we dropped is visible without
+            # requiring a tail of the (now-stale) validation_events.jsonl.
+            print(
+                f"[ws_bridge] validation_log_queue full — dropping record "
+                f"for {agent_id}/{schema_name}@{channel}",
+                file=sys.stderr,
             )
-        except Exception:  # pragma: no cover — never let logging crash dispatch
-            _LOG.exception("RedisSubscriber: failed to write validation event")

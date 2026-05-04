@@ -75,8 +75,12 @@ dev = [
     "pytest-timeout>=2.3",
     "pytest-playwright>=0.5",
     # Upper-bound pin on httpx-ws: 0.8.0 introduced an API change to
-    # ASGIWebSocketTransport that breaks our fixtures. See
-    # frontend/ws_bridge/requirements-dev.txt history before 2026-05.
+    # ASGIWebSocketTransport that requires entering the transport as an
+    # async context manager. That conflicts with pytest-asyncio's split
+    # setup/teardown runs (anyio 4.x raises "different task" because the
+    # transport's cancel scope is host-task-bound to the setup run). See
+    # frontend/ws_bridge/tests/conftest.py for the pre-0.8 workaround
+    # (transport.exit_stack = None) and TODOS.md for the migration TODO.
     "httpx-ws>=0.7.0,<0.8",
 ]
 
