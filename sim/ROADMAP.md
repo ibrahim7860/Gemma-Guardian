@@ -22,11 +22,20 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 - `.github/workflows/test.yml` — migrated to `astral-sh/setup-uv@v3` + `uv sync --frozen`; new `sim_mesh` CI job covers `pytest sim/ agents/mesh_simulator/ scripts/tests/`. `bridge`, `flutter`, `bridge_e2e` jobs intact.
 - Docs updated for the uv switch: `docs/13-runtime-setup.md` (uv primary, pip fallback), `docs/23-submission-checklist.md`, `frontend/flutter_dashboard/README.md`, `scripts/launch_dashboard_dev.sh`, `scripts/run_dashboard_dev.sh`, `frontend/ws_bridge/tests/conftest.py`, `TODOS.md`, and the entry-point `CLAUDE.md` so other collaborators' Claude Code picks up the change.
 
+## Done (shipped on `feature/sim-polish`)
+
+- `--redis-url` default on `waypoint_runner` / `frame_server` / `mesh_simulator` derived from `CONFIG.transport.redis_url` (slice A).
+- Pydantic `Scenario` cross-validates `scripted_events[].drone_id ⊆ drones[]` at load (slice B).
+- `WaypointRunner.main()` fails fast if `CONFIG.mission.drone_count` ≠ `len(scenario.drones)` (slice C).
+- `scripts/launch_swarm.sh --drones=auto` (the new default) derives the roster from the scenario YAML via `sim/list_drones.py`. Explicit `--drones=drone1,drone2` still works (slice D).
+- `--duration <seconds>` flag on `waypoint_runner` and `frame_server`; propagated through `launch_swarm.sh --duration=N` (slice E).
+- Live multi-drone run on real Redis captured in `docs/sim-live-run-notes.md`. Surfaced and fixed a pre-existing tmux duplicate-window bug in `launch_swarm.sh` (slice F).
+- Repo-root `README.md` written (slice G).
+
 ## Phases ahead (in order, no dates)
 
 ### Phase A — Live multi-drone smoke
-- Run `scripts/launch_swarm.sh disaster_zone_v1` against real Redis with a 2-drone roster, then a 3-drone roster. Confirm `drones.drone1.state`, `drones.drone2.state`, `drones.drone3.state` all stream cleanly, no cross-talk, no message collisions.
-- Capture a sample run's logs under `/tmp/gemma_guardian_logs/` and skim for anomalies (latency drift, dropped publishes, schema-invalid payloads).
+- ✅ Done as part of slice F (`feature/sim-polish`). 3-drone run against real Redis, sim + mesh streaming cleanly, schema-valid payloads, mesh adjacency full-mesh as expected. Notes: [`docs/sim-live-run-notes.md`](../docs/sim-live-run-notes.md).
 
 ### Phase B — Integration session with Person 2 (drone_agent)
 - Person 2 subscribes to `drones.<id>.camera` and `drones.<id>.state`, runs Gemma 4 perception, emits findings on `drones.<id>.findings`.
@@ -69,10 +78,12 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 
 ## Polish queue (unblocked, opportunistic)
 
-- Repo-root `README.md` is missing. CLAUDE.md target structure assumes one.
-- `shared/config.yaml`'s `mission.drone_count` is set statically — sim could soft-assert it against the scenario YAML (and fail fast on mismatch).
-- `sim/waypoint_runner.py` and `sim/frame_server.py` default `--redis-url` to `redis://localhost:6379/0` directly; could read `shared/config.yaml` `transport.redis_url` instead.
-- `scripts/launch_swarm.sh` `--drones=` is hardcoded `drone1,drone2,drone3` by default; could derive from the scenario YAML's `drones[].drone_id` list.
-- ~~`.github/workflows/sim-tests.yml` for CI on every push (pytest sim/ + agents/mesh_simulator/ + scripts/tests/).~~ Done as the `sim_mesh` job in `.github/workflows/test.yml` on `feature/uv-and-ci`.
-- Add `--duration <seconds>` flag to runners so they self-terminate cleanly (useful for scripted demos and CI).
-- Pydantic `Scenario` could cross-validate that scripted_events `drone_id` references exist in `drones[]`.
+All initial polish-queue items shipped on `feature/sim-polish`. Add new
+items here as they surface during integration sessions or live-run fallout.
+
+- _Empty — refill as needed._
+
+### Follow-ups surfaced by the live run (low priority, out of Person 1 scope)
+
+- `agents/drone_agent/main.py` ImportError on relative imports when run as a script (`python3 agents/drone_agent/main.py`). Ping Person 2.
+- `scripts/stop_demo.sh` shuts down Redis even when it didn't start it, which interrupts long-lived system-managed Redis. Worth a follow-up to only shut down what we daemonized.
