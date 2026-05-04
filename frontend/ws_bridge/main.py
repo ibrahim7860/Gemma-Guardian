@@ -190,21 +190,25 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     try:
         yield
     finally:
-        # Cancel ALL THREE tasks BEFORE awaiting any. If subscriber.stop()
-        # raises, ``await subscribe_task`` would block forever otherwise,
-        # hanging FastAPI shutdown until SIGKILL.
+        # Signal the subscriber to stop (sync; safe to call even after cancel).
+        subscriber.signal_stop()
+        # Cancel ALL THREE tasks BEFORE awaiting any so a hung await cannot
+        # block the others from being cancelled.
         emit_task.cancel()
         subscribe_task.cancel()
         translation_task.cancel()
-        try:
-            await subscriber.stop()
-        except Exception:
-            pass
         for task in (emit_task, subscribe_task, translation_task):
             try:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+        # Tear down pubsub AFTER the subscribe task has exited so we never
+        # call aclose() while the task is mid-get_message (which produced
+        # "RuntimeError: Event loop is closed" on stderr in previous builds).
+        try:
+            await subscriber.close()
+        except Exception:
+            pass
         # Wrap publisher.close() defensively — any exception here would
         # leak to FastAPI shutdown after we've already torn down the
         # background tasks that depend on it.

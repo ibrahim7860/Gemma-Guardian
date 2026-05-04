@@ -87,7 +87,7 @@ class RedisSubscriber:
       * Construct with a ``BridgeConfig``, a ``StateAggregator``, and a
         ``ValidationEventLogger``.
       * Start with ``asyncio.create_task(subscriber.run())``.
-      * Stop with ``await subscriber.stop()`` followed by awaiting the task.
+      * Stop with ``subscriber.signal_stop()``, await the task, then ``await subscriber.close()``.
     """
 
     def __init__(
@@ -109,14 +109,14 @@ class RedisSubscriber:
         # Redis disconnecting us as a slow consumer).
         self._translation_queue: Optional[asyncio.Queue] = translation_queue
         self._stopping: bool = False
-        # Held across reconnect attempts so ``stop()`` can close them out.
+        # Held across reconnect attempts so ``close()`` can tear them down.
         self._client: Optional[redis_async.Redis] = None
         self._pubsub: Optional[Any] = None
 
     # ---- public API -------------------------------------------------------
 
     async def run(self) -> None:
-        """Run the connect / subscribe / dispatch loop until ``stop()``.
+        """Run the connect / subscribe / dispatch loop until ``signal_stop()``.
 
         Outer try catches RedisError + ConnectionError to drive reconnect with
         exponential backoff. Backoff resets to 0 after a successful connect
@@ -126,7 +126,7 @@ class RedisSubscriber:
         while not self._stopping:
             try:
                 await self._connect_and_dispatch()
-                # Clean exit (stop() called) — leave the loop.
+                # Clean exit (signal_stop() was called) — leave the loop.
                 if self._stopping:
                     return
                 # Loop body returned without an exception and without stopping;
@@ -148,9 +148,27 @@ class RedisSubscriber:
                 await asyncio.sleep(max(backoff, 0.1))
                 backoff = _next_backoff(backoff, self._config.reconnect_max_s)
 
-    async def stop(self) -> None:
-        """Signal the run loop to exit and tear down any open pubsub/client."""
+    def signal_stop(self) -> None:
+        """Set the stop flag. Does NOT close the pubsub.
+
+        The run loop checks ``self._stopping`` on every iteration of
+        ``_connect_and_dispatch``'s read loop and on every iteration of
+        ``run()``'s reconnect loop. Once this is True, the run task
+        exits cleanly on its next read-timeout boundary
+        (``_GET_MESSAGE_TIMEOUT_S``).
+
+        Synchronous so callers can fire it from a non-async context
+        (e.g., signal handlers) without ceremony.
+        """
         self._stopping = True
+
+    async def close(self) -> None:
+        """Tear down the pubsub and client. Idempotent.
+
+        Must be called AFTER the run task has exited; otherwise the run
+        task may be mid-``pubsub.get_message()`` when ``aclose()`` runs,
+        producing ``RuntimeError: Event loop is closed`` on shutdown.
+        """
         pubsub = self._pubsub
         client = self._client
         self._pubsub = None
