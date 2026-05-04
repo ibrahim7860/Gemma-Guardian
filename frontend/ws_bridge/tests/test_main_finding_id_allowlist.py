@@ -22,7 +22,7 @@ from typing import Any, Dict
 import pytest
 from httpx_ws import aconnect_ws
 
-from frontend.ws_bridge.tests._helpers import drain_until
+from frontend.ws_bridge.tests._helpers import drain_until, make_test_client
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -63,24 +63,25 @@ _KNOWN_FINDING: Dict[str, Any] = {
 
 @pytest.mark.asyncio
 async def test_unknown_finding_id_returns_echo_error_and_no_publish(
-    app_and_client,
+    app_and_redis,
 ):
     """An approval for a finding_id the aggregator doesn't know about must
     be rejected with an ``unknown_finding_id`` echo error, and nothing
     must be published to ``egs.operator_actions``.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
 
     pubsub = fake.pubsub()
     await pubsub.subscribe("egs.operator_actions")
     try:
-        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-            # Drain initial state envelope.
-            await ws.receive_text()
-            await ws.send_text(json.dumps(_approval_frame("f_drone99_999")))
-            echo = await drain_until(
-                ws, lambda m: m.get("error") == "unknown_finding_id"
-            )
+        async with make_test_client(app) as http_client:
+            async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+                # Drain initial state envelope.
+                await ws.receive_text()
+                await ws.send_text(json.dumps(_approval_frame("f_drone99_999")))
+                echo = await drain_until(
+                    ws, lambda m: m.get("error") == "unknown_finding_id"
+                )
 
         assert echo["type"] == "echo"
         assert echo["error"] == "unknown_finding_id"
@@ -102,11 +103,11 @@ async def test_unknown_finding_id_returns_echo_error_and_no_publish(
 
 
 @pytest.mark.asyncio
-async def test_known_finding_id_publishes_normally(app_and_client):
+async def test_known_finding_id_publishes_normally(app_and_redis):
     """Positive case: an approval for a finding the aggregator knows about
     is acked AND republished onto ``egs.operator_actions``.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
 
     # Seed the aggregator directly so the allowlist contains this id.
     app.state.aggregator.add_finding(_KNOWN_FINDING)
@@ -114,12 +115,13 @@ async def test_known_finding_id_publishes_normally(app_and_client):
     pubsub = fake.pubsub()
     await pubsub.subscribe("egs.operator_actions")
     try:
-        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-            await ws.receive_text()  # initial state envelope
-            await ws.send_text(json.dumps(_approval_frame("f_drone1_5")))
-            ack = await drain_until(
-                ws, lambda m: m.get("ack") == "finding_approval"
-            )
+        async with make_test_client(app) as http_client:
+            async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+                await ws.receive_text()  # initial state envelope
+                await ws.send_text(json.dumps(_approval_frame("f_drone1_5")))
+                ack = await drain_until(
+                    ws, lambda m: m.get("ack") == "finding_approval"
+                )
 
         assert ack["type"] == "echo"
         assert ack["ack"] == "finding_approval"
