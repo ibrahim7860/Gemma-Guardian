@@ -8,7 +8,16 @@
 # logged as "skipping" rather than blocking the launch.
 #
 # Usage:
-#   scripts/launch_swarm.sh [scenario] [--dry-run] [--drones=drone1,drone2,drone3]
+#   scripts/launch_swarm.sh [scenario] [--dry-run] [--drones=auto|drone1,...] [--duration=N]
+#
+# --drones default is "auto" — the roster is derived from the scenario YAML's
+# drones[].drone_id list via sim/list_drones.py. Pass --drones=drone1,drone2
+# explicitly to launch a subset.
+#
+# --duration=N propagates to sim/waypoint_runner.py and sim/frame_server.py
+# so they self-terminate after N seconds. Useful for scripted demos and CI.
+# Drone agents and EGS do not accept --duration; the flag is omitted on those
+# invocations.
 #
 # Env overrides:
 #   GG_NO_TMUX=1   — skip the actual tmux invocation; just print plans (used by --dry-run and tests)
@@ -23,16 +32,33 @@ REDIS_URL="${GG_REDIS_URL:-redis://localhost:6379/0}"
 
 DRY_RUN=0
 SCENARIO="disaster_zone_v1"
-DRONES="drone1,drone2,drone3"
+DRONES="auto"
+DURATION=""
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --drones=*) DRONES="${arg#--drones=}" ;;
+    --duration=*) DURATION="${arg#--duration=}" ;;
     --*) echo "unknown flag: $arg" >&2; exit 2 ;;
     *)   SCENARIO="$arg" ;;
   esac
 done
+
+# Build the optional --duration argument fragment that gets appended to
+# sim/waypoint_runner.py and sim/frame_server.py invocations. Drone agents
+# and EGS do not accept --duration, so only the sim runners receive it.
+DURATION_ARG=""
+if [ -n "$DURATION" ]; then
+  DURATION_ARG="--duration $DURATION"
+fi
+
+if [ "$DRONES" = "auto" ]; then
+  if ! DRONES="$(PYTHONPATH="$REPO_ROOT" python3 "$REPO_ROOT/sim/list_drones.py" "$SCENARIO")"; then
+    echo "[error] failed to derive drone roster from scenario '$SCENARIO'" >&2
+    exit 1
+  fi
+fi
 
 # Helper: in dry-run, just print the command. Else, send-keys into tmux.
 emit() {
@@ -71,18 +97,22 @@ else
 fi
 
 # --- tmux session ------------------------------------------------------------
+# We create the session without a named first window. emit() then creates one
+# new-window per process, so all windows have unique names. The auto-named
+# placeholder (window 0) is killed once at least one named window exists,
+# leaving a tidy session.
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   if ! command -v tmux >/dev/null 2>&1; then
     echo "[error] tmux not on PATH; install or use --dry-run" >&2
     exit 1
   fi
   tmux kill-session -t fieldagent 2>/dev/null || true
-  tmux new-session -d -s fieldagent -n waypoint
+  tmux new-session -d -s fieldagent -n placeholder
 fi
 
 # --- Sim components (Person 1 — always present) ------------------------------
-emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/waypoint_runner.log"
-emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/frame_server.log"
+emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
+emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
 emit_if_exists mesh "agents/mesh_simulator/main.py" \
   "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/mesh.log"
 
@@ -102,6 +132,8 @@ emit_if_exists ws_bridge "frontend/ws_bridge/main.py" \
   "cd $REPO_ROOT && python3 frontend/ws_bridge/main.py 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
+  # Drop the placeholder window now that real ones exist.
+  tmux kill-window -t fieldagent:placeholder 2>/dev/null || true
   echo ""
   echo "FieldAgent swarm running in tmux session 'fieldagent'."
   echo "Attach with: tmux attach -t fieldagent"

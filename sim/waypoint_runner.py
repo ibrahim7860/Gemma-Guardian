@@ -43,6 +43,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import redis
 
+from shared.contracts.config import CONFIG
 from shared.contracts.topics import per_drone_state_channel
 from sim.geo import haversine_meters, interpolate
 from sim.scenario import Drone, Scenario, ScriptedEvent, load_scenario
@@ -240,9 +241,15 @@ class WaypointRunner:
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sim waypoint runner — publishes drones.<id>.state at 2 Hz.")
     parser.add_argument("--scenario", required=True, help="Scenario YAML path or scenario_id under sim/scenarios/")
-    parser.add_argument("--redis-url", default="redis://localhost:6379/0")
+    parser.add_argument("--redis-url", default=CONFIG.transport.redis_url)
     parser.add_argument("--tick-hz", type=float, default=2.0)
     parser.add_argument("--battery-drain", type=float, default=0.1, help="Battery %% drain per second")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Self-terminate cleanly after N seconds. Omit to run forever (until SIGINT).",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -257,26 +264,52 @@ def _resolve_scenario_path(arg: str) -> Path:
     raise FileNotFoundError(f"scenario not found: {arg!r} (also looked at {candidate})")
 
 
+def _check_drone_count(scenario: Scenario) -> None:
+    """Fail fast if shared/config.yaml's mission.drone_count disagrees with
+    the scenario's len(drones). The two are always supposed to match — a
+    silent mismatch over- or under-provisions the swarm and confuses every
+    downstream component (drone agents, EGS, dashboard).
+    """
+    expected = CONFIG.mission.drone_count
+    actual = len(scenario.drones)
+    if expected != actual:
+        raise SystemExit(
+            f"[waypoint_runner] mission.drone_count={expected} from "
+            f"shared/config.yaml disagrees with scenario {scenario.scenario_id!r} "
+            f"len(drones)={actual}. Reconcile the two before launching: "
+            f"either edit shared/config.yaml or add/remove drones in the scenario YAML."
+        )
+
+
 def main(argv: Optional[Iterable[str]] = None) -> int:
     args = _parse_args(argv)
     scenario = load_scenario(_resolve_scenario_path(args.scenario))
+    _check_drone_count(scenario)
     redis_client = redis.Redis.from_url(args.redis_url)
     runner = WaypointRunner(scenario, redis_client, battery_drain_pct_per_sec=args.battery_drain)
 
     period = 1.0 / args.tick_hz
     print(
         f"[waypoint_runner] scenario={scenario.scenario_id} drones={[d.drone_id for d in scenario.drones]} "
-        f"tick_hz={args.tick_hz} redis={args.redis_url}",
+        f"tick_hz={args.tick_hz} redis={args.redis_url} duration={args.duration}",
         flush=True,
     )
     start = time.monotonic()
+    duration = args.duration
     try:
         while True:
             t = time.monotonic() - start
+            if duration is not None and t >= duration:
+                print(f"[waypoint_runner] reached --duration={duration}s; exiting cleanly.", flush=True)
+                return 0
             runner.tick(t_seconds=t)
-            # Sleep until next tick boundary.
+            # Sleep until next tick boundary, but never past the deadline.
             next_boundary = start + (math.floor(t / period) + 1) * period
-            time.sleep(max(0.0, next_boundary - time.monotonic()))
+            sleep_for = max(0.0, next_boundary - time.monotonic())
+            if duration is not None:
+                remaining = (start + duration) - time.monotonic()
+                sleep_for = min(sleep_for, max(0.0, remaining))
+            time.sleep(sleep_for)
     except KeyboardInterrupt:
         print("[waypoint_runner] stopped via SIGINT", flush=True)
         return 0

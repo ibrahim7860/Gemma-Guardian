@@ -101,6 +101,19 @@ class Scenario(BaseModel):
             raise ValueError(f"frame_mappings references unknown drone_id(s): {sorted(unknown)}")
         return self
 
+    @model_validator(mode="after")
+    def _scripted_events_reference_known_drones(self) -> "Scenario":
+        known = {d.drone_id for d in self.drones}
+        unknown = sorted(
+            {e.drone_id for e in self.scripted_events if e.drone_id is not None} - known
+        )
+        if unknown:
+            raise ValueError(
+                f"scripted_events references unknown drone_id(s): {unknown}; "
+                f"known drones: {sorted(known)}"
+            )
+        return self
+
 
 # Ground-truth manifest models.
 

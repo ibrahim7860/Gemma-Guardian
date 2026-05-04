@@ -33,13 +33,14 @@ For a 3-drone swarm, launch these processes (each in its own terminal or tmux pa
 The shipped script is [`scripts/launch_swarm.sh`](../scripts/launch_swarm.sh). It starts the full stack in a tmux session — one window per process — and writes per-process logs to `/tmp/gemma_guardian_logs/<process>.log` (override with `GG_LOG_DIR`).
 
 ```bash
-# default: 3-drone disaster_zone_v1 scenario
+# default: 3-drone disaster_zone_v1 scenario; --drones=auto derives the roster
+# from the scenario YAML's drones[].drone_id list (via sim/list_drones.py).
 scripts/launch_swarm.sh
 
-# pick a scenario
+# pick a scenario; the roster automatically follows.
 scripts/launch_swarm.sh single_drone_smoke
 
-# pick a custom drone roster (must match scenario's drone_ids)
+# pick a custom drone roster explicitly (must be a subset of scenario's drone_ids)
 scripts/launch_swarm.sh disaster_zone_v1 --drones=drone1,drone2
 
 # rehearse what would launch without actually starting tmux
@@ -71,9 +72,9 @@ No new installs required. Two edits:
 1. In `shared/config.yaml`, set `mission.drone_count: 3`.
 2. In `sim/scenarios/disaster_zone_v1.yaml`, add the third drone under `drones:` with its `home`, `waypoints`, and `speed_mps`. Then add a `frame_mappings.<drone_id>` entry mapping `tick_range`s to JPEGs under `sim/fixtures/frames/`. See `sim/scenario.py` for the Pydantic schema.
 
-Restart the swarm. The waypoint runner and frame server pick up the new drone automatically. Pass `--drones=drone1,drone2,drone3` to `scripts/launch_swarm.sh` to spawn an agent per drone (the default is already 3).
+Restart the swarm. The waypoint runner and frame server pick up the new drone automatically, and `--drones=auto` (the default) reads the new roster from the YAML. To launch a subset, pass `--drones=drone1,drone2` explicitly; the default `auto` always expands to the full scenario roster.
 
-To drop back to 2 drones for the demo, set `mission.drone_count: 2` and pass `--drones=drone1,drone2` to `launch_swarm.sh`.
+To drop back to 2 drones for the demo, edit `sim/scenarios/disaster_zone_v1.yaml` to remove the third drone, set `mission.drone_count: 2` in `shared/config.yaml`, and re-run `launch_swarm.sh` (the default `--drones=auto` picks up the new roster).
 
 ## Failure Modes
 
