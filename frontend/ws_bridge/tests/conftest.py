@@ -28,18 +28,37 @@ async def fake_client():
 
 
 @pytest_asyncio.fixture
-async def app_and_client(monkeypatch, fake_client):
-    """Construct the FastAPI app + httpx AsyncClient + ASGI WS transport
-    against the fakeredis backend, run the bridge's lifespan context, and
-    yield ``(app, http_client, fake_redis)``.
+async def app_and_redis(monkeypatch, fake_client):
+    """New-style fixture: yields ``(app, fake_redis)``. Each test constructs
+    its own ``ASGIWebSocketTransport`` + ``httpx.AsyncClient`` via
+    ``make_test_client(app)`` from ``_helpers.py``.
 
-    Yields:
-        tuple of (FastAPI app, httpx.AsyncClient, fakeredis client)
+    Replaces ``app_and_client`` (kept temporarily for migration). See
+    ``docs/superpowers/plans/2026-05-04-httpx-ws-migration.md`` for context.
+    """
+    import redis.asyncio as redis_async
+
+    monkeypatch.setattr(
+        redis_async.Redis,
+        "from_url",
+        staticmethod(lambda url, **kw: fake_client),
+    )
+
+    from frontend.ws_bridge.main import create_app
+
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        yield app, fake_client
+
+
+@pytest_asyncio.fixture
+async def app_and_client(monkeypatch, fake_client):
+    """LEGACY fixture: yields ``(app, http_client, fake_redis)``. Being
+    migrated out — see ``docs/superpowers/plans/2026-05-04-httpx-ws-migration.md``
+    and the corresponding TODOS.md entry.
 
     Teardown: ``transport.exit_stack = None`` is a documented workaround
-    for the httpx-ws<0.8 transport's circular-reference at shutdown. See
-    pyproject.toml ([project.optional-dependencies] dev) for the
-    upper-bound pin and the migration TODO.
+    for the httpx-ws<0.8 transport's circular-reference at shutdown.
     """
     import redis.asyncio as redis_async
 
