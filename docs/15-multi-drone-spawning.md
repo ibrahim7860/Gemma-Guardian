@@ -62,13 +62,42 @@ Behaviour notes worth knowing before you run it:
 
 If you prefer `honcho` or `overmind` over tmux, define a `Procfile` at the repo root mirroring the same process list. The only constraint is that each process writes its stdout/stderr to its own log file under `/tmp/gemma_guardian_logs/`.
 
+> **Bridge launch caveat.** `launch_swarm.sh` invokes the bridge as `python3 frontend/ws_bridge/main.py`, which only constructs the FastAPI app and exits — there is no embedded server. Until that line is corrected, the dashboard window in `launch_swarm.sh` produces no live state. Use `scripts/run_hybrid_demo.sh` (below) which launches the bridge correctly via `python3 -m uvicorn frontend.ws_bridge.main:app --port 9090`. Pre-existing in `launch_swarm.sh`; flagged in `sim/ROADMAP.md` follow-ups.
+
+## Hybrid Mode (real sim drone state + fake EGS/findings)
+
+[`scripts/run_hybrid_demo.sh`](../scripts/run_hybrid_demo.sh) is a parallel orchestrator for the **bridge cutover window** — the period after Hazim's sim is publishing real `drones.<id>.state` but before Qasim's EGS aligns its `zone_polygon` to the active scenario YAML and before Kaleel's drone agent publishes findings to Redis. It runs the real sim plus per-channel fake producers ([`scripts/dev_fake_producers.py --emit=<csv>`](../scripts/dev_fake_producers.py)) and the bridge:
+
+```bash
+# default: real sim state + fake egs + fake findings (one per scenario drone)
+scripts/run_hybrid_demo.sh disaster_zone_v1
+
+# once Qasim ships, drop the EGS fake at the CLI (no source edit)
+scripts/run_hybrid_demo.sh disaster_zone_v1 --no-fake-egs
+
+# once Kaleel ships, drop the per-drone findings fakes
+scripts/run_hybrid_demo.sh disaster_zone_v1 --no-fake-findings
+
+# post-migration target state — both real, no fakes
+scripts/run_hybrid_demo.sh disaster_zone_v1 --no-fake-egs --no-fake-findings
+
+# rehearse without starting tmux
+scripts/run_hybrid_demo.sh --dry-run disaster_zone_v1
+```
+
+Verification: [`scripts/check_hybrid_demo.py`](../scripts/check_hybrid_demo.py) connects to `ws://localhost:9090/`, asserts the next `state_update` envelope contains every scenario drone in `active_drones[]` and at least one entry in `active_findings[]`, exits 0 on success and 1 on deadline. See `docs/16-mocks-and-cuts.md` ("Bridge Cutover Hybrid Fakes") for the migration story.
+
 ## Stopping
 
 ```bash
+# default fieldagent tmux session
 scripts/stop_demo.sh
+
+# different tmux session by name (e.g. hybrid_demo)
+scripts/stop_demo.sh hybrid_demo
 ```
 
-The shipped script ([`scripts/stop_demo.sh`](../scripts/stop_demo.sh)) is **idempotent** — running it when nothing is up still exits 0. It kills the `fieldagent` tmux session, then sends SIGTERM to each named process by path (`sim/waypoint_runner.py`, `sim/frame_server.py`, `agents/mesh_simulator/main.py`, `agents/egs_agent/main.py`, `agents/drone_agent/main.py`, `frontend/ws_bridge/main.py`), then asks `redis-cli shutdown nosave` if any Redis is running. Each step is best-effort and tolerant of a no-op.
+[`scripts/stop_demo.sh`](../scripts/stop_demo.sh) is **idempotent** — running it when nothing is up still exits 0. It accepts an optional positional session-name argument (default `fieldagent`) and kills that tmux session, then sends SIGTERM to each named process by path (`sim/waypoint_runner.py`, `sim/frame_server.py`, `agents/mesh_simulator/main.py`, `agents/egs_agent/main.py`, `agents/drone_agent/main.py`, `frontend/ws_bridge/main.py`, `scripts/dev_fake_producers.py`), then asks `redis-cli shutdown nosave` only if its `.gg_started_redis` sentinel is present. Each step is best-effort and tolerant of a no-op.
 
 For a one-command run that launches the swarm, tails the waypoint log, and stops cleanly on Ctrl-C, use [`scripts/run_full_demo.sh`](../scripts/run_full_demo.sh) — it wraps `launch_swarm.sh` with a `trap` that calls `stop_demo.sh` on exit.
 
