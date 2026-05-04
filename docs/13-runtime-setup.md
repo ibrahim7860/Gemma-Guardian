@@ -118,35 +118,77 @@ git clone <repo-url> fieldagent
 cd fieldagent
 ```
 
-Install deps for your role (install all of them if unsure):
+### Primary path: `uv` (recommended)
+
+This repo uses [uv](https://docs.astral.sh/uv/) as the canonical Python package manager. A single `pyproject.toml` at the repo root declares every Python dependency the project needs, split into role-scoped extras (`sim`, `mesh`, `drone`, `egs`, `ws_bridge`, `ml`, `dev`). The committed `uv.lock` pins exact versions for fully reproducible installs.
+
+Install uv (one time, anywhere):
 
 ```bash
-# Core shared deps (everyone)
-pip install -r shared/requirements.txt
+# macOS / Linux / WSL2
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Sim + mesh simulator (Person 1)
-pip install -r sim/requirements.txt
-pip install -r agents/mesh_simulator/requirements.txt
+# Windows PowerShell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# Drone and EGS agents (Persons 2 & 3)
-pip install -r agents/drone_agent/requirements.txt
-
-# WebSocket bridge (Person 4)
-pip install -r frontend/ws_bridge/requirements.txt
-
-# ML fine-tuning workstream (Person 5 only, requires CUDA)
-pip install -r ml/requirements.txt
+# Alternative: pipx install uv
 ```
 
-Using a virtual environment is strongly recommended:
+Then install the slice your role needs (uv creates `.venv/` automatically):
+
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate   # macOS/Linux
-# .venv\Scripts\activate    # Windows PowerShell
-pip install -r shared/requirements.txt
+# Person 1 (Sim Lead): sim + mesh simulator
+uv sync --extra sim --extra mesh --extra dev
+
+# Person 2 (Drone Agent + ML): drone agent + ML fine-tuning
+uv sync --extra drone --extra ml --extra dev
+
+# Person 3 (EGS): EGS coordinator
+uv sync --extra egs --extra dev
+
+# Person 4 (Frontend / Bridge): FastAPI WebSocket bridge
+uv sync --extra ws_bridge --extra dev
+
+# Everyone, full graph (e2e / integration / "install all of them if unsure"):
+uv sync --all-extras
 ```
 
-**Ubuntu 24.04 / PEP 668 note:** the system Python on 24.04 is marked "externally-managed" and will refuse `pip install` with the error `error: externally-managed-environment`. Either use the venv above (preferred) or, if you genuinely want to install into the system interpreter, pass `pip install --break-system-packages -r shared/requirements.txt`. The same applies on any distro shipping pip 23.0+.
+`uv sync --frozen` is the CI mode — refuses to touch the lock and fails fast if `pyproject.toml` and `uv.lock` are out of sync. Use that whenever you want a deterministic install.
+
+Run any project command through the venv with `uv run`, e.g.:
+
+```bash
+PYTHONPATH=. uv run python -m pytest sim/
+PYTHONPATH=. uv run python sim/waypoint_runner.py --scenario disaster_zone_v1
+```
+
+Or activate the venv directly:
+
+```bash
+source .venv/bin/activate     # macOS / Linux / WSL2
+# .venv\Scripts\activate      # Windows PowerShell
+```
+
+### Fallback path: plain `pip`
+
+If you can't or don't want to install uv, you can provision a venv by hand and `pip install` the same extras out of `pyproject.toml`. Pick the slice you need:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate                  # macOS / Linux / WSL2
+# .venv\Scripts\activate                   # Windows PowerShell
+pip install --upgrade pip
+pip install -e ".[sim,mesh,dev]"           # Person 1
+pip install -e ".[drone,ml,dev]"           # Person 2
+pip install -e ".[egs,dev]"                # Person 3
+pip install -e ".[ws_bridge,dev]"          # Person 4
+# Or everything:
+pip install -e ".[sim,mesh,drone,egs,ws_bridge,ml,dev]"
+```
+
+Plain `pip` does **not** read `uv.lock`, so versions are upper-bound only. That's fine for local development; CI uses uv with `--frozen` for the deterministic build.
+
+**Ubuntu 24.04 / PEP 668 note:** the system Python on 24.04 is marked "externally-managed" and will refuse `pip install` with the error `error: externally-managed-environment`. The uv path above sidesteps this entirely (uv manages its own venv). If you're on the pip fallback, either use the venv above (preferred) or pass `pip install --break-system-packages ...`. The same applies on any distro shipping pip 23.0+.
 
 ## Smoke Test
 

@@ -18,7 +18,8 @@ Deferred work captured during planning and reviews. Each entry includes context 
   fixture pokes `transport.exit_stack = None` to break a circular ref at
   shutdown. This reaches into private API; `httpx-ws` 0.8.0 already
   changed `ASGIWebSocketTransport`'s internals (we pin `<0.8` in
-  requirements-dev.txt). Migrate to the public `aconnect_ws` lifecycle
+  `pyproject.toml`'s `[project.optional-dependencies] dev` extra).
+  Migrate to the public `aconnect_ws` lifecycle
   pattern when the public API supports our use case.
 - **Why:** The pin will rot. Future security/perf releases of httpx-ws
   will land behind 0.8, and we'll be stuck.
