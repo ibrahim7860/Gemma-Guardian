@@ -32,7 +32,7 @@ class _MapPanelState extends State<MapPanel> {
   @override
   Widget build(BuildContext context) {
     return Consumer<MissionState>(
-      builder: (_, mission, __) {
+      builder: (_, mission, _) {
         final drones = mission.activeDrones.whereType<Map<String, dynamic>>().toList();
         final findings = mission.activeFindings.whereType<Map<String, dynamic>>().toList();
         final hasData = drones.isNotEmpty || findings.isNotEmpty;
