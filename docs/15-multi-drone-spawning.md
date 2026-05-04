@@ -30,98 +30,51 @@ For a 3-drone swarm, launch these processes (each in its own terminal or tmux pa
 
 ## Launch Script
 
-`scripts/launch_swarm.sh` starts the full stack in a tmux session, one pane per process. Each process logs to `/tmp/gemma_guardian_logs/<process>.log`.
+The shipped script is [`scripts/launch_swarm.sh`](../scripts/launch_swarm.sh). It starts the full stack in a tmux session — one window per process — and writes per-process logs to `/tmp/gemma_guardian_logs/<process>.log` (override with `GG_LOG_DIR`).
 
 ```bash
-#!/bin/bash
-# scripts/launch_swarm.sh
-# Requires: tmux, redis-server on PATH, python in .venv or system
+# default: 3-drone disaster_zone_v1 scenario; --drones=auto derives the roster
+# from the scenario YAML's drones[].drone_id list (via sim/list_drones.py).
+scripts/launch_swarm.sh
 
-set -e
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOG_DIR="/tmp/gemma_guardian_logs"
-mkdir -p "$LOG_DIR"
+# pick a scenario; the roster automatically follows.
+scripts/launch_swarm.sh single_drone_smoke
 
-SCENARIO="${1:-disaster_zone_v1}"
+# pick a custom drone roster explicitly (must be a subset of scenario's drone_ids)
+scripts/launch_swarm.sh disaster_zone_v1 --drones=drone1,drone2
 
-# Start redis-server only if not already running
-if ! redis-cli ping > /dev/null 2>&1; then
-  redis-server --daemonize yes --logfile "$LOG_DIR/redis.log"
-  echo "Started redis-server"
-else
-  echo "redis-server already running — skipping"
-fi
-
-tmux new-session -d -s fieldagent -n waypoint
-tmux send-keys -t fieldagent:waypoint \
-  "cd $REPO_ROOT && python sim/waypoint_runner.py --scenario $SCENARIO 2>&1 | tee $LOG_DIR/waypoint_runner.log" Enter
-
-tmux new-window -t fieldagent -n frames
-tmux send-keys -t fieldagent:frames \
-  "cd $REPO_ROOT && python sim/frame_server.py --scenario $SCENARIO 2>&1 | tee $LOG_DIR/frame_server.log" Enter
-
-tmux new-window -t fieldagent -n egs
-tmux send-keys -t fieldagent:egs \
-  "cd $REPO_ROOT && python agents/egs_agent/main.py 2>&1 | tee $LOG_DIR/egs.log" Enter
-
-# Launch one drone agent per ID in the scenario (default: drone1, drone2, drone3)
-for ID in drone1 drone2 drone3; do
-  tmux new-window -t fieldagent -n "$ID"
-  tmux send-keys -t "fieldagent:$ID" \
-    "cd $REPO_ROOT && python agents/drone_agent/main.py --drone-id $ID 2>&1 | tee $LOG_DIR/$ID.log" Enter
-done
-
-tmux new-window -t fieldagent -n mesh
-tmux send-keys -t fieldagent:mesh \
-  "cd $REPO_ROOT && python agents/mesh_simulator/main.py 2>&1 | tee $LOG_DIR/mesh.log" Enter
-
-tmux new-window -t fieldagent -n ws_bridge
-tmux send-keys -t fieldagent:ws_bridge \
-  "cd $REPO_ROOT && python frontend/ws_bridge/main.py 2>&1 | tee $LOG_DIR/ws_bridge.log" Enter
-
-echo ""
-echo "FieldAgent swarm running in tmux session 'fieldagent'."
-echo "Attach with: tmux attach -t fieldagent"
-echo "Logs at: $LOG_DIR/"
-echo "Flutter dashboard connects to: ws://localhost:9090"
+# rehearse what would launch without actually starting tmux
+scripts/launch_swarm.sh --dry-run
 ```
+
+Behaviour notes worth knowing before you run it:
+
+- **Missing-component tolerance.** The script guards every agent invocation with `[ -f <path> ]`. Components that haven't been built yet (e.g. `agents/drone_agent/main.py` in the early sim-only phase) are logged as `[skip]` rather than failing the launch. This is what lets Person 1 run sim + mesh end-to-end before Persons 2/3/4 ship.
+- **Redis startup.** If `redis-cli ping` already responds, the script reuses the running broker. Otherwise it daemonizes its own `redis-server` and logs to `$LOG_DIR/redis.log`.
+- **`--dry-run` and `GG_NO_TMUX=1`.** Both modes print `[plan] tmux:<window> :: <command>` lines instead of executing. Useful for CI verification — see `scripts/tests/test_launch_scripts.py`.
 
 If you prefer `honcho` or `overmind` over tmux, define a `Procfile` at the repo root mirroring the same process list. The only constraint is that each process writes its stdout/stderr to its own log file under `/tmp/gemma_guardian_logs/`.
 
 ## Stopping
 
 ```bash
-# scripts/stop_demo.sh
-#!/bin/bash
-tmux kill-session -t fieldagent 2>/dev/null || true
-
-# Kill any stray processes by name
-pkill -f "waypoint_runner.py" || true
-pkill -f "frame_server.py"    || true
-pkill -f "egs_agent/main.py"  || true
-pkill -f "drone_agent/main.py" || true
-pkill -f "mesh_simulator"     || true
-pkill -f "ws_bridge/main.py"  || true
-
-# Only stop redis-server if we started it (don't kill a system service)
-# Check whether it was launched by our user's daemonize call above:
-if redis-cli config get daemonize 2>/dev/null | grep -q yes; then
-  redis-cli shutdown nosave 2>/dev/null || true
-fi
-
-echo "FieldAgent stopped."
+scripts/stop_demo.sh
 ```
+
+The shipped script ([`scripts/stop_demo.sh`](../scripts/stop_demo.sh)) is **idempotent** — running it when nothing is up still exits 0. It kills the `fieldagent` tmux session, then sends SIGTERM to each named process by path (`sim/waypoint_runner.py`, `sim/frame_server.py`, `agents/mesh_simulator/main.py`, `agents/egs_agent/main.py`, `agents/drone_agent/main.py`, `frontend/ws_bridge/main.py`), then asks `redis-cli shutdown nosave` if any Redis is running. Each step is best-effort and tolerant of a no-op.
+
+For a one-command run that launches the swarm, tails the waypoint log, and stops cleanly on Ctrl-C, use [`scripts/run_full_demo.sh`](../scripts/run_full_demo.sh) — it wraps `launch_swarm.sh` with a `trap` that calls `stop_demo.sh` on exit.
 
 ## Scaling 2 to 3 Drones
 
 No new installs required. Two edits:
 
 1. In `shared/config.yaml`, set `mission.drone_count: 3`.
-2. In `sim/scenarios/disaster_zone_v1.yaml`, add the third drone's `home_position`, `waypoint_track`, and `frames` entries.
+2. In `sim/scenarios/disaster_zone_v1.yaml`, add the third drone under `drones:` with its `home`, `waypoints`, and `speed_mps`. Then add a `frame_mappings.<drone_id>` entry mapping `tick_range`s to JPEGs under `sim/fixtures/frames/`. See `sim/scenario.py` for the Pydantic schema.
 
-Restart the swarm. The waypoint runner and frame server auto-read `drone_count` from the scenario file; the extra `agents/drone_agent/main.py --drone-id drone3` process in the launch script is already present.
+Restart the swarm. The waypoint runner and frame server pick up the new drone automatically, and `--drones=auto` (the default) reads the new roster from the YAML. To launch a subset, pass `--drones=drone1,drone2` explicitly; the default `auto` always expands to the full scenario roster.
 
-To drop back to 2 drones for the demo, set `mission.drone_count: 2` and remove or comment out the `drone3` pane from the launch script.
+To drop back to 2 drones for the demo, edit `sim/scenarios/disaster_zone_v1.yaml` to remove the third drone, set `mission.drone_count: 2` in `shared/config.yaml`, and re-run `launch_swarm.sh` (the default `--drones=auto` picks up the new roster).
 
 ## Failure Modes
 

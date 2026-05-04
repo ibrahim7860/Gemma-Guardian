@@ -6,7 +6,7 @@ and renders a live operator surface for the FieldAgent multi-drone simulation.
 ## Prerequisites
 
 - Flutter SDK (Dart 3.11+)
-- Python 3.11+ with deps from `frontend/ws_bridge/requirements.txt`
+- Python 3.11+ with bridge deps installed (`uv sync --extra ws_bridge --extra dev`)
 - `redis-server` running locally (`brew services start redis` or `sudo systemctl start redis`)
 
 ## Run the full stack (one command)

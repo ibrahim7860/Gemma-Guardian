@@ -1,0 +1,22 @@
+# Single-drone smoke scenario — used by `pytest` and CI to exercise the
+# sim end-to-end without spinning up the multi-drone tmux dance. Two short
+# waypoints, no scripted failures.
+scenario_id: single_drone_smoke
+origin: {lat: 34.0000, lon: -118.5000}
+area_m: 200
+
+drones:
+  - drone_id: drone1
+    home: {lat: 34.0001, lon: -118.5001, alt: 0}
+    waypoints:
+      - {id: sp_001, lat: 34.0002, lon: -118.5002, alt: 25}
+      - {id: sp_002, lat: 34.0003, lon: -118.5002, alt: 25}
+    speed_mps: 5
+
+frame_mappings:
+  drone1:
+    - {tick_range: [0, 30],  frame_file: placeholder_intact_01.jpg}
+    - {tick_range: [31, 60], frame_file: placeholder_victim_01.jpg}
+
+scripted_events:
+  - {t: 60, type: mission_complete}

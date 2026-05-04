@@ -1,0 +1,26 @@
+{
+  "scenario_id": "disaster_zone_v1",
+  "extents": {
+    "lat_min": 33.9990,
+    "lat_max": 34.0010,
+    "lon_min": -118.5010,
+    "lon_max": -118.4990
+  },
+  "victims": [
+    {"id": "v01", "lat": 34.0006, "lon": -118.5004, "frame_file": "placeholder_victim_01.jpg", "in_or_near": "block_a"}
+  ],
+  "fires": [
+    {"id": "f01", "lat": 34.0004, "lon": -118.4992, "frame_file": "placeholder_fire_01.jpg", "intensity": "medium"},
+    {"id": "f02", "lat": 34.0006, "lon": -118.4994, "frame_file": "placeholder_smoke_01.jpg", "intensity": "low"}
+  ],
+  "damaged_structures": [
+    {"id": "ds_a2", "lat": 34.0004, "lon": -118.5002, "frame_file": "placeholder_block_a_02.jpg", "damage_level": "major_damage"}
+  ],
+  "blocked_routes": [
+    {"id": "br01", "lat": 34.0008, "lon": -118.4995, "frame_file": "placeholder_debris_01.jpg", "blockage_type": "debris"}
+  ],
+  "scripted_events": [
+    {"t": 45,  "type": "drone_failure",  "drone_id": "drone1"},
+    {"t": 60,  "type": "fire_spread",    "new_polygon": [[34.0005, -118.5005], [34.0008, -118.5005], [34.0008, -118.5001], [34.0005, -118.5001]]}
+  ]
+}

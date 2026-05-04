@@ -1,0 +1,91 @@
+[project]
+name = "gemma-guardian"
+version = "0.1.0"
+description = "Gemma-Guardian / FieldAgent — multi-drone disaster-response demo powered by on-device Gemma 4."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "FieldAgent team" }]
+
+# Shared / "everyone" runtime deps. Always installed by `uv sync`, regardless of which
+# role-extra you select. Mirrors what shared/contracts/ and shared/schemas/ need to import.
+dependencies = [
+    "jsonschema>=4.18",
+    "referencing>=0.30",
+    "pydantic>=2.5",
+    "PyYAML>=6.0",
+    "redis>=5.0",
+]
+
+# Role-scoped extras. `uv sync --extra <role>` installs exactly that slice on top of the
+# shared deps above. Use `--extra dev` (or combine: `--extra sim --extra dev`) to add the
+# pytest stack. `uv sync --all-extras` resolves everything for full e2e work.
+[project.optional-dependencies]
+# Person 1: simulation lead — waypoint runner, frame server, scenarios.
+sim = [
+    "Pillow>=10.0",
+    "fakeredis>=2.20",
+    "freezegun>=1.4",
+]
+# Person 1: mesh simulator (Redis-side range-dropout filter on swarm.* channels).
+mesh = [
+    "fakeredis>=2.20",
+]
+# Person 2: per-drone LangGraph agent (vision + reasoning over Gemma 4 E2B via Ollama).
+drone = [
+    "httpx>=0.27",
+    "opencv-python>=4.9",
+    "numpy>=1.26",
+]
+# Person 3: EGS coordinator (LangGraph + Gemma 4 E4B via Ollama).
+egs = [
+    "httpx>=0.27",
+]
+# Person 4: FastAPI WebSocket bridge that mirrors selected Redis channels to Flutter.
+ws_bridge = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "websockets>=12.0",
+    "fakeredis>=2.20",
+    "httpx>=0.27",
+]
+# Person 2: ML / fine-tuning workstream. Linux + NVIDIA only — Apple Silicon is not
+# viable for the fine-tune itself (see docs/12-fine-tuning-plan.md). We mark the
+# Linux-only deps so the lock resolves on macOS / Windows for everyone else.
+ml = [
+    "unsloth>=2025.1.0; sys_platform == 'linux'",
+    "torch>=2.4",
+    "transformers>=4.46",
+    "trl>=0.12",
+    "peft>=0.13",
+    "accelerate>=1.0",
+    "bitsandbytes>=0.44; sys_platform == 'linux'",
+    "datasets>=3.0",
+    "Pillow>=10.0",
+    "opencv-python>=4.9",
+    "shapely>=2.0",
+    "tqdm>=4.66",
+    "numpy>=1.26",
+    "httpx>=0.27",
+]
+# Test harness — pytest stack used across every role.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.3",
+    "pytest-playwright>=0.5",
+    # httpx-ws 0.8 requires entering ASGIWebSocketTransport as an async
+    # context manager so transport._task_group is initialised before
+    # aconnect_ws calls into it. The shared fixture in
+    # frontend/ws_bridge/tests/conftest.py does this.
+    #
+    # Upper bound on 0.9: this library has shipped breaking API changes
+    # in two minor releases (0.7→0.8 broke aconnect_ws). Pin to the
+    # current minor and re-evaluate when 0.9.x is available.
+    "httpx-ws>=0.8,<0.9",
+]
+
+# uv project mode: this repo is a meta-project (its source is imported via
+# PYTHONPATH=. at runtime, not pip-installed), so don't try to build/install it.
+[tool.uv]
+package = false

@@ -1,0 +1,55 @@
+# Demo scenario v1 — 3 drones, 200m × 200m grid in LA wildfire narrative.
+# Format documented in docs/14-disaster-scene-design.md (lines 30–68).
+# Frame files reference placeholders under sim/fixtures/frames/. Person 5
+# replaces the file contents with real xBD imagery on Days 3–5; this YAML
+# stays unchanged.
+scenario_id: disaster_zone_v1
+origin: {lat: 34.0000, lon: -118.5000}
+area_m: 200
+
+drones:
+  - drone_id: drone1
+    home: {lat: 34.0001, lon: -118.5001, alt: 0}
+    waypoints:
+      - {id: sp_001, lat: 34.0002, lon: -118.5002, alt: 25}
+      - {id: sp_002, lat: 34.0004, lon: -118.5002, alt: 25}
+      - {id: sp_003, lat: 34.0006, lon: -118.5004, alt: 25}
+      - {id: sp_004, lat: 34.0008, lon: -118.5004, alt: 25}
+    speed_mps: 5
+
+  - drone_id: drone2
+    home: {lat: 34.0001, lon: -118.4990, alt: 0}
+    waypoints:
+      - {id: sp_010, lat: 34.0002, lon: -118.4991, alt: 25}
+      - {id: sp_011, lat: 34.0004, lon: -118.4992, alt: 25}
+      - {id: sp_012, lat: 34.0006, lon: -118.4994, alt: 25}
+    speed_mps: 5
+
+  - drone_id: drone3
+    home: {lat: 34.0009, lon: -118.5001, alt: 0}
+    waypoints:
+      - {id: sp_020, lat: 34.0008, lon: -118.4995, alt: 25}
+      - {id: sp_021, lat: 34.0006, lon: -118.4997, alt: 25}
+      - {id: sp_022, lat: 34.0004, lon: -118.4999, alt: 25}
+    speed_mps: 5
+
+frame_mappings:
+  drone1:
+    - {tick_range: [0, 30],   frame_file: placeholder_block_a_01.jpg}
+    - {tick_range: [31, 60],  frame_file: placeholder_block_a_02.jpg}
+    - {tick_range: [61, 90],  frame_file: placeholder_victim_01.jpg}
+    - {tick_range: [91, 240], frame_file: placeholder_intact_01.jpg}
+  drone2:
+    - {tick_range: [0, 60],   frame_file: placeholder_block_b_01.jpg}
+    - {tick_range: [61, 120], frame_file: placeholder_fire_01.jpg}
+    - {tick_range: [121, 240], frame_file: placeholder_smoke_01.jpg}
+  drone3:
+    - {tick_range: [0, 90],   frame_file: placeholder_debris_01.jpg}
+    - {tick_range: [91, 240], frame_file: placeholder_intact_01.jpg}
+
+scripted_events:
+  - {t: 45,  type: drone_failure, drone_id: drone1, detail: battery_depleted}
+  - {t: 60,  type: zone_update,   detail: fire_spread_polygon_expands}
+  - {t: 120, type: egs_link_drop, detail: severed_link_resilience_demo}
+  - {t: 150, type: egs_link_restore, detail: link_recovers}
+  - {t: 240, type: mission_complete}
