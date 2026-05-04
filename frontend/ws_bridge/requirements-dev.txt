@@ -1,15 +1,15 @@
-# Phase 4 bridge test harness: httpx.AsyncClient + pytest_asyncio + httpx-ws
+# Phase 4 bridge test harness: httpx.AsyncClient + pytest_asyncio + httpx-ws.
 # (TestClient + asyncio.new_event_loop binds fakeredis to the wrong loop;
-# see plan section "Test harness convention for Tasks 7-10").
+# see plan section "Test harness convention for Tasks 7-10".)
 #
-# Upper-bound pin on httpx-ws: 0.8.0 introduced an API change to
-# ASGIWebSocketTransport (aconnect_ws now reads transport._task_group,
-# which is only set when the transport is entered as an async context
-# manager — our fixtures construct it directly). 0.7.2 is the version
-# we developed against. Re-evaluate this pin when migrating the test
-# harness off the private API (see TODOS.md "Extract bridge WS test
-# helpers to conftest.py").
-httpx-ws>=0.7.0,<0.8
+# httpx-ws 0.8 requires entering ASGIWebSocketTransport as an async context
+# manager so ``transport._task_group`` is initialised before ``aconnect_ws``
+# calls into it. The shared fixture in tests/conftest.py does this.
+#
+# Upper bound on 0.9: this library has shipped breaking API changes in two
+# minor releases (0.7→0.8 broke aconnect_ws). Pin to the current minor and
+# re-evaluate when 0.9.x is available.
+httpx-ws>=0.8,<0.9
 
 # Hang protection: pytest.ini sets timeout = 30 (eng-review 4A). Without
 # this dep, the timeout setting is silently ignored.
