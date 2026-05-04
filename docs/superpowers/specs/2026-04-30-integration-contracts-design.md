@@ -1,7 +1,7 @@
 # Integration Contracts — Design Spec (v1.0.0)
 
 **Date:** 2026-04-30
-**Owner:** Project lead (Ibrahim) — Person 4 also consumes; Persons 1/2/3 produce.
+**Owner:** The Elevator Watcher (Ibrahim) — Person 4 also consumes; Persons 1/2/3 produce.
 **Source docs:** [`docs/20-integration-contracts.md`](../../20-integration-contracts.md), [`docs/09-function-calling-schema.md`](../../09-function-calling-schema.md), [`docs/10-validation-and-retry-loop.md`](../../10-validation-and-retry-loop.md)
 
 ## Goal

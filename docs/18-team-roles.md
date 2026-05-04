@@ -11,7 +11,7 @@ Five people working in parallel only succeeds if each owns a vertical slice with
 | Person 1 | Simulation Lead | `sim/waypoint_runner.py`, `sim/frame_server.py`, `sim/scenarios/*.yaml`, `agents/mesh_simulator/main.py`, Redis infra, launch scripts | Gate trajectory call at standup, integration testing leadership |
 | Person 2 | Per-Drone Agent + ML | Drone LangGraph agent, function calling, validation loop, **xBD fine-tuning, vision prompts, adapter integration** | Prompt iteration across the full drone-side stack |
 | Person 3 | EGS / Coordination | EGS LangGraph, swarm allocation, multilingual command path | Scripting resilience scenarios |
-| Person 4 | Project Lead + Frontend + Demo + Comms (**Ibrahim**) | Flutter dashboard, FastAPI WebSocket bridge, demo capture, **video editing, technical writeup, README**, **overall project management** | Map view, multilingual UI, demo storyline, scope-cut arbitration |
+| Person 4 | The Elevator Watcher + Frontend + Demo + Comms (**Ibrahim**) | Flutter dashboard, FastAPI WebSocket bridge, demo capture, **video editing, technical writeup, README**, **overall project management** | Map view, multilingual UI, demo storyline, scope-cut arbitration |
 | Person 5 | Simulation Co-Pilot (paired with Person 1) | Disaster scene frame library curation, ground-truth manifest, scenario YAML authoring, launch scripts — every sim/infra task that can be parallelized | All integration-testing prep work for Person 1 |
 
 ## Person 1: Simulation Lead
@@ -157,7 +157,7 @@ Format per person:
 - What I'm shipping today
 - What's blocking me / what I need from someone
 
-Standup ends with Person 1 (Simulation Lead) reporting gate trajectory ("We're on track for Gate N at Day X") and Person 4 (Project Lead, Ibrahim) confirming or calling for descope. Person 1 also confirms Redis + sim processes are stable before declaring the day green.
+Standup ends with Person 1 (Simulation Lead) reporting gate trajectory ("We're on track for Gate N at Day X") and Person 4 (The Elevator Watcher, Ibrahim) confirming or calling for descope. Person 1 also confirms Redis + sim processes are stable before declaring the day green.
 
 ### Twice-Weekly Integration Sessions (90 minutes)
 
@@ -197,8 +197,8 @@ This catches integration issues early and builds the team's demo muscle memory.
 | Changes to shared schemas | Team consensus, requires PR review |
 | Scope cuts | Team vote at gate evaluations |
 | Demo storyline | Person 4 proposes, team approves |
-| Scope cuts (final call after team vote) | Person 4 (Project Lead, Ibrahim) |
-| Submission timing | Person 4 (Project Lead, Ibrahim) calls it (Day 18 by default), with Person 1 confirming sim-stack readiness |
+| Scope cuts (final call after team vote) | Person 4 (The Elevator Watcher, Ibrahim) |
+| Submission timing | Person 4 (The Elevator Watcher, Ibrahim) calls it (Day 18 by default), with Person 1 confirming sim-stack readiness |
 
 ## What If Someone Falls Behind
 

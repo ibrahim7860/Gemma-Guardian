@@ -129,6 +129,6 @@ If you are an AI assistant being asked to work on this repo:
 
 ## Contact / Owner
 
-Project lead: Ibrahim
+The Elevator Watcher: Ibrahim
 Hackathon: Gemma 4 Good Hackathon (Kaggle × Google DeepMind)
 Submission deadline: May 18, 2026, 23:59 UTC
