@@ -22,6 +22,12 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 - `.github/workflows/test.yml` — migrated to `astral-sh/setup-uv@v3` + `uv sync --frozen`; new `sim_mesh` CI job covers `pytest sim/ agents/mesh_simulator/ scripts/tests/`. `bridge`, `flutter`, `bridge_e2e` jobs intact.
 - Docs updated for the uv switch: `docs/13-runtime-setup.md` (uv primary, pip fallback), `docs/23-submission-checklist.md`, `frontend/flutter_dashboard/README.md`, `scripts/launch_dashboard_dev.sh`, `scripts/run_dashboard_dev.sh`, `frontend/ws_bridge/tests/conftest.py`, `TODOS.md`, and the entry-point `CLAUDE.md` so other collaborators' Claude Code picks up the change.
 
+## Done (shipped on `feature/sim-live-run-followups`)
+
+- `launch_swarm.sh` writes a `$LOG_DIR/.gg_started_redis` sentinel only when it daemonizes its own Redis; `stop_demo.sh` only `redis-cli shutdown nosave`s when that sentinel exists, then removes it. Fixes anomaly #3 from `docs/sim-live-run-notes.md` — system-managed Redis is no longer interrupted by `stop_demo.sh` (slice A).
+- `scripts/run_full_demo.sh` `--duration=N` forwarding documented in the script header and in `docs/15-multi-drone-spawning.md`, with a regression test that pins the propagation through to the sim runners (slice B).
+- `scripts/launch_swarm.sh --drones=<csv>` validates every requested id is in the scenario YAML (via `sim/list_drones.py`); unknown ids exit non-zero with the offending id and the scenario's available roster, instead of silently launching a ghost drone agent (slice C).
+
 ## Done (shipped on `feature/sim-polish`)
 
 - `--redis-url` default on `waypoint_runner` / `frame_server` / `mesh_simulator` derived from `CONFIG.transport.redis_url` (slice A).
@@ -86,4 +92,4 @@ items here as they surface during integration sessions or live-run fallout.
 ### Follow-ups surfaced by the live run (low priority, out of Person 1 scope)
 
 - `agents/drone_agent/main.py` ImportError on relative imports when run as a script (`python3 agents/drone_agent/main.py`). Ping Person 2.
-- `scripts/stop_demo.sh` shuts down Redis even when it didn't start it, which interrupts long-lived system-managed Redis. Worth a follow-up to only shut down what we daemonized.
+- ~~`scripts/stop_demo.sh` shuts down Redis even when it didn't start it.~~ Shipped on `feature/sim-live-run-followups`, slice A.

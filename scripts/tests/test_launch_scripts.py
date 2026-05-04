@@ -7,10 +7,17 @@ multiple agent processes. We do verify:
 - ``stop_demo.sh`` is idempotent (re-runs cleanly when nothing is running)
 - ``launch_swarm.sh --dry-run`` prints the planned tmux invocations
 - ``launch_swarm.sh --dry-run`` skips agents/services that aren't built yet
+- ``launch_swarm.sh`` writes a ``.gg_started_redis`` sentinel only when it
+  daemonized its own Redis, so ``stop_demo.sh`` can avoid clobbering a
+  long-lived system Redis it didn't start.
+- ``--drones=<csv>`` rejects ids not in the scenario YAML rather than
+  silently launching ghost agents.
 """
 from __future__ import annotations
 
 import os
+import signal
+import stat
 import subprocess
 from pathlib import Path
 
@@ -129,6 +136,39 @@ def test_launch_swarm_explicit_drones_override_disables_auto():
     assert "--drone-id drone3" not in result.stdout
 
 
+def test_launch_swarm_explicit_drones_unknown_id_is_rejected():
+    """``--drones=drone7`` against disaster_zone_v1 (drones 1-3) must fail
+    fast with a clear error rather than launching a ghost agent for an id
+    the scenario never declared."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "disaster_zone_v1", "--drones=drone7", "--dry-run"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode != 0, (
+        f"expected non-zero exit; stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "drone7" in combined, f"error should mention the offending id; got: {combined!r}"
+    # No agent should have been planned for drone7.
+    assert "--drone-id drone7" not in result.stdout
+
+
+def test_launch_swarm_explicit_drones_partially_valid_is_rejected():
+    """A mix of one valid and one unknown id is still a hard failure — silent
+    truncation would be worse than a loud rejection."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "disaster_zone_v1", "--drones=drone1,droneX", "--dry-run"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "droneX" in combined
+
+
 def test_launch_swarm_duration_propagates_to_runners():
     """``launch_swarm.sh --duration=30`` should pass --duration through to
     sim/waypoint_runner.py and sim/frame_server.py (the only processes that
@@ -172,3 +212,172 @@ def test_launch_swarm_default_no_duration_flag_anywhere():
     )
     assert result.returncode == 0
     assert "--duration" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Redis-ownership sentinel
+#
+# Live-run anomaly #3 (docs/sim-live-run-notes.md): stop_demo.sh would happily
+# `redis-cli shutdown nosave` a system-managed Redis it never started, leaving
+# Person 1's WSL2 box without a broker until the service was kicked. The fix
+# is to record ownership at launch time and only shut down what we daemonized.
+# ---------------------------------------------------------------------------
+
+
+def _make_stub(path: Path, body: str) -> Path:
+    """Write an executable bash stub at ``path`` whose body is ``body``."""
+    path.write_text("#!/bin/bash\n" + body)
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return path
+
+
+def _isolated_path_env(fake_bin: Path, log_dir: Path, **extra: str) -> dict[str, str]:
+    """Build an env dict with ``fake_bin`` first on PATH so our stubs win
+    over real ``redis-cli`` / ``redis-server`` if they're installed."""
+    env = {**os.environ, "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+           "GG_LOG_DIR": str(log_dir)}
+    env.update(extra)
+    return env
+
+
+def test_launch_swarm_writes_redis_sentinel_when_it_daemonized_redis(tmp_path):
+    """No Redis running → launch_swarm starts one and leaves a sentinel."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    # redis-cli ping fails (no broker yet), other subcommands no-op.
+    _make_stub(
+        fake_bin / "redis-cli",
+        'if [ "$1" = "ping" ]; then exit 1; fi\nexit 0\n',
+    )
+    # redis-server "starts" silently — we never actually daemonize anything.
+    _make_stub(fake_bin / "redis-server", "exit 0\n")
+
+    env = _isolated_path_env(fake_bin, log_dir, GG_NO_TMUX="1")
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "launch_swarm.sh"), "--drones=drone1"],
+        capture_output=True, text=True, timeout=20, env=env,
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert (log_dir / ".gg_started_redis").exists(), (
+        "expected sentinel after launch daemonized its own Redis; "
+        f"log_dir contents = {list(log_dir.iterdir())}"
+    )
+
+
+def test_launch_swarm_no_sentinel_when_redis_already_running(tmp_path):
+    """Existing Redis → launch_swarm reuses it and writes no sentinel."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    # redis-cli ping succeeds → reuse path.
+    _make_stub(fake_bin / "redis-cli", "exit 0\n")
+    # redis-server present but should not be invoked.
+    _make_stub(fake_bin / "redis-server", "exit 0\n")
+
+    env = _isolated_path_env(fake_bin, log_dir, GG_NO_TMUX="1")
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "launch_swarm.sh"), "--drones=drone1"],
+        capture_output=True, text=True, timeout=20, env=env,
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert not (log_dir / ".gg_started_redis").exists(), (
+        "expected NO sentinel when Redis was already running"
+    )
+
+
+def test_stop_demo_shuts_down_redis_when_sentinel_present(tmp_path):
+    """Sentinel says we own this Redis → stop_demo issues `shutdown nosave`
+    and cleans up the sentinel afterwards."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    sentinel = log_dir / ".gg_started_redis"
+    sentinel.write_text("")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    cli_calls = tmp_path / "redis_cli_calls.log"
+    _make_stub(
+        fake_bin / "redis-cli",
+        f'echo "$@" >> "{cli_calls}"\nexit 0\n',
+    )
+
+    env = _isolated_path_env(fake_bin, log_dir)
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "stop_demo.sh")],
+        capture_output=True, text=True, timeout=20, env=env,
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    calls = cli_calls.read_text() if cli_calls.exists() else ""
+    assert "shutdown nosave" in calls, (
+        f"expected redis-cli shutdown nosave to be called; saw: {calls!r}"
+    )
+    assert not sentinel.exists(), "sentinel must be removed once we shut Redis down"
+
+
+def test_stop_demo_leaves_redis_alone_when_sentinel_absent(tmp_path):
+    """No sentinel → Redis is someone else's responsibility, leave it running."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    cli_calls = tmp_path / "redis_cli_calls.log"
+    _make_stub(
+        fake_bin / "redis-cli",
+        f'echo "$@" >> "{cli_calls}"\nexit 0\n',
+    )
+
+    env = _isolated_path_env(fake_bin, log_dir)
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "stop_demo.sh")],
+        capture_output=True, text=True, timeout=20, env=env,
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    calls = cli_calls.read_text() if cli_calls.exists() else ""
+    assert "shutdown" not in calls, (
+        f"redis-cli shutdown should NOT have been called; saw: {calls!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# run_full_demo.sh argument forwarding
+# ---------------------------------------------------------------------------
+
+
+def test_run_full_demo_forwards_duration_to_launch_swarm(tmp_path):
+    """``run_full_demo.sh --duration=N --dry-run`` should hand the flag through
+    to ``launch_swarm.sh`` so it lands on the sim runner invocations.
+
+    run_full_demo.sh wraps launch_swarm with a trailing ``tail -F``, which
+    runs forever even after a successful --dry-run. We start the script in
+    its own process group, capture launch_swarm's plan output, then SIGTERM
+    the whole group to take down ``tail -F`` and any trap-spawned children.
+    """
+    script = SCRIPTS_DIR / "run_full_demo.sh"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    proc = subprocess.Popen(
+        ["bash", str(script), "--duration=42", "--dry-run"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env={**os.environ, "GG_NO_TMUX": "1", "GG_LOG_DIR": str(log_dir)},
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            out, err = proc.communicate(timeout=5)
+    combined = out + err
+    waypoint_lines = [ln for ln in combined.splitlines() if "waypoint_runner.py" in ln]
+    assert any("--duration 42" in ln for ln in waypoint_lines), (
+        f"expected --duration 42 forwarded to waypoint_runner; saw:\n{combined}"
+    )
+    frames_lines = [ln for ln in combined.splitlines() if "frame_server.py" in ln]
+    assert any("--duration 42" in ln for ln in frames_lines), (
+        f"expected --duration 42 forwarded to frame_server; saw:\n{combined}"
+    )

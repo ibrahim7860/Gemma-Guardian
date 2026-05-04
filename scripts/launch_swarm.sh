@@ -58,6 +58,27 @@ if [ "$DRONES" = "auto" ]; then
     echo "[error] failed to derive drone roster from scenario '$SCENARIO'" >&2
     exit 1
   fi
+else
+  # Explicit subset: every requested id must be declared in the scenario YAML.
+  # Catching this here is cheap and prevents launching a ghost drone agent
+  # whose --drone-id isn't actually in the sim's publish set, which would
+  # otherwise look like the agent is silently broken.
+  if ! SCENARIO_DRONES="$(PYTHONPATH="$REPO_ROOT" python3 "$REPO_ROOT/sim/list_drones.py" "$SCENARIO")"; then
+    echo "[error] failed to read scenario '$SCENARIO' for --drones validation" >&2
+    exit 1
+  fi
+  IFS=',' read -ra _REQUESTED <<< "$DRONES"
+  IFS=',' read -ra _AVAILABLE <<< "$SCENARIO_DRONES"
+  for _r in "${_REQUESTED[@]}"; do
+    _found=0
+    for _a in "${_AVAILABLE[@]}"; do
+      if [ "$_r" = "$_a" ]; then _found=1; break; fi
+    done
+    if [ "$_found" -eq 0 ]; then
+      echo "[error] requested drone '$_r' is not in scenario '$SCENARIO' (available: $SCENARIO_DRONES)" >&2
+      exit 2
+    fi
+  done
 fi
 
 # Helper: in dry-run, just print the command. Else, send-keys into tmux.
@@ -82,13 +103,21 @@ emit_if_exists() {
 mkdir -p "$LOG_DIR"
 
 # --- Redis -------------------------------------------------------------------
-if [ "$DRY_RUN" -eq 1 ] || [ "${GG_NO_TMUX:-0}" = "1" ]; then
+# Ownership sentinel: we only `redis-cli shutdown nosave` (in stop_demo.sh) the
+# brokers we daemonized ourselves. Writing $LOG_DIR/.gg_started_redis here
+# tells stop_demo.sh "this one is safe to take down". When Redis was already
+# running (e.g. system-managed via `service redis-server start`), the sentinel
+# is *not* written, so stop_demo.sh leaves the broker alone.
+SENTINEL="$LOG_DIR/.gg_started_redis"
+if [ "$DRY_RUN" -eq 1 ]; then
   echo "[plan] redis-server (or skip if already running)"
 else
   if command -v redis-cli >/dev/null 2>&1 && redis-cli ping >/dev/null 2>&1; then
-    echo "[ok] redis-server already running"
+    echo "[ok] redis-server already running (will not be stopped by stop_demo.sh)"
+    rm -f "$SENTINEL"
   elif command -v redis-server >/dev/null 2>&1; then
     redis-server --daemonize yes --logfile "$LOG_DIR/redis.log"
+    : > "$SENTINEL"
     echo "[ok] redis-server started, log: $LOG_DIR/redis.log"
   else
     echo "[error] redis-server not found on PATH" >&2
