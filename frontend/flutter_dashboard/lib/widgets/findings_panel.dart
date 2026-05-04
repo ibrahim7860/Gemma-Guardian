@@ -79,8 +79,13 @@ class _FindingTile extends StatelessWidget {
         ? const TextStyle(decoration: TextDecoration.lineThrough)
         : null;
 
+    final isSelected = mission.selectedFindingId == id;
     return Container(
+      key: isSelected
+          ? ValueKey('findings-row-highlight-$id')
+          : null,
       decoration: BoxDecoration(
+        color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
         border: Border(left: BorderSide(color: borderColor, width: 4)),
       ),
       child: Opacity(
