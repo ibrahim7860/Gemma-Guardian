@@ -31,6 +31,7 @@ SCRIPTS = [
     SCRIPTS_DIR / "stop_demo.sh",
     SCRIPTS_DIR / "run_full_demo.sh",
     SCRIPTS_DIR / "run_resilience_scenario.sh",
+    SCRIPTS_DIR / "run_hybrid_demo.sh",
 ]
 
 
@@ -453,4 +454,94 @@ def test_run_full_demo_forwards_duration_to_launch_swarm(tmp_path):
     frames_lines = [ln for ln in combined.splitlines() if "frame_server.py" in ln]
     assert any("--duration 42" in ln for ln in frames_lines), (
         f"expected --duration 42 forwarded to frame_server; saw:\n{combined}"
+    )
+
+
+def _hybrid_dry_run(*flags: str) -> str:
+    """Run scripts/run_hybrid_demo.sh --dry-run disaster_zone_v1 [flags...]
+    with GG_NO_TMUX=1, assert exit 0, and return stdout.
+
+    Centralizes the subprocess boilerplate so the per-test bodies focus on
+    the assertions specific to their flag combination.
+    """
+    script = SCRIPTS_DIR / "run_hybrid_demo.sh"
+    args = ["bash", str(script), "--dry-run", "disaster_zone_v1", *flags]
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, (
+        f"dry-run failed (flags={flags!r}): stderr={result.stderr}"
+    )
+    return result.stdout
+
+
+def test_run_hybrid_demo_dry_run_default_includes_fakes_and_sim():
+    """Default hybrid mode: real sim windows + 1 fake egs + N fake findings."""
+    out = _hybrid_dry_run()
+    # Real sim owns drone state.
+    assert "waypoint_runner.py" in out
+    assert "frame_server.py" in out
+    # Default fakes.
+    assert "tmux:egs_fake" in out
+    assert "--emit=egs" in out
+    # disaster_zone_v1 declares drone1, drone2, drone3.
+    for did in ("drone1", "drone2", "drone3"):
+        assert f"tmux:findings_{did}" in out, f"missing findings window for {did}"
+        assert f"--drone-id {did}" in out
+    # Bridge — must be launched via uvicorn (bare `python main.py` exits).
+    assert "uvicorn frontend.ws_bridge.main:app" in out
+
+
+def test_run_hybrid_demo_dry_run_no_fake_egs_skips_egs_window():
+    out = _hybrid_dry_run("--no-fake-egs")
+    assert "tmux:egs_fake" not in out
+    assert "[skip] egs_fake" in out
+    # Findings still on by default.
+    assert "tmux:findings_drone1" in out
+
+
+def test_run_hybrid_demo_dry_run_no_fake_findings_skips_all_findings_windows():
+    out = _hybrid_dry_run("--no-fake-findings")
+    for did in ("drone1", "drone2", "drone3"):
+        assert f"tmux:findings_{did}" not in out, f"unexpected findings window for {did}"
+    assert "[skip] findings_*" in out
+    # EGS still on by default.
+    assert "tmux:egs_fake" in out
+
+
+def test_run_hybrid_demo_dry_run_no_fakes_at_all_is_post_migration_state():
+    """Both opt-outs together: only sim runners + bridge. This is the target
+    state once Qasim's EGS and Kaleel's drone agent both publish to Redis."""
+    out = _hybrid_dry_run("--no-fake-egs", "--no-fake-findings")
+    # Real sim still on.
+    assert "waypoint_runner.py" in out
+    assert "frame_server.py" in out
+    # Bridge still on (via uvicorn).
+    assert "uvicorn frontend.ws_bridge.main:app" in out
+    # No fakes anywhere.
+    assert "tmux:egs_fake" not in out
+    for did in ("drone1", "drone2", "drone3"):
+        assert f"tmux:findings_{did}" not in out
+    # Both skip echoes present.
+    assert "[skip] egs_fake" in out
+    assert "[skip] findings_*" in out
+
+
+def test_disaster_zone_v1_roster_matches_hybrid_test_assumptions():
+    """The hybrid dry-run tests above hardcode drone1/drone2/drone3. If
+    disaster_zone_v1.yaml ever changes its drone roster, this guard fails
+    with one clear message instead of three confusing assertion errors in
+    the hybrid tests."""
+    import sys
+    sys.path.insert(0, str(REPO_ROOT))
+    from sim.list_drones import list_drone_ids  # noqa: E402
+
+    roster = list_drone_ids("disaster_zone_v1")
+    assert set(roster) == {"drone1", "drone2", "drone3"}, (
+        f"disaster_zone_v1 roster changed to {roster!r}; update hybrid "
+        f"dry-run tests to match"
     )

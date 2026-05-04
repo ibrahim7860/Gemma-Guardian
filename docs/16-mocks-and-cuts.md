@@ -91,6 +91,13 @@ See [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md).
 - **Cutoff:** Day 16 (May 14)
 - **Why:** Spanish is non-negotiable for the multilingual showcase. Arabic is impressive but English+Spanish is sufficient.
 
+### Bridge Cutover Hybrid Fakes (egs.state, drones.<id>.findings)
+- **Status:** ON during the hybrid window — until Qasim's EGS aligns its `zone_polygon` to the active scenario YAML and Kaleel's drone agent publishes findings to Redis instead of stdout. Both expected before Gate 4.
+- **Plan:** [`scripts/run_hybrid_demo.sh`](../scripts/run_hybrid_demo.sh) launches the real sim for `drones.<id>.state` (Hazim) and uses [`scripts/dev_fake_producers.py`](../scripts/dev_fake_producers.py) `--emit=egs` and `--emit=findings --drone-id <id>` to fill the remaining channels with schema-valid fixture-derived payloads.
+- **Cutoff:** Pass `--no-fake-egs` to drop the EGS fake the day Qasim ships; pass `--no-fake-findings` the day Kaleel ships. Defaults stay ON so today's behaviour is unchanged. No source edits required.
+- **Why it's fine:** The bridge and dashboard are exercised against contract-valid payloads on the same channels they'll see in production. The real sim already drives drone state, so the dashboard renders live drone position, battery, and waypoint progress. Operator approval flow + `egs.state` shape are the only two paths still touching fixture data; both flip to real with one CLI flag.
+- **Honesty test:** When recording the demo video, declare hybrid mode in the writeup so a judge knows what's real and what's fixture-derived. The migration log (this entry + `sim/ROADMAP.md`) tracks when each piece flips.
+
 ### Hallucination Catch-and-Correct Demo Moment
 - **Plan A (best):** Engineer the scenario so Gemma 4 reliably hallucinates, validation catches it on camera
 - **Plan B (backup):** Adversarial replanning scenario forces the catch

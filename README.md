@@ -42,9 +42,15 @@ scripts/run_full_demo.sh
 # or launch with a fixed-duration self-terminate (handy for scripted demos)
 scripts/launch_swarm.sh disaster_zone_v1 --duration=60
 scripts/stop_demo.sh
+
+# during the bridge cutover window: real sim drone state + fake egs/findings
+# + uvicorn-launched bridge. Pass --no-fake-egs / --no-fake-findings to drop
+# fakes once Qasim's EGS / Kaleel's drone agent ship.
+scripts/run_hybrid_demo.sh disaster_zone_v1
+scripts/stop_demo.sh hybrid_demo
 ```
 
-The launcher is [`scripts/launch_swarm.sh`](scripts/launch_swarm.sh); how the eight processes wire together is in [`docs/15-multi-drone-spawning.md`](docs/15-multi-drone-spawning.md).
+The full-stack launcher is [`scripts/launch_swarm.sh`](scripts/launch_swarm.sh); the cutover orchestrator is [`scripts/run_hybrid_demo.sh`](scripts/run_hybrid_demo.sh). How the processes wire together is in [`docs/15-multi-drone-spawning.md`](docs/15-multi-drone-spawning.md), and what's transitionally faked is in [`docs/16-mocks-and-cuts.md`](docs/16-mocks-and-cuts.md).
 
 ## Team
 
