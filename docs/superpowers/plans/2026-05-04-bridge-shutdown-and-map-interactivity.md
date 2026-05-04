@@ -138,29 +138,65 @@ async def close(self) -> None:
         except Exception:
             pass
 
-# Backwards-compat shim — keep ``stop()`` working for any external
-# callers (none in-tree, but cheap insurance). Wraps the new pair.
-async def stop(self) -> None:
-    """Deprecated: use signal_stop() + close() in lifespan order."""
-    self.signal_stop()
-    await self.close()
 ```
 
-- [ ] **Step 4: Run new test to verify it passes**
+(No backwards-compat shim. Eng-review issue 1A: dropping `stop()` entirely keeps the API surface minimal. Update the one in-tree caller in Step 4.)
 
-Run: `PYTHONPATH=. python -m pytest frontend/ws_bridge/tests/test_subscriber.py::test_signal_stop_only_sets_flag_does_not_close_pubsub -v`
-Expected: PASS.
+- [ ] **Step 4: Update the one in-tree caller of the old `stop()` API**
 
-- [ ] **Step 5: Run full subscriber test file to verify backwards-compat `stop()` still works**
+Replace `frontend/ws_bridge/tests/test_subscriber.py:145`:
+
+```python
+await subscriber.stop()
+```
+
+with:
+
+```python
+subscriber.signal_stop()
+await task  # let the run loop exit on the flag
+await subscriber.close()
+```
+
+(If the surrounding test variable is named differently, adapt — the call shape is the part that matters.)
+
+- [ ] **Step 5: Add `close()` idempotency test (eng-review gap 3B)**
+
+Append to `frontend/ws_bridge/tests/test_subscriber.py`:
+
+```python
+@pytest.mark.asyncio
+async def test_close_is_idempotent():
+    """close() must be safe to call twice. Lifespan cleanup paths
+    can re-enter close() under exception conditions."""
+    fake = fakeredis.aioredis.FakeRedis()
+    config = BridgeConfig(redis_url="redis://localhost", tick_s=0.05,
+                         max_findings=100, broadcast_timeout_s=0.5,
+                         reconnect_max_s=2.0)
+    aggregator = StateAggregator(max_findings=100, seed_envelope=_seed())
+    sub = RedisSubscriber(
+        config=config, aggregator=aggregator,
+        validation_logger=ValidationEventLogger(),
+        translation_queue=asyncio.Queue(maxsize=64),
+        client_factory=lambda url: fake,
+    )
+    # Never run — just close twice.
+    await sub.close()
+    await sub.close()  # must not raise
+    assert sub._pubsub is None
+    assert sub._client is None
+```
+
+- [ ] **Step 6: Run all subscriber tests to verify**
 
 Run: `PYTHONPATH=. python -m pytest frontend/ws_bridge/tests/test_subscriber.py -v`
-Expected: All existing tests PASS (the legacy `await subscriber.stop()` call at `test_subscriber.py:145` should still work via the shim).
+Expected: All tests PASS — new signal_stop/close test, new idempotency test, and existing tests using the migrated call shape.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add frontend/ws_bridge/redis_subscriber.py frontend/ws_bridge/tests/test_subscriber.py
-git commit -m "refactor(bridge): split RedisSubscriber.stop() into signal_stop() + close()"
+git commit -m "refactor(bridge): replace RedisSubscriber.stop() with signal_stop() + close()"
 ```
 
 ---
@@ -216,12 +252,17 @@ class _OrderRecordingSubscriber:
     async def run(self) -> None:
         self._order.append("run_start")
         self._run_started.set()
-        # Park until signal_stop flips _stopping. Mirrors the real
-        # subscriber's read-timeout-then-check-flag loop.
-        while not self._stopping:
-            await asyncio.sleep(0.01)
-        self._order.append("run_exit")
-        self._run_done.set()
+        # Park forever — we exit ONLY on cancel. Verifies eng-review 1B:
+        # the lifespan must cancel subscribe_task, not just rely on the
+        # _stopping flag draining the read loop.
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self._order.append("run_cancelled")
+            raise
+        finally:
+            self._order.append("run_exit")
+            self._run_done.set()
 
     def signal_stop(self) -> None:
         self._order.append("signal_stop")
@@ -263,6 +304,10 @@ async def test_lifespan_signals_stop_before_closing_pubsub(monkeypatch):
     #   run_exit must precede close (i.e., we awaited the task)
     assert "signal_stop" in order, order
     assert "close" in order, order
+    assert "run_cancelled" in order, (
+        "subscribe_task must be cancel()ed, not just signalled (eng-review 1B): "
+        f"{order}"
+    )
     assert "run_exit" in order, order
     assert order.index("signal_stop") < order.index("close"), order
     assert order.index("run_exit") < order.index("close"), order
@@ -290,14 +335,18 @@ Replace `frontend/ws_bridge/main.py:192-214` (the `try: yield ... finally:` bloc
         #
         # New order:
         #   1. Flip the subscriber's stop flag (NO pubsub close yet)
-        #   2. Cancel the emit + translation tasks (they don't share
-        #      the pubsub; cancel is safe and immediate)
-        #   3. Await ALL THREE tasks so the subscribe task has a
-        #      chance to exit its read loop on the flag transition
+        #   2. Cancel ALL THREE tasks. signal_stop gives the subscribe
+        #      loop a clean exit on its next read-timeout; cancel()
+        #      handles the case where get_message() is parked. Belt +
+        #      suspenders: shutdown is bounded by min(timeout, cancel
+        #      delivery) instead of always-timeout.
+        #   3. Await ALL THREE tasks so the subscribe task has fully
+        #      exited its read loop before we touch its pubsub
         #   4. ONLY THEN close the subscriber (pubsub.aclose())
         #   5. Close the publisher
         subscriber.signal_stop()
         emit_task.cancel()
+        subscribe_task.cancel()
         translation_task.cancel()
         for task in (emit_task, subscribe_task, translation_task):
             try:
@@ -434,6 +483,20 @@ group('map marker selection', () {
     s.clearSelection();
     expect(s.selectedFindingId, isNull);
     expect(s.selectedDroneId, isNull);
+  });
+
+  test('selectFinding with a different id switches selection (eng-review 3A)', () {
+    final s = MissionState();
+    s.selectFinding('f_drone1_5');
+    s.selectFinding('f_drone1_6');
+    expect(s.selectedFindingId, equals('f_drone1_6'));
+  });
+
+  test('selectDrone with a different id switches selection (eng-review 3A)', () {
+    final s = MissionState();
+    s.selectDrone('drone1');
+    s.selectDrone('drone2');
+    expect(s.selectedDroneId, equals('drone2'));
   });
 });
 ```
@@ -609,6 +672,32 @@ void main() {
 
     expect(s.selectedDroneId, isNull);
   });
+
+  testWidgets(
+      'co-located drone+finding: tap selects the DRONE (eng-review 2A/3C)',
+      (tester) async {
+    // A drone reports a finding at its current position — same lat/lon.
+    // Painter renders findings under drones; tap layer must match so the
+    // visible drone wins the tap.
+    final s = MissionState();
+    s.applyStateUpdate({
+      "type": "state_update",
+      "timestamp": "2026-05-04T12:00:00.000Z",
+      "contract_version": "1.0.0",
+      "active_findings": [_finding("f_drone1_5", "drone1", 34.0, -118.0)],
+      "active_drones": [_drone("drone1", 34.0, -118.0)],
+    });
+    await tester.pumpWidget(_wrap(s));
+    await tester.pump();
+
+    // Tap the drone marker key — drone hit-box is on top.
+    await tester.tap(find.byKey(const ValueKey('map-drone-drone1')));
+    await tester.pump();
+
+    expect(s.selectedDroneId, equals('drone1'),
+        reason: 'visible drone must win the tap when co-located with a finding');
+    expect(s.selectedFindingId, isNull);
+  });
 }
 ```
 
@@ -659,8 +748,12 @@ class _MapPanelState extends State<MapPanel> {
                   colors: colors,
                 ),
               ),
-              ..._buildDroneMarkers(drones, bbox, size, mission),
+              // Eng-review issue 2A: paint order is findings UNDER
+              // drones (see _ProjectionPainter.paint). Tap order must
+              // match: findings FIRST in the Stack so drones sit on
+              // top of finding hit-boxes when co-located.
               ..._buildFindingMarkers(findings, bbox, size, mission),
+              ..._buildDroneMarkers(drones, bbox, size, mission),
               Positioned(
                 top: 4, right: 4,
                 child: IconButton(
@@ -1100,3 +1193,11 @@ Expected: PR opens, CI runs `bridge`, `flutter`, and `bridge_e2e` jobs.
 - Highlight key conventions: `findings-row-highlight-$id` (Task 6) and `drone-row-highlight-$droneId` (Task 7) — distinct namespaces, no collision with existing `map-drone-` / `map-finding-` / `approval-icon-*` keys.
 
 **4. One open consistency note:** Task 5 changes the painter's projection logic to delegate to a top-level `_project` helper. The existing test `'renders one marker per active drone'` (`map_panel_test.dart:30`) finds markers by `ValueKey('map-drone-drone1')` — this still works because the new code preserves the same key on the `Positioned` wrapper. Verified by the explicit "Run existing map_panel_test.dart" step in Task 5 Step 5.
+
+**5. Eng-review changes applied (2026-05-04):**
+- **1A:** Dropped backwards-compat `stop()` shim. One in-tree caller (`test_subscriber.py:145`) migrated in Task 1 Step 4.
+- **1B:** Lifespan now cancels `subscribe_task` in addition to signalling stop. Bounded shutdown latency. Test stub parks on `asyncio.Event().wait()` so the test would fail if cancel were dropped.
+- **2A:** Stack order swapped — findings rendered first, drones on top. Tap order now matches paint order.
+- **3A:** Added two switch-selection unit tests (finding A→B, drone A→B).
+- **3B:** Added `close()` idempotency test in Task 1 Step 5.
+- **3C:** Added co-located drone+finding tap regression test in Task 5.
