@@ -31,6 +31,7 @@ SCRIPTS = [
     SCRIPTS_DIR / "stop_demo.sh",
     SCRIPTS_DIR / "run_full_demo.sh",
     SCRIPTS_DIR / "run_resilience_scenario.sh",
+    SCRIPTS_DIR / "run_hybrid_demo.sh",
 ]
 
 
@@ -454,3 +455,64 @@ def test_run_full_demo_forwards_duration_to_launch_swarm(tmp_path):
     assert any("--duration 42" in ln for ln in frames_lines), (
         f"expected --duration 42 forwarded to frame_server; saw:\n{combined}"
     )
+
+
+def test_run_hybrid_demo_dry_run_default_includes_fakes_and_sim():
+    """Default hybrid mode: real sim windows + 1 fake egs + N fake findings."""
+    script = SCRIPTS_DIR / "run_hybrid_demo.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "disaster_zone_v1"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"dry-run failed: stderr={result.stderr}"
+    out = result.stdout
+    # Real sim owns drone state.
+    assert "waypoint_runner.py" in out
+    assert "frame_server.py" in out
+    # Default fakes.
+    assert "tmux:egs_fake" in out
+    assert "--emit=egs" in out
+    # disaster_zone_v1 declares drone1, drone2, drone3.
+    for did in ("drone1", "drone2", "drone3"):
+        assert f"tmux:findings_{did}" in out, f"missing findings window for {did}"
+        assert f"--drone-id {did}" in out
+    # Bridge.
+    assert "frontend/ws_bridge/main.py" in out
+
+
+def test_run_hybrid_demo_dry_run_no_fake_egs_skips_egs_window():
+    script = SCRIPTS_DIR / "run_hybrid_demo.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "disaster_zone_v1", "--no-fake-egs"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"dry-run failed: stderr={result.stderr}"
+    out = result.stdout
+    assert "tmux:egs_fake" not in out
+    assert "[skip] egs_fake" in out
+    # Findings still on by default.
+    assert "tmux:findings_drone1" in out
+
+
+def test_run_hybrid_demo_dry_run_no_fake_findings_skips_all_findings_windows():
+    script = SCRIPTS_DIR / "run_hybrid_demo.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "disaster_zone_v1", "--no-fake-findings"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"dry-run failed: stderr={result.stderr}"
+    out = result.stdout
+    for did in ("drone1", "drone2", "drone3"):
+        assert f"tmux:findings_{did}" not in out, f"unexpected findings window for {did}"
+    assert "[skip] findings_*" in out
+    # EGS still on by default.
+    assert "tmux:egs_fake" in out
