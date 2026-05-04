@@ -119,8 +119,9 @@ async def _start_subscriber(
     construct the subscriber, kick off its run() task, and return
     (fake_redis, subscriber, task) for the test to drive.
 
-    Caller must `await subscriber.stop()` and `await task` for clean shutdown
-    (the test fixtures' wrapping handles cancellation as fallback).
+    Caller must call `subscriber.signal_stop()`, await the task, then
+    `await subscriber.close()` for clean shutdown (the `_stop_subscriber`
+    helper handles this; cancellation is the fallback).
     """
     fake = FakeRedis()
 
@@ -142,15 +143,16 @@ async def _start_subscriber(
 
 
 async def _stop_subscriber(subscriber: RedisSubscriber, task: asyncio.Task) -> None:
-    await subscriber.stop()
+    subscriber.signal_stop()
     try:
-        await asyncio.wait_for(task, timeout=2.0)
+        await asyncio.wait_for(task, timeout=2.0)  # let the run loop exit on the flag
     except (asyncio.TimeoutError, asyncio.CancelledError):
         task.cancel()
         try:
             await task
         except (asyncio.CancelledError, Exception):
             pass
+    await subscriber.close()
 
 
 # ---- 0. Sanity: psubscribe + publish round-trip works in fakeredis 2.35 ----
@@ -491,3 +493,62 @@ def test_next_backoff_cap_smaller_than_one():
 
     assert _next_backoff(0.0, 0.2) == 0.2
     assert _next_backoff(0.2, 0.2) == 0.2
+
+
+# ---- 8. signal_stop() sets flag without closing pubsub ---------------------
+
+@pytest.mark.asyncio
+async def test_signal_stop_only_sets_flag_does_not_close_pubsub(
+    monkeypatch, config, aggregator, mock_logger,
+):
+    """signal_stop() must set _stopping=True without touching pubsub.
+
+    The lifespan handler relies on this so it can await the run task
+    (which exits cleanly because the flag is set) before closing the
+    pubsub via close().
+    """
+    fake = FakeRedis()
+
+    def _from_url(url, *args, **kwargs):  # noqa: ANN001, ARG001
+        return fake
+
+    import redis.asyncio as redis_async
+    monkeypatch.setattr(redis_async.Redis, "from_url", staticmethod(_from_url))
+
+    sub = RedisSubscriber(
+        config=config,
+        aggregator=aggregator,
+        validation_logger=mock_logger,
+    )
+    task = asyncio.create_task(sub.run())
+    await asyncio.sleep(0.05)  # let it subscribe
+
+    sub.signal_stop()
+    assert sub._stopping is True
+    # pubsub is still open at this point — we only signalled.
+    assert sub._pubsub is not None
+
+    # Now the run task should exit on its own.
+    await asyncio.wait_for(task, timeout=2.0)
+
+    # And close() actually tears down.
+    await sub.close()
+    assert sub._pubsub is None
+
+
+# ---- 9. close() is idempotent -----------------------------------------------
+
+@pytest.mark.asyncio
+async def test_close_is_idempotent(monkeypatch, config, aggregator, mock_logger):
+    """close() must be safe to call twice. Lifespan cleanup paths
+    can re-enter close() under exception conditions."""
+    sub = RedisSubscriber(
+        config=config,
+        aggregator=aggregator,
+        validation_logger=mock_logger,
+    )
+    # Never run — just close twice.
+    await sub.close()
+    await sub.close()  # must not raise
+    assert sub._pubsub is None
+    assert sub._client is None

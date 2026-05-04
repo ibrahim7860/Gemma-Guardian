@@ -166,4 +166,41 @@ void main() {
     await tester.pumpWidget(_wrap(s));
     expect(find.textContaining("(archived)"), findsOneWidget);
   });
+
+  testWidgets('selected finding row renders blue highlight border', (tester) async {
+    final s = MissionState();
+    s.applyStateUpdate({
+      "type": "state_update",
+      "timestamp": "2026-05-04T12:00:00.000Z",
+      "contract_version": "1.0.0",
+      "active_drones": [],
+      "active_findings": [
+        {
+          "finding_id": "f_drone1_5",
+          "source_drone_id": "drone1",
+          "type": "victim",
+          "severity": 4,
+          "confidence": 0.8,
+          "timestamp": "2026-05-04T12:00:00.000Z",
+          "visual_description": "person prone",
+          "location": {"lat": 34.0, "lon": -118.0, "alt": 0.0},
+          "validated": true,
+          "operator_status": "pending",
+        },
+      ],
+    });
+
+    await tester.pumpWidget(_wrap(s));
+    await tester.pump();
+
+    // No selection — no highlight key.
+    expect(find.byKey(const ValueKey('findings-row-highlight-f_drone1_5')),
+        findsNothing);
+
+    s.selectFinding('f_drone1_5');
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('findings-row-highlight-f_drone1_5')),
+        findsOneWidget);
+  });
 }

@@ -48,7 +48,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Depends on:** Person 5's scenario fixture work (xBD or public aerial source).
 - **Owner:** Person 5 with handoff to Person 4 for asset wiring.
 
-### Map marker tap/hover interactivity
+### ~~Map marker tap/hover interactivity~~ (closed in feat/bridge-shutdown-and-map-interactivity)
+**CLOSED** — `MissionState` exposes `selectFinding`/`selectDrone`/
+`clearSelection`. `MapPanel` wraps each marker in a `GestureDetector`
+sized to a forgiving hit-radius (drone 18px, finding 14px); stack
+order puts drone hit-boxes on top of co-located findings. Findings
+and Drone Status panels render a blue highlight on the selected row.
+Original entry retained below for historical context.
+
 - **What:** Click a finding marker on map → highlight corresponding row in Findings panel. Click a drone marker → highlight Drone Status row.
 - **Why:** Operator UX expectation. Phase 3 ships read-only markers because hit-testing in CustomPaint adds work that doesn't pay off until the operator workflow gets richer.
 - **Pros:** More useful dashboard.
@@ -75,7 +82,16 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** `state_update.validation_events` already exists in the schema; bridge emits, dashboard ignores it. Needs a small panel addition.
 - **Owner:** Person 4 (Day 10).
 
-### Bridge lifespan teardown ordering (Phase 5+)
+### ~~Bridge lifespan teardown ordering (Phase 5+)~~ (closed in feat/bridge-shutdown-and-map-interactivity)
+**CLOSED** — `RedisSubscriber.stop()` was split into
+`signal_stop()` + `close()`. `frontend/ws_bridge/main.py` lifespan
+now signals stop, cancels all three tasks (including subscribe_task
+per eng-review 1B), awaits all three, THEN calls
+`subscriber.close()` (which calls `pubsub.aclose()`). New regression
+test at `frontend/ws_bridge/tests/test_main_lifespan_teardown.py`
+asserts the ordering empirically. Original entry retained below for
+historical context.
+
 - **What:** Reorder `frontend/ws_bridge/main.py` lifespan teardown so `_stopping=True` is set on the subscriber and tasks are awaited BEFORE `subscriber.stop()` calls `aclose()` on the pubsub. Today the cancel-then-stop-then-await sequence allows `subscribe_task` to be mid-`pubsub.get_message()` when `aclose()` runs.
 - **Why:** Surfaced by the Phase 4 adversarial review (finding #6). Functional impact today is noisy stderr on every shutdown; could become a real CI flake if `RuntimeError: Event loop is closed` traces start failing test runs.
 - **Pros:** Clean shutdown logs; resilient to future broadcaster additions.

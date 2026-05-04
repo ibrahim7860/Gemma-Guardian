@@ -279,4 +279,68 @@ void main() {
       expect(s.findingState("f_drone1_42"), ApprovalState.dismissed);
     });
   });
+
+  group('map marker selection', () {
+    test('selectFinding stores id and notifies listeners', () {
+      final s = MissionState();
+      var notifications = 0;
+      s.addListener(() => notifications++);
+
+      s.selectFinding('f_drone1_5');
+
+      expect(s.selectedFindingId, equals('f_drone1_5'));
+      expect(s.selectedDroneId, isNull);
+      expect(notifications, equals(1));
+    });
+
+    test('selectDrone clears any active finding selection', () {
+      final s = MissionState();
+      s.selectFinding('f_drone1_5');
+
+      s.selectDrone('drone1');
+
+      expect(s.selectedFindingId, isNull,
+          reason: 'finding selection must clear when a drone is selected');
+      expect(s.selectedDroneId, equals('drone1'));
+    });
+
+    test('selectFinding called twice with the same id clears the selection', () {
+      final s = MissionState();
+      s.selectFinding('f_drone1_5');
+      s.selectFinding('f_drone1_5');
+
+      expect(s.selectedFindingId, isNull,
+          reason: 're-selecting the same id is a toggle');
+    });
+
+    test('selectDrone called twice with the same id clears the selection', () {
+      final s = MissionState();
+      s.selectDrone('drone1');
+      s.selectDrone('drone1');
+
+      expect(s.selectedDroneId, isNull);
+    });
+
+    test('clearSelection drops both finding and drone ids', () {
+      final s = MissionState();
+      s.selectDrone('drone1');
+      s.clearSelection();
+      expect(s.selectedFindingId, isNull);
+      expect(s.selectedDroneId, isNull);
+    });
+
+    test('selectFinding with a different id switches selection (eng-review 3A)', () {
+      final s = MissionState();
+      s.selectFinding('f_drone1_5');
+      s.selectFinding('f_drone1_6');
+      expect(s.selectedFindingId, equals('f_drone1_6'));
+    });
+
+    test('selectDrone with a different id switches selection (eng-review 3A)', () {
+      final s = MissionState();
+      s.selectDrone('drone1');
+      s.selectDrone('drone2');
+      expect(s.selectedDroneId, equals('drone2'));
+    });
+  });
 }

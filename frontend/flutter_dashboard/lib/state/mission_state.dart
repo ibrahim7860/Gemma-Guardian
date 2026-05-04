@@ -82,6 +82,47 @@ class MissionState extends ChangeNotifier {
   Map<String, dynamic>? commandTranslation(String commandId) =>
       _commandTranslations[commandId];
 
+  // ---- map marker selection ----------------------------------------------
+  //
+  // One-of: at most one selection at a time. Selecting a drone clears any
+  // finding selection, and vice versa. Re-selecting the same id is a
+  // toggle that clears the selection — matches operator expectation
+  // ("click again to deselect").
+
+  String? _selectedFindingId;
+  String? _selectedDroneId;
+
+  String? get selectedFindingId => _selectedFindingId;
+  String? get selectedDroneId => _selectedDroneId;
+
+  void selectFinding(String findingId) {
+    if (_selectedFindingId == findingId) {
+      // Toggle off.
+      _selectedFindingId = null;
+    } else {
+      _selectedFindingId = findingId;
+      _selectedDroneId = null;
+    }
+    notifyListeners();
+  }
+
+  void selectDrone(String droneId) {
+    if (_selectedDroneId == droneId) {
+      _selectedDroneId = null;
+    } else {
+      _selectedDroneId = droneId;
+      _selectedFindingId = null;
+    }
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    if (_selectedFindingId == null && _selectedDroneId == null) return;
+    _selectedFindingId = null;
+    _selectedDroneId = null;
+    notifyListeners();
+  }
+
   /// Operator submitted a command for translation. Returns the command_id
   /// generated for this submission so the caller can correlate later.
   ///

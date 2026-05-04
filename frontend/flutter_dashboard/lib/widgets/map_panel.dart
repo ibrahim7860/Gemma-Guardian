@@ -52,76 +52,124 @@ class _MapPanelState extends State<MapPanel> {
         if (!_bboxStillCovers(_bbox!, drones, findings)) {
           _bbox = _computeBbox(drones, findings);
         }
-
+        final bbox = _bbox!;
         final colors = palettePreview([
           for (final d in drones) (d["drone_id"] as String?) ?? "?",
         ]);
 
-        return Stack(
-          children: [
-            CustomPaint(
-              size: Size.infinite,
-              painter: _ProjectionPainter(
-                drones: drones,
-                findings: findings,
-                bbox: _bbox!,
-                colors: colors,
+        return LayoutBuilder(builder: (context, constraints) {
+          final size = Size(constraints.maxWidth, constraints.maxHeight);
+          return Stack(
+            children: [
+              CustomPaint(
+                size: Size.infinite,
+                painter: _ProjectionPainter(
+                  drones: drones,
+                  findings: findings,
+                  bbox: bbox,
+                  colors: colors,
+                ),
               ),
-            ),
-            ..._buildDroneMarkers(drones),
-            ..._buildFindingMarkers(findings),
-            Positioned(
-              top: 4, right: 4,
-              child: IconButton(
-                tooltip: "Refit",
-                icon: const Icon(Icons.center_focus_strong),
-                onPressed: () => setState(() => _bbox = null),
+              // Eng-review issue 2A: paint order is findings UNDER
+              // drones (see _ProjectionPainter.paint). Tap order must
+              // match: findings FIRST in the Stack so drones sit on
+              // top of finding hit-boxes when co-located.
+              ..._buildFindingMarkers(findings, bbox, size, mission),
+              ..._buildDroneMarkers(drones, bbox, size, mission),
+              Positioned(
+                top: 4, right: 4,
+                child: IconButton(
+                  tooltip: "Refit",
+                  icon: const Icon(Icons.center_focus_strong),
+                  onPressed: () => setState(() => _bbox = null),
+                ),
               ),
-            ),
-          ],
-        );
+            ],
+          );
+        });
       },
     );
   }
 
-  List<Widget> _buildDroneMarkers(List<Map<String, dynamic>> drones) {
+  static const double _droneHitRadius = 18;
+  static const double _findingHitRadius = 14;
+
+  List<Widget> _buildDroneMarkers(
+    List<Map<String, dynamic>> drones,
+    _Bbox bbox,
+    Size size,
+    MissionState mission,
+  ) {
     final out = <Widget>[];
     for (final d in drones) {
       final id = (d["drone_id"] as String?) ?? "?";
       final pos = d["position"] as Map<String, dynamic>?;
-      final lat = (pos?["lat"] as num?)?.toDouble();
-      final lon = (pos?["lon"] as num?)?.toDouble();
-      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) continue;
+      final p = _project(pos?["lat"] as num?, pos?["lon"] as num?, bbox, size);
+      if (p == null) continue;
       out.add(
-        // Real positioning is done by CustomPaint; this widget exists so widget
-        // tests can find one-per-drone markers via key lookup.
         Positioned(
           key: ValueKey("map-drone-$id"),
-          left: 0, top: 0,
-          child: const SizedBox(width: 0, height: 0),
+          left: p.dx - _droneHitRadius,
+          top: p.dy - _droneHitRadius,
+          width: _droneHitRadius * 2,
+          height: _droneHitRadius * 2,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => mission.selectDrone(id),
+            child: const SizedBox.expand(),
+          ),
         ),
       );
     }
     return out;
   }
 
-  List<Widget> _buildFindingMarkers(List<Map<String, dynamic>> findings) {
+  List<Widget> _buildFindingMarkers(
+    List<Map<String, dynamic>> findings,
+    _Bbox bbox,
+    Size size,
+    MissionState mission,
+  ) {
     final out = <Widget>[];
     for (final f in findings) {
       final id = f["finding_id"] as String?;
       if (id == null) continue;
       final loc = f["location"] as Map<String, dynamic>?;
-      final lat = (loc?["lat"] as num?)?.toDouble();
-      final lon = (loc?["lon"] as num?)?.toDouble();
-      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) continue;
+      final p = _project(loc?["lat"] as num?, loc?["lon"] as num?, bbox, size);
+      if (p == null) continue;
       out.add(Positioned(
         key: ValueKey("map-finding-$id"),
-        left: 0, top: 0,
-        child: const SizedBox(width: 0, height: 0),
+        left: p.dx - _findingHitRadius,
+        top: p.dy - _findingHitRadius,
+        width: _findingHitRadius * 2,
+        height: _findingHitRadius * 2,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => mission.selectFinding(id),
+          child: const SizedBox.expand(),
+        ),
       ));
     }
     return out;
   }
+}
+
+/// Top-level projection used by both the painter and the widget hit-boxes.
+/// Single source of truth: if you change one, change the painter together.
+Offset? _project(num? la, num? lo, _Bbox bbox, Size size) {
+  if (la == null || lo == null) return null;
+  final lat = la.toDouble();
+  final lon = lo.toDouble();
+  if (!lat.isFinite || !lon.isFinite) return null;
+  final cosLat = math.max(
+    math.cos(bbox.midLat * math.pi / 180.0).abs(),
+    0.01,
+  );
+  final lonScale = size.width / (bbox.lonSpan * cosLat);
+  final latScale = size.height / bbox.latSpan;
+  final x = (lon - bbox.minLon) * cosLat * lonScale;
+  final y = size.height - (lat - bbox.minLat) * latScale;
+  return Offset(x, y);
 }
 
 class _Bbox {
@@ -228,25 +276,9 @@ class _ProjectionPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
 
-    // cos(midLat) longitude correction. Floor at 0.01 so near-polar bboxes
-    // (cos(±90°) → 0) don't produce astronomical lonScale values. Disaster
-    // scenarios stay sub-polar, but the floor keeps stale-fixture testing safe.
-    final cosLat = math.max(
-      math.cos(bbox.midLat * math.pi / 180.0).abs(),
-      0.01,
-    );
-    final lonScale = size.width / (bbox.lonSpan * cosLat);
-    final latScale = size.height / bbox.latSpan;
-
-    Offset? project(num? la, num? lo) {
-      if (la == null || lo == null) return null;
-      final lat = la.toDouble();
-      final lon = lo.toDouble();
-      if (!lat.isFinite || !lon.isFinite) return null;
-      final x = (lon - bbox.minLon) * cosLat * lonScale;
-      final y = size.height - (lat - bbox.minLat) * latScale;
-      return Offset(x, y);
-    }
+    // Delegate to top-level _project — single source of truth for the
+    // projection math shared with the widget hit-box layer.
+    Offset? project(num? la, num? lo) => _project(la, lo, bbox, size);
 
     // Findings under drones.
     for (final f in findings) {

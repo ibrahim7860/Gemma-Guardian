@@ -88,4 +88,37 @@ void main() {
     expect(find.textContaining("drone1"), findsOneWidget);
     expect(find.textContaining("Validation: 0 fails"), findsOneWidget);
   });
+
+  testWidgets('selected drone row renders highlight key', (tester) async {
+    final s = MissionState();
+    s.applyStateUpdate({
+      "type": "state_update",
+      "timestamp": "2026-05-04T12:00:00.000Z",
+      "contract_version": "1.0.0",
+      "active_findings": [],
+      "active_drones": [
+        {
+          "drone_id": "drone1",
+          "agent_status": "active",
+          "battery_pct": 87,
+          "current_task": "survey_zone_a",
+          "findings_count": 0,
+          "validation_failures_total": 0,
+          "position": {"lat": 34.0, "lon": -118.0, "alt": 50.0},
+        },
+      ],
+    });
+
+    await tester.pumpWidget(_wrap(s));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('drone-row-highlight-drone1')),
+        findsNothing);
+
+    s.selectDrone('drone1');
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('drone-row-highlight-drone1')),
+        findsOneWidget);
+  });
 }
