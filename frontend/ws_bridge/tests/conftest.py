@@ -44,17 +44,20 @@ async def app_and_client(monkeypatch, fake_client):
     obsoletes the ``transport.exit_stack = None`` workaround we used on
     httpx-ws 0.7.
 
-    anyio cancel-scope constraint: the anyio task group created by
-    ``ASGIWebSocketTransport.__aenter__`` must be exited from the SAME
-    asyncio Task that entered it. pytest-asyncio runs fixture teardown in
-    a fresh ``runner.run()`` call (a new Task), so we cannot let the
-    ``async with transport:`` span the fixture yield boundary directly.
+    anyio cancel-scope constraint: BOTH the
+    ``ASGIWebSocketTransport`` task group AND FastAPI's
+    ``lifespan_context`` create anyio cancel scopes that must be
+    exited from the SAME asyncio Task that entered them. pytest-asyncio
+    runs fixture teardown in a fresh ``runner.run()`` call (a new
+    Task), so we cannot let either ``async with`` span the fixture
+    yield boundary directly.
 
-    Fix: run the entire transport lifecycle in a dedicated background
-    asyncio Task. The fixture body signals that task to tear down via
-    ``_teardown`` event and awaits the task's completion. Enter and exit
-    therefore always happen in the same Task, satisfying anyio's
-    constraint while keeping all test call sites unchanged.
+    Fix: hold BOTH context managers OPEN inside one dedicated
+    lifecycle task. The fixture body signals teardown via the
+    ``_teardown`` event and awaits the lifecycle task's completion.
+    Enter and exit always happen in the same Task, satisfying anyio's
+    constraint on both Linux+CPython 3.11 and macOS+CPython 3.12 while
+    keeping all test call sites unchanged.
     """
     import redis.asyncio as redis_async
 
@@ -68,30 +71,31 @@ async def app_and_client(monkeypatch, fake_client):
 
     app = create_app()
 
-    _ready: asyncio.Queue[ASGIWebSocketTransport] = asyncio.Queue(maxsize=1)
+    _ready: asyncio.Queue = asyncio.Queue(maxsize=1)
     _teardown = asyncio.Event()
     _exc_holder: list[BaseException] = []
 
-    async def _transport_lifecycle() -> None:
-        """Enter the transport, signal readiness, wait for teardown."""
+    async def _lifecycle() -> None:
         try:
             async with ASGIWebSocketTransport(app=app) as transport:
-                _ready.put_nowait(transport)
-                await _teardown.wait()
+                async with app.router.lifespan_context(app):
+                    client = httpx.AsyncClient(
+                        transport=transport, base_url="http://testserver"
+                    )
+                    _ready.put_nowait(client)
+                    try:
+                        await _teardown.wait()
+                    finally:
+                        await client.aclose()
         except BaseException as exc:  # noqa: BLE001
             _exc_holder.append(exc)
 
-    lifecycle_task = asyncio.create_task(_transport_lifecycle())
-    transport = await _ready.get()
-
-    client = httpx.AsyncClient(transport=transport, base_url="http://testserver")
-    async with app.router.lifespan_context(app):
-        try:
-            yield app, client, fake_client
-        finally:
-            await client.aclose()
-
-    _teardown.set()
-    await lifecycle_task
-    if _exc_holder:
-        raise _exc_holder[0]
+    lifecycle_task = asyncio.create_task(_lifecycle())
+    client = await _ready.get()
+    try:
+        yield app, client, fake_client
+    finally:
+        _teardown.set()
+        await lifecycle_task
+        if _exc_holder:
+            raise _exc_holder[0]
