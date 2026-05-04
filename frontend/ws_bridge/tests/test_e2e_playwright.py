@@ -47,11 +47,17 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import pytest
 
-pytestmark = pytest.mark.e2e
+# All tests in this file hit a multi-process pipeline (redis + uvicorn +
+# producer + http.server + chromium). Cold-start can spend several seconds
+# building the pipeline fixture before the first test even runs, and the
+# Phase 4 round-trip tests below add another ~5s waiting on a producer
+# finding to land. Bump per-test timeout to 90s — well above the ~5s
+# steady-state — to avoid flakes on slow CI runners.
+pytestmark = [pytest.mark.e2e, pytest.mark.timeout(90)]
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +349,126 @@ def _capture_ws_frames(
             browser.close()
 
 
+def _ws_send_and_capture(
+    page_url: str,
+    bridge_ws_url: str,
+    *,
+    send_frames: List[Dict[str, Any]],
+    match: Callable[[Dict[str, Any]], bool],
+    timeout_s: float = 15.0,
+    pre_send_delay_ms: int = 200,
+    on_first_state_update: Optional[Callable[[Dict[str, Any]], Optional[List[Dict[str, Any]]]]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Open a WS from page JS, send frames, return the first frame matching ``match``.
+
+    The flow is:
+
+    1. Load ``page_url`` (the Flutter dashboard) so any auto-opened WS does
+       its thing — we don't depend on it, but loading the page mirrors the
+       real-user environment.
+    2. Open a second WebSocket from page JS and stash received frames on
+       ``window.__e2eRX`` so Python can poll them back via ``page.evaluate``.
+    3. After ``onopen`` fires (and ``pre_send_delay_ms`` of grace so the
+       initial ``state_update`` envelope drains into ``__e2eRX``), send each
+       frame in ``send_frames`` via ``ws.send(JSON.stringify(...))``.
+    4. Optionally call ``on_first_state_update`` with the first observed
+       ``state_update`` frame; if it returns extra frames, send those next
+       (used by the finding_approval round-trip to capture a finding_id
+       before sending the approval).
+    5. Poll ``__e2eRX`` until a frame matches ``match`` or the timeout fires.
+
+    Returns the matching frame as a dict, or ``None`` if no frame matched
+    within ``timeout_s``.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto(page_url, wait_until="domcontentloaded", timeout=15_000)
+
+            # Open the WS we control. Wait synchronously for ``onopen`` so
+            # subsequent ``ws.send`` calls don't race the handshake.
+            opened = page.evaluate(
+                """async (url) => {
+                    window.__e2eRX = [];
+                    return await new Promise((resolve) => {
+                        const ws = new WebSocket(url);
+                        const t = setTimeout(() => resolve(false), 5000);
+                        ws.onopen = () => { clearTimeout(t); resolve(true); };
+                        ws.onmessage = (ev) => {
+                            try { window.__e2eRX.push(ev.data); } catch (e) {}
+                        };
+                        ws.onerror = () => { clearTimeout(t); resolve(false); };
+                        window.__e2eWS = ws;
+                    });
+                }""",
+                bridge_ws_url,
+            )
+            if not opened:
+                return None
+
+            # Let the bridge's initial state_update frame land before sending.
+            page.wait_for_timeout(pre_send_delay_ms)
+
+            extra_frames: List[Dict[str, Any]] = []
+            if on_first_state_update is not None:
+                # Wait for the first state_update; capture, callback may
+                # produce additional frames to send (e.g. finding_approval).
+                deadline_state = time.monotonic() + timeout_s
+                first_state: Optional[Dict[str, Any]] = None
+                while time.monotonic() < deadline_state and first_state is None:
+                    raw_frames: List[str] = page.evaluate(
+                        "() => (window.__e2eRX || []).slice()"
+                    )
+                    for raw in raw_frames:
+                        try:
+                            env = json.loads(raw)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                        if isinstance(env, dict) and env.get("type") == "state_update":
+                            cb_result = on_first_state_update(env)
+                            if cb_result is None:
+                                continue
+                            extra_frames = cb_result
+                            first_state = env
+                            break
+                    if first_state is None:
+                        page.wait_for_timeout(200)
+                if first_state is None:
+                    return None
+
+            for frame in send_frames + extra_frames:
+                page.evaluate(
+                    """(payload) => {
+                        const ws = window.__e2eWS;
+                        if (ws && ws.readyState === 1) {
+                            ws.send(JSON.stringify(payload));
+                        }
+                    }""",
+                    frame,
+                )
+
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                raw_frames: List[str] = page.evaluate(
+                    "() => (window.__e2eRX || []).slice()"
+                )
+                for raw in raw_frames:
+                    try:
+                        env = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    if isinstance(env, dict) and match(env):
+                        return env
+                page.wait_for_timeout(200)
+            return None
+        finally:
+            browser.close()
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -499,3 +625,260 @@ def test_drone_state_reflects_battery(pipeline: Dict[str, Any]) -> None:
 def test_redis_restart_resilience(pipeline: Dict[str, Any]) -> None:
     """TODO(phase-3): live redis kill+restart with reconnect verification."""
     pass
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 outbound paths
+# ---------------------------------------------------------------------------
+#
+# The 4 tests above cover inbound state propagation. The 5 tests below cover
+# the bridge's Phase 4 outbound surface: operator_command publish,
+# operator_command_dispatch, finding_approval (happy + error path), and
+# command_translation forwarding from Redis to the browser.
+#
+# Each test drives a real chromium WebSocket against the running uvicorn
+# bridge — exercising the same code paths that the httpx-based unit tests
+# in ``test_main_*.py`` cover, but through the actual WS transport.
+
+
+def test_operator_command_publish_round_trip(pipeline: Dict[str, Any]) -> None:
+    """Browser sends ``operator_command`` and receives the echo ack.
+
+    This exercises the bridge's republish-to-Redis path: the bridge validates
+    the inbound frame, publishes a stamped ``operator_commands_envelope`` to
+    ``egs.operator_commands``, and only then echoes the ack back. The echo's
+    arrival proves the publish path didn't error.
+    """
+    command_id = "e2e-cmd-pub-1"
+    matched = _ws_send_and_capture(
+        pipeline["flutter_url"],
+        pipeline["bridge_ws_url"],
+        send_frames=[{
+            "type": "operator_command",
+            "command_id": command_id,
+            "language": "en",
+            "raw_text": "recall drone1 to base",
+            "contract_version": "1.0.0",
+        }],
+        match=lambda env: (
+            env.get("type") == "echo"
+            and env.get("ack") == "operator_command_received"
+            and env.get("command_id") == command_id
+        ),
+        timeout_s=15.0,
+    )
+    assert matched is not None, (
+        f"No operator_command_received echo for command_id={command_id} "
+        "within 15s. The bridge may have failed validation or the redis "
+        "publish raised."
+    )
+
+
+def test_operator_command_dispatch_round_trip(pipeline: Dict[str, Any]) -> None:
+    """Browser sends ``operator_command_dispatch`` and receives the echo ack.
+
+    Mirrors the operator_command path but hits the dispatch branch, which
+    republishes onto ``egs.operator_actions`` (same channel as
+    finding_approval).
+    """
+    command_id = "e2e-cmd-dispatch-1"
+    matched = _ws_send_and_capture(
+        pipeline["flutter_url"],
+        pipeline["bridge_ws_url"],
+        send_frames=[{
+            "type": "operator_command_dispatch",
+            "command_id": command_id,
+            "contract_version": "1.0.0",
+        }],
+        match=lambda env: (
+            env.get("type") == "echo"
+            and env.get("ack") == "operator_command_dispatch"
+            and env.get("command_id") == command_id
+        ),
+        timeout_s=15.0,
+    )
+    assert matched is not None, (
+        f"No operator_command_dispatch echo for command_id={command_id} "
+        "within 15s."
+    )
+
+
+def test_finding_approval_round_trip(pipeline: Dict[str, Any]) -> None:
+    """Browser approves a producer-published finding and gets the echo ack.
+
+    The producer publishes a finding every 8 ticks (~1.6s at the
+    fixture's tick_s=0.2). The dance:
+
+    1. Subscribe to the bridge WS.
+    2. Wait for a state_update frame whose ``active_findings`` is non-empty.
+    3. Capture the first ``finding_id`` from that frame.
+    4. Send a ``finding_approval`` for that id.
+    5. Wait for the matching echo ack.
+    """
+    command_id = "e2e-approve-1"
+    captured: Dict[str, str] = {}
+
+    def _on_state_update(env: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+        findings = env.get("active_findings") or []
+        if not findings:
+            return None
+        fid = findings[0].get("finding_id")
+        if not isinstance(fid, str) or not fid:
+            return None
+        captured["finding_id"] = fid
+        return [{
+            "type": "finding_approval",
+            "command_id": command_id,
+            "finding_id": fid,
+            "action": "approve",
+            "contract_version": "1.0.0",
+        }]
+
+    matched = _ws_send_and_capture(
+        pipeline["flutter_url"],
+        pipeline["bridge_ws_url"],
+        send_frames=[],
+        on_first_state_update=_on_state_update,
+        match=lambda env: (
+            env.get("type") == "echo"
+            and env.get("ack") == "finding_approval"
+            and env.get("command_id") == command_id
+        ),
+        # Producer first finding lands at tick 0, but the bridge needs a
+        # subscriber + aggregator tick to see it. ~5s headroom after WS
+        # open is generous for tick_s=0.2.
+        timeout_s=20.0,
+    )
+    assert "finding_id" in captured, (
+        "Never observed a state_update with active_findings — the producer "
+        "may not have ticked or the bridge subscriber didn't deliver."
+    )
+    assert matched is not None, (
+        f"No finding_approval echo for command_id={command_id} "
+        f"finding_id={captured.get('finding_id')!r} within 20s."
+    )
+    assert matched.get("finding_id") == captured["finding_id"], (
+        f"Echo's finding_id {matched.get('finding_id')!r} did not match "
+        f"the captured {captured['finding_id']!r}."
+    )
+
+
+def test_command_translation_forward(pipeline: Dict[str, Any]) -> None:
+    """Envelope published to ``egs.command_translations`` is forwarded to WS.
+
+    Uses ``redis-cli PUBLISH`` to inject the envelope (rather than starting
+    a Python redis client) — ``pipeline`` already exposes the cli path and
+    port. The bridge subscriber strips ``kind`` and ``egs_published_at_iso_ms``
+    before broadcasting; assert both are gone in the received frame.
+    """
+    command_id = "e2e-translate-1"
+    envelope = {
+        "kind": "command_translation",
+        "command_id": command_id,
+        "structured": {
+            "command": "recall_drone",
+            "args": {"drone_id": "drone1", "reason": "operator request"},
+        },
+        "valid": True,
+        "preview_text": "Will recall drone1: operator request",
+        "preview_text_in_operator_language": "Will recall drone1: operator request",
+        "egs_published_at_iso_ms": "2026-05-04T12:34:57.123Z",
+        "contract_version": "1.0.0",
+    }
+    redis_cli = pipeline["redis_cli_bin"]
+    redis_port = pipeline["redis_port"]
+    channel = "egs.command_translations"
+
+    # The publish must happen AFTER the bridge subscriber has actually
+    # subscribed. The bridge binds the subscriber at startup, but on slow
+    # CI runners there's a small window. Schedule the publish on a delay
+    # using a background thread so it fires after our WS open + drain.
+    import threading
+
+    def _delayed_publish() -> None:
+        # 1.5s gives the WS open + initial state drain plenty of time.
+        time.sleep(1.5)
+        try:
+            subprocess.run(
+                [
+                    redis_cli, "-p", str(redis_port),
+                    "PUBLISH", channel, json.dumps(envelope),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=5.0,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            sys.stderr.write(f"[e2e] redis publish failed: {exc}\n")
+
+    t = threading.Thread(target=_delayed_publish, daemon=True)
+    t.start()
+
+    try:
+        matched = _ws_send_and_capture(
+            pipeline["flutter_url"],
+            pipeline["bridge_ws_url"],
+            send_frames=[],
+            match=lambda env: (
+                env.get("type") == "command_translation"
+                and env.get("command_id") == command_id
+            ),
+            timeout_s=15.0,
+        )
+    finally:
+        t.join(timeout=5.0)
+
+    assert matched is not None, (
+        f"No command_translation frame for command_id={command_id} "
+        "within 15s. Bridge subscriber may not have been ready."
+    )
+    # Bridge-only fields must NOT leak.
+    assert "kind" not in matched, (
+        f"Bridge leaked 'kind' field to client: {matched.get('kind')!r}"
+    )
+    assert "egs_published_at_iso_ms" not in matched, (
+        "Bridge leaked 'egs_published_at_iso_ms' field to client."
+    )
+    assert matched.get("structured", {}).get("command") == "recall_drone"
+    assert matched.get("valid") is True
+    assert matched.get("preview_text", "").startswith("Will recall")
+
+
+def test_unknown_finding_id_error_path(pipeline: Dict[str, Any]) -> None:
+    """Approving an unknown finding_id yields an ``unknown_finding_id`` echo.
+
+    The producer uses prefix ``f_drone99_<counter>``; we use ``drone98``
+    with a high suffix to guarantee the id matches the contract regex
+    (``^f_drone\\d+_\\d+$``) but is never minted by the producer.
+
+    The match predicate checks BOTH ``error == 'unknown_finding_id'`` AND
+    ``command_id`` so the test can't false-pass on a stray echo.
+    """
+    command_id = "e2e-unknown-1"
+    unknown_finding_id = "f_drone98_999999"
+
+    matched = _ws_send_and_capture(
+        pipeline["flutter_url"],
+        pipeline["bridge_ws_url"],
+        send_frames=[{
+            "type": "finding_approval",
+            "command_id": command_id,
+            "finding_id": unknown_finding_id,
+            "action": "approve",
+            "contract_version": "1.0.0",
+        }],
+        match=lambda env: (
+            env.get("type") == "echo"
+            and env.get("error") == "unknown_finding_id"
+            and env.get("command_id") == command_id
+        ),
+        timeout_s=15.0,
+    )
+    assert matched is not None, (
+        f"No unknown_finding_id error echo for command_id={command_id} "
+        "within 15s."
+    )
+    assert matched.get("finding_id") == unknown_finding_id, (
+        f"Echo's finding_id {matched.get('finding_id')!r} did not match "
+        f"the unknown id we sent ({unknown_finding_id!r})."
+    )
