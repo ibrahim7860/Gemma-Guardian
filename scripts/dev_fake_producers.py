@@ -73,6 +73,12 @@ _FINDING_TYPE_ROTATION: List[str] = [
 ]
 
 
+# Allowed tokens for --emit. Each value enables one channel family. Default
+# (all three) keeps backwards compatibility with existing dev workflows
+# that did not pass --emit.
+_EMIT_CHANNEL_TOKENS: List[str] = ["state", "egs", "findings"]
+
+
 # Default schema-valid drone_id for the dev producer. See module docstring
 # for the rationale (regex constraint vs. avoiding Hazim collision).
 _DEFAULT_DRONE_ID: str = "drone99"
@@ -178,6 +184,25 @@ def _validate_or_die(schema_name: str, payload: Dict[str, Any]) -> None:
         sys.exit(2)
 
 
+def _parse_emit_csv(value: str) -> List[str]:
+    """argparse type-converter for --emit. Splits on comma, strips whitespace,
+    and rejects unknown tokens with argparse.ArgumentTypeError so the parser
+    exits with a clear message instead of failing later at publish time."""
+    tokens = [t.strip() for t in value.split(",") if t.strip()]
+    if not tokens:
+        raise argparse.ArgumentTypeError(
+            "--emit must contain at least one of: "
+            f"{','.join(_EMIT_CHANNEL_TOKENS)}"
+        )
+    bad = [t for t in tokens if t not in _EMIT_CHANNEL_TOKENS]
+    if bad:
+        raise argparse.ArgumentTypeError(
+            f"--emit got unknown token(s): {bad}. "
+            f"Valid tokens: {_EMIT_CHANNEL_TOKENS}"
+        )
+    return tokens
+
+
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -217,6 +242,20 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help=(
             "Skip pre-publish schema validation. Default is to validate "
             "every payload and exit non-zero on failure."
+        ),
+    )
+    parser.add_argument(
+        "--emit",
+        type=_parse_emit_csv,
+        default=list(_EMIT_CHANNEL_TOKENS),
+        help=(
+            "Comma-separated subset of channel families to emit. "
+            "Tokens: state (drones.<id>.state, every tick), "
+            "egs (egs.state, every 2 ticks), "
+            "findings (drones.<id>.findings, every 8 ticks). "
+            "Default: all three. Hybrid demo mode runs one --emit=state "
+            "instance disabled (sim owns it) and one --emit=egs,findings "
+            "instance enabled until Qasim/Kaleel ship real producers."
         ),
     )
     return parser.parse_args(argv)
