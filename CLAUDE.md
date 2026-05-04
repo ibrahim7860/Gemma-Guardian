@@ -91,6 +91,7 @@ gemma-guardian/
 ├── sim/                             # software-only drone "simulator"
 │   ├── waypoint_runner.py           # scripted drone motion + GPS feed
 │   ├── frame_server.py              # serves pre-recorded JPEG frames per drone
+│   ├── manual_pilot.py              # interactive REPL stand-in for the drone agent (debug aid)
 │   ├── scenarios/                   # YAML scripts: waypoints, scripted failures, frame mappings
 │   └── fixtures/                    # pre-recorded disaster imagery (xBD crops, public aerials)
 ├── agents/
