@@ -127,3 +127,48 @@ def test_launch_swarm_explicit_drones_override_disables_auto():
     assert "--drone-id drone1" in result.stdout
     assert "--drone-id drone2" in result.stdout
     assert "--drone-id drone3" not in result.stdout
+
+
+def test_launch_swarm_duration_propagates_to_runners():
+    """``launch_swarm.sh --duration=30`` should pass --duration through to
+    sim/waypoint_runner.py and sim/frame_server.py (the only processes that
+    accept it). Drone agents and EGS do not, so the flag must NOT appear on
+    their commands."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--duration=30", "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    # Sim runners get --duration.
+    assert "waypoint_runner.py" in result.stdout
+    waypoint_lines = [ln for ln in result.stdout.splitlines() if "waypoint_runner.py" in ln]
+    assert any("--duration 30" in ln for ln in waypoint_lines), (
+        f"waypoint_runner missing --duration; lines were:\n{waypoint_lines}"
+    )
+    frames_lines = [ln for ln in result.stdout.splitlines() if "frame_server.py" in ln]
+    assert any("--duration 30" in ln for ln in frames_lines), (
+        f"frame_server missing --duration; lines were:\n{frames_lines}"
+    )
+    # Drone agents do NOT get --duration (they don't accept it).
+    drone_agent_lines = [ln for ln in result.stdout.splitlines() if "drone_agent/main.py" in ln]
+    if drone_agent_lines:
+        for ln in drone_agent_lines:
+            assert "--duration" not in ln, f"drone_agent should not receive --duration: {ln}"
+
+
+def test_launch_swarm_default_no_duration_flag_anywhere():
+    """When --duration is omitted, no runner should get a --duration flag."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0
+    assert "--duration" not in result.stdout
