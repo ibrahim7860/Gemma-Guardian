@@ -22,7 +22,7 @@ from typing import Any, Dict
 import pytest
 from httpx_ws import aconnect_ws
 
-from frontend.ws_bridge.tests._helpers import drain_until
+from frontend.ws_bridge.tests._helpers import drain_until, make_test_client
 from shared.contracts import validate
 
 
@@ -52,21 +52,22 @@ def _command_frame(
 
 
 @pytest.mark.asyncio
-async def test_valid_operator_command_publishes_envelope(app_and_client):
+async def test_valid_operator_command_publishes_envelope(app_and_redis):
     """A schema-valid ``operator_command`` is acked AND republished onto
     ``egs.operator_commands`` as a stamped ``operator_commands_envelope``.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
 
     pubsub = fake.pubsub()
     await pubsub.subscribe("egs.operator_commands")
     try:
-        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-            await ws.receive_text()  # initial state envelope
-            await ws.send_text(json.dumps(_command_frame()))
-            ack = await drain_until(
-                ws, lambda m: m.get("ack") == "operator_command_received"
-            )
+        async with make_test_client(app) as http_client:
+            async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+                await ws.receive_text()  # initial state envelope
+                await ws.send_text(json.dumps(_command_frame()))
+                ack = await drain_until(
+                    ws, lambda m: m.get("ack") == "operator_command_received"
+                )
 
         assert ack["type"] == "echo"
         assert ack["ack"] == "operator_command_received"
@@ -101,21 +102,22 @@ async def test_valid_operator_command_publishes_envelope(app_and_client):
 
 
 @pytest.mark.asyncio
-async def test_invalid_operator_command_no_publish(app_and_client):
+async def test_invalid_operator_command_no_publish(app_and_redis):
     """A schema-invalid ``operator_command`` (missing ``raw_text``) must
     echo ``invalid_operator_command`` and must NOT publish to Redis.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
 
     pubsub = fake.pubsub()
     await pubsub.subscribe("egs.operator_commands")
     try:
-        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-            await ws.receive_text()  # initial state envelope
-            await ws.send_text(json.dumps(_command_frame(drop_raw_text=True)))
-            echo = await drain_until(
-                ws, lambda m: m.get("error") == "invalid_operator_command"
-            )
+        async with make_test_client(app) as http_client:
+            async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+                await ws.receive_text()  # initial state envelope
+                await ws.send_text(json.dumps(_command_frame(drop_raw_text=True)))
+                echo = await drain_until(
+                    ws, lambda m: m.get("error") == "invalid_operator_command"
+                )
 
         assert echo["type"] == "echo"
         assert echo["error"] == "invalid_operator_command"
