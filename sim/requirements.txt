@@ -1,0 +1,7 @@
+redis>=5.0
+PyYAML>=6.0
+Pillow>=10.0
+pydantic>=2.5
+pytest>=8.0
+fakeredis>=2.20
+freezegun>=1.4

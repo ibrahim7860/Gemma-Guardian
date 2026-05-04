@@ -1,0 +1,5 @@
+redis>=5.0
+PyYAML>=6.0
+pydantic>=2.5
+pytest>=8.0
+fakeredis>=2.20
