@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -882,3 +883,348 @@ def test_unknown_finding_id_error_path(pipeline: Dict[str, Any]) -> None:
         f"Echo's finding_id {matched.get('finding_id')!r} did not match "
         f"the unknown id we sent ({unknown_finding_id!r})."
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 UI-interaction tests (a11y semantics)
+# ---------------------------------------------------------------------------
+#
+# The tests above use Playwright as a JSON transport — they open a side-channel
+# WebSocket from page JS and send/receive frames directly. Useful for protocol
+# regression but they never touch a real button.
+#
+# The tests below drive the actual Flutter dashboard UI through Flutter web's
+# accessibility semantics tree (``SemanticsBinding.ensureSemantics`` is wired
+# in ``frontend/flutter_dashboard/lib/main.dart``). Every visible widget shows
+# up as a ``<flt-semantics>`` DOM node with a ``role`` attribute and the
+# widget's text as its content, which Playwright can locate and click. The
+# command-panel text input is a real ``<input>`` element with an ``aria-label``.
+#
+# We hook into the Flutter app's OWN WebSocket (the one it opens to the bridge
+# on load) via ``page.on('websocket')`` + ``framesent`` and inspect what the UI
+# actually sends in response to clicks/typing — which is the ground truth we
+# care about for the demo.
+
+
+def _install_ws_url_rewriter(page, bridge_port: int) -> None:
+    """Patch ``window.WebSocket`` so any URL the Flutter app passes is
+    rewritten to point at our dynamically-allocated bridge port.
+
+    The Flutter dashboard hardcodes ``ws://localhost:9090`` from
+    ``Channels.wsEndpoint`` (generated from ``shared/contracts/topics.yaml``).
+    Our test fixture allocates a free port at runtime, so without this
+    rewrite the Flutter app would try to connect to 9090 — which isn't
+    running — and the findings panel never populates. We rewrite at the
+    JavaScript layer because the Dart code can't be reconfigured without a
+    rebuild.
+
+    MUST be called BEFORE ``page.goto`` so the init script runs before
+    Flutter bootstraps.
+    """
+    page.add_init_script(
+        f"""
+        (() => {{
+            const TARGET_PORT = {bridge_port};
+            const Original = window.WebSocket;
+            function Patched(url, protocols) {{
+                try {{
+                    const u = new URL(url, window.location.href);
+                    // Only rewrite ws:// URLs targeting localhost/127.0.0.1
+                    // — leave anything else (e.g., devtools) alone.
+                    if (
+                        (u.protocol === 'ws:' || u.protocol === 'wss:')
+                        && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')
+                    ) {{
+                        u.port = String(TARGET_PORT);
+                        url = u.toString();
+                    }}
+                }} catch (e) {{ /* fall through with original url */ }}
+                return protocols === undefined
+                    ? new Original(url)
+                    : new Original(url, protocols);
+            }}
+            Patched.prototype = Original.prototype;
+            Patched.CONNECTING = Original.CONNECTING;
+            Patched.OPEN = Original.OPEN;
+            Patched.CLOSING = Original.CLOSING;
+            Patched.CLOSED = Original.CLOSED;
+            window.WebSocket = Patched;
+        }})();
+        """
+    )
+
+
+def _capture_app_outbound_frames(page, bridge_port: int) -> List[str]:
+    """Attach a WS listener that buffers every outbound frame the Flutter
+    app sends to the bridge. Returns a live list — keep using ``page`` and
+    new frames append automatically. MUST be called BEFORE ``page.goto``
+    so the listener is live when the Flutter app opens its WS.
+
+    Filters by ``bridge_port`` so unrelated WS connections (e.g., devtools)
+    are ignored.
+    """
+    sent: List[str] = []
+
+    def on_websocket(ws: Any) -> None:
+        if str(bridge_port) not in ws.url:
+            return
+        ws.on(
+            "framesent",
+            lambda payload: sent.append(
+                payload if isinstance(payload, str) else payload.decode("utf-8", "replace")
+            ),
+        )
+
+    page.on("websocket", on_websocket)
+    return sent
+
+
+def _wait_for_frame_matching(
+    frames: List[str],
+    predicate: Callable[[Dict[str, Any]], bool],
+    *,
+    timeout_s: float,
+    poll_ms: int = 100,
+) -> Dict[str, Any]:
+    """Poll the live ``frames`` list until one parses-as-JSON and matches
+    ``predicate``. Returns the matching frame. Raises AssertionError on
+    timeout.
+    """
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for raw in frames:
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if predicate(msg):
+                return msg
+        time.sleep(poll_ms / 1000.0)
+    raise AssertionError(
+        f"no frame in {len(frames)} captured frames matched predicate within {timeout_s}s"
+    )
+
+
+def test_ui_approve_button_fires_finding_approval(pipeline: Dict[str, Any]) -> None:
+    """Clicking 'APPROVE' on a finding tile must produce a single
+    finding_approval frame on the Flutter app's WebSocket to the bridge.
+
+    This is the operator's primary demo action: see a victim, approve.
+    The network-layer test covers the bridge's handling of an inbound
+    finding_approval; this test covers that the actual UI button does
+    fire that frame in the first place.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            _install_ws_url_rewriter(page, pipeline["bridge_port"])
+            sent_frames = _capture_app_outbound_frames(page, pipeline["bridge_port"])
+            page.goto(pipeline["flutter_url"], wait_until="domcontentloaded", timeout=15_000)
+            # Wait for the producer's first finding to land in the panel.
+            # Producer publishes findings every ~1.6s; cold-start can take
+            # several seconds before the first one renders.
+            approve_btn = page.locator(
+                'flt-semantics[role="button"]:has-text("APPROVE")'
+            ).first
+            approve_btn.wait_for(state="visible", timeout=20_000)
+            approve_btn.click()
+            # Allow the click handler to fire and the WS send to flush.
+            page.wait_for_timeout(500)
+
+            approvals: List[Dict[str, Any]] = []
+            for raw in sent_frames:
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("type") == "finding_approval":
+                    approvals.append(msg)
+            assert len(approvals) == 1, (
+                f"expected exactly one finding_approval frame; got "
+                f"{len(approvals)}: {approvals!r}"
+            )
+            ap = approvals[0]
+            assert ap.get("action") == "approve", (
+                f"action must be 'approve'; got {ap.get('action')!r}"
+            )
+            assert re.match(r"^f_drone\d+_\d+$", ap.get("finding_id", "")), (
+                f"finding_id must match schema regex; got {ap.get('finding_id')!r}"
+            )
+            assert ap.get("command_id"), (
+                f"command_id must be non-empty; got {ap.get('command_id')!r}"
+            )
+        finally:
+            browser.close()
+
+
+def test_ui_dismiss_button_fires_finding_approval_with_dismiss_action(
+    pipeline: Dict[str, Any],
+) -> None:
+    """Clicking 'DISMISS' on a finding tile fires finding_approval with
+    action='dismiss'. Sister test to APPROVE — covers the negative
+    operator action.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            _install_ws_url_rewriter(page, pipeline["bridge_port"])
+            sent_frames = _capture_app_outbound_frames(page, pipeline["bridge_port"])
+            page.goto(pipeline["flutter_url"], wait_until="domcontentloaded", timeout=15_000)
+            dismiss_btn = page.locator(
+                'flt-semantics[role="button"]:has-text("DISMISS")'
+            ).first
+            dismiss_btn.wait_for(state="visible", timeout=20_000)
+            dismiss_btn.click()
+            page.wait_for_timeout(500)
+
+            dismiss = _wait_for_frame_matching(
+                sent_frames,
+                lambda m: (
+                    m.get("type") == "finding_approval"
+                    and m.get("action") == "dismiss"
+                ),
+                timeout_s=5.0,
+            )
+            assert re.match(r"^f_drone\d+_\d+$", dismiss.get("finding_id", "")), (
+                f"finding_id must match schema regex; got {dismiss.get('finding_id')!r}"
+            )
+            assert dismiss.get("command_id"), (
+                f"command_id must be non-empty; got {dismiss.get('command_id')!r}"
+            )
+        finally:
+            browser.close()
+
+
+def test_ui_translate_button_fires_operator_command_with_language(
+    pipeline: Dict[str, Any],
+) -> None:
+    """Pick Spanish in the dropdown, type a command, click TRANSLATE.
+    The Flutter app must send an operator_command frame with
+    language='es' and the typed raw_text.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            _install_ws_url_rewriter(page, pipeline["bridge_port"])
+            sent_frames = _capture_app_outbound_frames(page, pipeline["bridge_port"])
+            page.goto(pipeline["flutter_url"], wait_until="domcontentloaded", timeout=15_000)
+
+            # The text input is a real <input> with aria-label="Type a command..."
+            text_input = page.locator('input[aria-label="Type a command..."]').first
+            text_input.wait_for(state="visible", timeout=15_000)
+
+            # Open the language dropdown by clicking its trigger
+            # (currently shows "English").
+            page.locator(
+                'flt-semantics[role="button"]:has-text("English")'
+            ).first.click()
+            # Let the dropdown overlay render before clicking the item.
+            page.wait_for_timeout(500)
+            # Flutter renders dropdown items as ``<flt-semantics
+            # role="menuitem">`` but the text content lives on the
+            # canvas, not in the DOM — so we cannot select by text. The
+            # DropdownMenuItem order is fixed in command_panel.dart:
+            # English (0), Spanish (1), Arabic (2). Pick index 1.
+            page.locator('flt-semantics[role="menuitem"]').nth(1).click()
+
+            text_input.fill("recall drone1 to base")
+            # TRANSLATE button must now be enabled (text is non-empty).
+            translate_btn = page.locator(
+                'flt-semantics[role="button"]:has-text("TRANSLATE")'
+            ).first
+            translate_btn.click()
+            page.wait_for_timeout(500)
+
+            cmd = _wait_for_frame_matching(
+                sent_frames,
+                lambda m: m.get("type") == "operator_command",
+                timeout_s=5.0,
+            )
+            assert cmd.get("language") == "es", (
+                f"language must be 'es'; got {cmd.get('language')!r}"
+            )
+            assert cmd.get("raw_text") == "recall drone1 to base", (
+                f"raw_text must match what we typed; got {cmd.get('raw_text')!r}"
+            )
+            assert cmd.get("command_id"), (
+                f"command_id must be non-empty; got {cmd.get('command_id')!r}"
+            )
+        finally:
+            browser.close()
+
+
+def test_ui_approve_disables_button_after_click(pipeline: Dict[str, Any]) -> None:
+    """After clicking APPROVE, the button must visually transition to a
+    disabled state (per MissionState's optimistic update — finding moves
+    to ApprovalState.pending which gates onPressed: null).
+
+    This is the operator-feedback contract: judges will mash the button
+    and we don't want it to fire 5 times before the bridge ack arrives.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            _install_ws_url_rewriter(page, pipeline["bridge_port"])
+            sent_frames = _capture_app_outbound_frames(page, pipeline["bridge_port"])
+            page.goto(pipeline["flutter_url"], wait_until="domcontentloaded", timeout=15_000)
+            page.locator(
+                'flt-semantics[role="button"]:has-text("APPROVE")'
+            ).first.wait_for(state="visible", timeout=20_000)
+            # Resolve to a concrete DOM node so subsequent clicks hit the
+            # SAME button. ``locator(...).first`` re-queries on every call
+            # — and the producer publishes a new finding every ~1.6s, so
+            # the second ``.first`` would target a different tile entirely
+            # (giving us two distinct approvals for two distinct findings,
+            # which masks the disable-after-click contract we're testing).
+            approve_handle = page.locator(
+                'flt-semantics[role="button"]:has-text("APPROVE")'
+            ).first.element_handle()
+            assert approve_handle is not None, "approve element handle missing"
+            captured_finding_id_before = approve_handle.text_content()
+            approve_handle.click()
+            # Click the SAME node again immediately. If the button is
+            # properly disabled, the second click is a no-op.
+            page.wait_for_timeout(50)
+            try:
+                approve_handle.click(timeout=2_000, force=True)
+            except Exception:
+                # The button may detach / become non-clickable as Flutter
+                # rebuilds the tile with the disabled state. That's exactly
+                # what we want — count the second click as a no-op.
+                pass
+            page.wait_for_timeout(800)
+
+            approvals: List[Dict[str, Any]] = []
+            for raw in sent_frames:
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if (
+                    msg.get("type") == "finding_approval"
+                    and msg.get("action") == "approve"
+                ):
+                    approvals.append(msg)
+            assert len(approvals) == 1, (
+                f"button must disable after first click; got {len(approvals)} "
+                f"approvals (was looking at {captured_finding_id_before!r}): "
+                f"{approvals!r}"
+            )
+        finally:
+            browser.close()
