@@ -21,27 +21,34 @@ class DroneStatusPanel extends StatelessWidget {
             final d = mission.activeDrones[i] as Map<String, dynamic>;
             final droneId = d["drone_id"] as String? ?? "drone?";
             final perDrone = events[droneId] ?? const <Map<String, dynamic>>[];
-            return ListTile(
-              isThreeLine: true,
-              title: Text("$droneId — ${d["agent_status"]}"),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Battery ${d["battery_pct"]}% · "
-                    "Task: ${d["current_task"] ?? "idle"} · "
-                    "Findings: ${d["findings_count"]} · "
-                    "Validation fails: ${d["validation_failures_total"]}",
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _tickerLine(perDrone),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: perDrone.isEmpty ? Colors.grey[600] : Colors.orange[800],
+            final isSelected = mission.selectedDroneId == droneId;
+            return Container(
+              key: isSelected
+                  ? ValueKey('drone-row-highlight-$droneId')
+                  : null,
+              color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
+              child: ListTile(
+                isThreeLine: true,
+                title: Text("$droneId — ${d["agent_status"]}"),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Battery ${d["battery_pct"]}% · "
+                      "Task: ${d["current_task"] ?? "idle"} · "
+                      "Findings: ${d["findings_count"]} · "
+                      "Validation fails: ${d["validation_failures_total"]}",
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      _tickerLine(perDrone),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: perDrone.isEmpty ? Colors.grey[600] : Colors.orange[800],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
