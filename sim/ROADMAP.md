@@ -25,6 +25,7 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 ## Done (shipped on `feature/sim-live-run-followups`)
 
 - `launch_swarm.sh` writes a `$LOG_DIR/.gg_started_redis` sentinel only when it daemonizes its own Redis; `stop_demo.sh` only `redis-cli shutdown nosave`s when that sentinel exists, then removes it. Fixes anomaly #3 from `docs/sim-live-run-notes.md` — system-managed Redis is no longer interrupted by `stop_demo.sh` (slice A).
+- `scripts/run_full_demo.sh` `--duration=N` forwarding documented in the script header and in `docs/15-multi-drone-spawning.md`, with a regression test that pins the propagation through to the sim runners (slice B).
 
 ## Done (shipped on `feature/sim-polish`)
 

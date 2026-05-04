@@ -45,6 +45,13 @@ scripts/launch_swarm.sh disaster_zone_v1 --drones=drone1,drone2
 
 # rehearse what would launch without actually starting tmux
 scripts/launch_swarm.sh --dry-run
+
+# self-terminate the sim runners after N seconds (CI / scripted demos).
+# --duration is forwarded to sim/waypoint_runner.py and sim/frame_server.py
+# only — drone agents and EGS do not accept it. run_full_demo.sh forwards
+# every flag verbatim, so the same shape works there:
+scripts/launch_swarm.sh disaster_zone_v1 --duration=30
+scripts/run_full_demo.sh disaster_zone_v1 --duration=30
 ```
 
 Behaviour notes worth knowing before you run it:

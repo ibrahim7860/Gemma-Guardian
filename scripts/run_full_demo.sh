@@ -3,8 +3,19 @@
 # run_full_demo.sh — one-command launcher: starts the swarm, tails logs,
 # stops cleanly on Ctrl-C.
 #
+# All arguments are forwarded verbatim to launch_swarm.sh. That includes
+# --drones=auto|drone1,...   subset of the scenario roster (default: auto)
+# --duration=N               sim runners self-terminate after N seconds
+#                            (useful for scripted demos and CI)
+# --dry-run                  print plans only; do not start tmux
+#
 # Usage:
-#   scripts/run_full_demo.sh [scenario]
+#   scripts/run_full_demo.sh [scenario] [--drones=...] [--duration=N]
+#
+# Examples:
+#   scripts/run_full_demo.sh
+#   scripts/run_full_demo.sh disaster_zone_v1 --duration=30
+#   scripts/run_full_demo.sh single_drone_smoke --drones=drone1
 #
 set -euo pipefail
 

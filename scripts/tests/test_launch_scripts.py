@@ -305,3 +305,46 @@ def test_stop_demo_leaves_redis_alone_when_sentinel_absent(tmp_path):
     assert "shutdown" not in calls, (
         f"redis-cli shutdown should NOT have been called; saw: {calls!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# run_full_demo.sh argument forwarding
+# ---------------------------------------------------------------------------
+
+
+def test_run_full_demo_forwards_duration_to_launch_swarm(tmp_path):
+    """``run_full_demo.sh --duration=N --dry-run`` should hand the flag through
+    to ``launch_swarm.sh`` so it lands on the sim runner invocations.
+
+    run_full_demo.sh wraps launch_swarm with a trailing ``tail -F``, which
+    runs forever even after a successful --dry-run. We start the script in
+    its own process group, capture launch_swarm's plan output, then SIGTERM
+    the whole group to take down ``tail -F`` and any trap-spawned children.
+    """
+    script = SCRIPTS_DIR / "run_full_demo.sh"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    proc = subprocess.Popen(
+        ["bash", str(script), "--duration=42", "--dry-run"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        env={**os.environ, "GG_NO_TMUX": "1", "GG_LOG_DIR": str(log_dir)},
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            out, err = proc.communicate(timeout=5)
+    combined = out + err
+    waypoint_lines = [ln for ln in combined.splitlines() if "waypoint_runner.py" in ln]
+    assert any("--duration 42" in ln for ln in waypoint_lines), (
+        f"expected --duration 42 forwarded to waypoint_runner; saw:\n{combined}"
+    )
+    frames_lines = [ln for ln in combined.splitlines() if "frame_server.py" in ln]
+    assert any("--duration 42" in ln for ln in frames_lines), (
+        f"expected --duration 42 forwarded to frame_server; saw:\n{combined}"
+    )
