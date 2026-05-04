@@ -32,6 +32,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import redis
 
+from shared.contracts.config import CONFIG
 from shared.contracts.topics import per_drone_camera_channel
 from sim.scenario import FrameMapping, Scenario, load_scenario
 
@@ -94,7 +95,7 @@ class FrameServer:
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sim frame server — publishes drones.<id>.camera at 1 Hz.")
     parser.add_argument("--scenario", required=True)
-    parser.add_argument("--redis-url", default="redis://localhost:6379/0")
+    parser.add_argument("--redis-url", default=CONFIG.transport.redis_url)
     parser.add_argument("--frame-hz", type=float, default=1.0)
     parser.add_argument(
         "--frames-dir",

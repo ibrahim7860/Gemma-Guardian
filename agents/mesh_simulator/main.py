@@ -41,6 +41,7 @@ from agents.mesh_simulator.range_filter import (
     filter_recipients,
     in_range_pairs,
 )
+from shared.contracts.config import CONFIG
 from shared.contracts.topics import (
     MESH_ADJACENCY,
     PER_DRONE_STATE,
@@ -193,7 +194,7 @@ class MeshSimulator:
 
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Mesh simulator — Euclidean range dropout for swarm broadcasts.")
-    parser.add_argument("--redis-url", default="redis://localhost:6379/0")
+    parser.add_argument("--redis-url", default=CONFIG.transport.redis_url)
     parser.add_argument("--range-meters", type=float, default=200.0)
     parser.add_argument("--egs-link-range-meters", type=float, default=500.0)
     parser.add_argument("--egs-lat", type=float, default=None, help="EGS latitude (defaults to omitted = no EGS)")

@@ -43,6 +43,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import redis
 
+from shared.contracts.config import CONFIG
 from shared.contracts.topics import per_drone_state_channel
 from sim.geo import haversine_meters, interpolate
 from sim.scenario import Drone, Scenario, ScriptedEvent, load_scenario
@@ -240,7 +241,7 @@ class WaypointRunner:
 def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sim waypoint runner — publishes drones.<id>.state at 2 Hz.")
     parser.add_argument("--scenario", required=True, help="Scenario YAML path or scenario_id under sim/scenarios/")
-    parser.add_argument("--redis-url", default="redis://localhost:6379/0")
+    parser.add_argument("--redis-url", default=CONFIG.transport.redis_url)
     parser.add_argument("--tick-hz", type=float, default=2.0)
     parser.add_argument("--battery-drain", type=float, default=0.1, help="Battery %% drain per second")
     return parser.parse_args(list(argv) if argv is not None else None)
