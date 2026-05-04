@@ -18,6 +18,7 @@ FRAMES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "frames"
 SHIPPED_SCENARIOS = [
     "disaster_zone_v1.yaml",
     "single_drone_smoke.yaml",
+    "resilience_v1.yaml",
 ]
 
 
