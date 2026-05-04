@@ -18,9 +18,10 @@ Deferred work captured during planning and reviews. Each entry includes context 
 `ASGIWebSocketTransport` via `async with` inside a dedicated lifecycle
 task (anyio's task-group requires same-Task enter/exit). The
 `transport.exit_stack = None` private-API workaround is gone.
-`requirements-dev.txt` upper bound bumped to `httpx-ws>=0.8,<0.9`
-(defensive pin against future breaking changes). Original entry
-retained below for historical context.
+`pyproject.toml`'s `[project.optional-dependencies] dev` upper
+bound bumped to `httpx-ws>=0.8,<0.9` (defensive pin against
+future breaking changes). Original entry retained below for
+historical context.
 
 - **What:** `frontend/ws_bridge/tests/conftest.py`'s `app_and_client`
   fixture pokes `transport.exit_stack = None` to break a circular ref at
