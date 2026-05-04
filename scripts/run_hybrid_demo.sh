@@ -126,7 +126,11 @@ else
 fi
 
 # --- WebSocket bridge (Ibrahim) -------------------------------------------
-emit ws_bridge "cd $REPO_ROOT && python3 frontend/ws_bridge/main.py 2>&1 | tee $LOG_DIR/ws_bridge.log"
+# Uvicorn is required: `python frontend/ws_bridge/main.py` only constructs the
+# FastAPI app and exits (the module's `app = create_app()` returns immediately
+# with no server attached). `launch_swarm.sh` has the same bug; flagged as a
+# follow-up. The hybrid orchestrator gets the right invocation directly.
+emit ws_bridge "cd $REPO_ROOT && python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   tmux kill-window -t hybrid_demo:placeholder 2>/dev/null || true

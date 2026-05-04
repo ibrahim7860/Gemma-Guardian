@@ -492,8 +492,8 @@ def test_run_hybrid_demo_dry_run_default_includes_fakes_and_sim():
     for did in ("drone1", "drone2", "drone3"):
         assert f"tmux:findings_{did}" in out, f"missing findings window for {did}"
         assert f"--drone-id {did}" in out
-    # Bridge.
-    assert "frontend/ws_bridge/main.py" in out
+    # Bridge — must be launched via uvicorn (bare `python main.py` exits).
+    assert "uvicorn frontend.ws_bridge.main:app" in out
 
 
 def test_run_hybrid_demo_dry_run_no_fake_egs_skips_egs_window():
@@ -520,8 +520,8 @@ def test_run_hybrid_demo_dry_run_no_fakes_at_all_is_post_migration_state():
     # Real sim still on.
     assert "waypoint_runner.py" in out
     assert "frame_server.py" in out
-    # Bridge still on.
-    assert "frontend/ws_bridge/main.py" in out
+    # Bridge still on (via uvicorn).
+    assert "uvicorn frontend.ws_bridge.main:app" in out
     # No fakes anywhere.
     assert "tmux:egs_fake" not in out
     for did in ("drone1", "drone2", "drone3"):

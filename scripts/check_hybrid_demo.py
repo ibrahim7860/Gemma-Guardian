@@ -1,8 +1,11 @@
 """Smoke verifier for the bridge cutover hybrid demo.
 
 Connects to ws://localhost:9090/ (the bridge) and asserts that within the
-deadline, a state_update envelope arrives whose drones[] covers every
-drone_id from the named scenario AND whose findings[] is non-empty.
+deadline, a state_update envelope arrives whose active_drones[] covers every
+drone_id from the named scenario AND whose active_findings[] is non-empty.
+
+Envelope shape (per StateAggregator.snapshot in frontend/ws_bridge/aggregator.py):
+    {type, timestamp, contract_version, egs_state, active_drones[], active_findings[]}
 
 Usage:
     python scripts/check_hybrid_demo.py disaster_zone_v1
@@ -61,8 +64,8 @@ async def _verify(scenario: str, ws_url: str, deadline_s: float) -> int:
                         continue
                     if env.get("type") != "state_update":
                         continue
-                    drones: List[dict] = env.get("drones", []) or []
-                    findings: List[dict] = env.get("findings", []) or []
+                    drones: List[dict] = env.get("active_drones", []) or []
+                    findings: List[dict] = env.get("active_findings", []) or []
                     seen = {d.get("drone_id") for d in drones if d.get("drone_id")}
                     missing = expected - seen
                     if missing:
