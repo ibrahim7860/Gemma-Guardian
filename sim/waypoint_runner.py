@@ -258,9 +258,27 @@ def _resolve_scenario_path(arg: str) -> Path:
     raise FileNotFoundError(f"scenario not found: {arg!r} (also looked at {candidate})")
 
 
+def _check_drone_count(scenario: Scenario) -> None:
+    """Fail fast if shared/config.yaml's mission.drone_count disagrees with
+    the scenario's len(drones). The two are always supposed to match — a
+    silent mismatch over- or under-provisions the swarm and confuses every
+    downstream component (drone agents, EGS, dashboard).
+    """
+    expected = CONFIG.mission.drone_count
+    actual = len(scenario.drones)
+    if expected != actual:
+        raise SystemExit(
+            f"[waypoint_runner] mission.drone_count={expected} from "
+            f"shared/config.yaml disagrees with scenario {scenario.scenario_id!r} "
+            f"len(drones)={actual}. Reconcile the two before launching: "
+            f"either edit shared/config.yaml or add/remove drones in the scenario YAML."
+        )
+
+
 def main(argv: Optional[Iterable[str]] = None) -> int:
     args = _parse_args(argv)
     scenario = load_scenario(_resolve_scenario_path(args.scenario))
+    _check_drone_count(scenario)
     redis_client = redis.Redis.from_url(args.redis_url)
     runner = WaypointRunner(scenario, redis_client, battery_drain_pct_per_sec=args.battery_drain)
 
