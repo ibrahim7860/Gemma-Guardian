@@ -82,13 +82,21 @@ emit_if_exists() {
 mkdir -p "$LOG_DIR"
 
 # --- Redis -------------------------------------------------------------------
-if [ "$DRY_RUN" -eq 1 ] || [ "${GG_NO_TMUX:-0}" = "1" ]; then
+# Ownership sentinel: we only `redis-cli shutdown nosave` (in stop_demo.sh) the
+# brokers we daemonized ourselves. Writing $LOG_DIR/.gg_started_redis here
+# tells stop_demo.sh "this one is safe to take down". When Redis was already
+# running (e.g. system-managed via `service redis-server start`), the sentinel
+# is *not* written, so stop_demo.sh leaves the broker alone.
+SENTINEL="$LOG_DIR/.gg_started_redis"
+if [ "$DRY_RUN" -eq 1 ]; then
   echo "[plan] redis-server (or skip if already running)"
 else
   if command -v redis-cli >/dev/null 2>&1 && redis-cli ping >/dev/null 2>&1; then
-    echo "[ok] redis-server already running"
+    echo "[ok] redis-server already running (will not be stopped by stop_demo.sh)"
+    rm -f "$SENTINEL"
   elif command -v redis-server >/dev/null 2>&1; then
     redis-server --daemonize yes --logfile "$LOG_DIR/redis.log"
+    : > "$SENTINEL"
     echo "[ok] redis-server started, log: $LOG_DIR/redis.log"
   else
     echo "[error] redis-server not found on PATH" >&2
