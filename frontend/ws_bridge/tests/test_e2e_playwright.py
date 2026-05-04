@@ -1149,11 +1149,22 @@ def test_ui_translate_button_fires_operator_command_with_language(
             spanish_item.wait_for(state="attached", timeout=10_000)
             spanish_item.click()
 
-            text_input.fill("recall drone1 to base")
+            # Flake fix #2: ``text_input.fill()`` writes the value into
+            # the DOM ``<input>`` but Flutter web's command_panel.dart
+            # ``TextEditingController`` only reacts to real key events
+            # — its ``addListener(setState)`` never fires on a synthetic
+            # value-set, so ``translateEnabled`` stays false and the
+            # button stays ``aria-disabled="true"``. Click the input to
+            # focus, then send real keystrokes via ``keyboard.type``.
+            text_input.click()
+            page.keyboard.type("recall drone1 to base")
             # TRANSLATE button must now be enabled (text is non-empty).
+            # Filter the locator to the enabled node — Flutter's a11y
+            # bridge takes a beat to flip ``aria-disabled``.
             translate_btn = page.locator(
-                'flt-semantics[role="button"]:has-text("TRANSLATE")'
+                'flt-semantics[role="button"]:has-text("TRANSLATE"):not([aria-disabled="true"])'
             ).first
+            translate_btn.wait_for(state="attached", timeout=10_000)
             translate_btn.click()
             page.wait_for_timeout(500)
 

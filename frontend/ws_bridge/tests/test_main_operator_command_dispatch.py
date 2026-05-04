@@ -20,7 +20,7 @@ from typing import Any, Dict
 import pytest
 from httpx_ws import aconnect_ws
 
-from frontend.ws_bridge.tests._helpers import drain_until
+from frontend.ws_bridge.tests._helpers import drain_until, make_test_client
 from shared.contracts import validate
 
 
@@ -42,21 +42,22 @@ def _dispatch_frame(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_publishes_to_operator_actions(app_and_client):
+async def test_dispatch_publishes_to_operator_actions(app_and_redis):
     """A schema-valid ``operator_command_dispatch`` is acked AND republished
     onto ``egs.operator_actions`` with ``kind=operator_command_dispatch``.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
 
     pubsub = fake.pubsub()
     await pubsub.subscribe("egs.operator_actions")
     try:
-        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-            await ws.receive_text()  # initial state envelope
-            await ws.send_text(json.dumps(_dispatch_frame()))
-            ack = await drain_until(
-                ws, lambda m: m.get("ack") == "operator_command_dispatch"
-            )
+        async with make_test_client(app) as http_client:
+            async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+                await ws.receive_text()  # initial state envelope
+                await ws.send_text(json.dumps(_dispatch_frame()))
+                ack = await drain_until(
+                    ws, lambda m: m.get("ack") == "operator_command_dispatch"
+                )
 
         assert ack["type"] == "echo"
         assert ack["ack"] == "operator_command_dispatch"
