@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 1A development launcher: starts the WebSocket bridge for dashboard work.
 # Usage: ./scripts/launch_dashboard_dev.sh
-# Prerequisite: pip install -r frontend/ws_bridge/requirements.txt
+# Prerequisite: uv sync --extra ws_bridge --extra dev (or activate a venv with the same deps)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONPATH="${PYTHONPATH:-.}:."

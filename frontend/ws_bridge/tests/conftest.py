@@ -38,7 +38,8 @@ async def app_and_client(monkeypatch, fake_client):
 
     Teardown: ``transport.exit_stack = None`` is a documented workaround
     for the httpx-ws<0.8 transport's circular-reference at shutdown. See
-    requirements-dev.txt for the upper-bound pin and the migration TODO.
+    pyproject.toml ([project.optional-dependencies] dev) for the
+    upper-bound pin and the migration TODO.
     """
     import redis.asyncio as redis_async
 

@@ -65,7 +65,7 @@ The GitHub repo at submission time:
 - [ ] `scripts/setup.sh` installs all dependencies
 - [ ] `scripts/run_full_demo.sh` runs the demo end-to-end
 - [ ] Reproduction instructions tested by someone other than the writer
-- [ ] Required Python packages in `requirements.txt` (or `pyproject.toml`)
+- [ ] Required Python packages in `pyproject.toml` (managed via `uv` + committed `uv.lock`)
 - [ ] Flutter dependencies in `pubspec.yaml`
 
 ## README.md Template

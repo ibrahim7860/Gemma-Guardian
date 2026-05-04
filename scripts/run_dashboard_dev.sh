@@ -5,7 +5,7 @@
 #
 # Prereqs:
 #   - redis-server already running (brew services start redis / systemctl)
-#   - python deps installed (pip install -r frontend/ws_bridge/requirements.txt)
+#   - python deps installed (uv sync --extra ws_bridge --extra dev)
 #   - flutter on PATH
 set -euo pipefail
 

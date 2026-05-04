@@ -71,6 +71,7 @@ Read docs in this order when getting up to speed:
 ## Tech Stack Summary
 
 - **OS:** macOS, Linux, or Windows 11 — all roles run cross-platform. Each developer needs Python 3.11+, Redis (`brew install redis` / `apt install redis-server` / WSL2), and Ollama. No simulator dependencies, no WSL2 requirement, no virtualization gates.
+- **Python deps:** managed by [`uv`](https://docs.astral.sh/uv/) against a single root `pyproject.toml` with role-scoped extras (`sim`, `mesh`, `drone`, `egs`, `ws_bridge`, `ml`, `dev`) and a committed `uv.lock`. Per-role install: `uv sync --extra <role> --extra dev`. Full graph: `uv sync --all-extras`. CI uses `uv sync --frozen`. There are no per-role `requirements.txt` files; do not create them. See [`docs/13-runtime-setup.md`](docs/13-runtime-setup.md) for the full workflow (and a plain-pip fallback for users who can't install uv).
 - **Drone "simulation":** Pure Python — drones move along scripted waypoint tracks at configurable speeds. "Camera frames" are pre-recorded disaster imagery (xBD post-disaster crops, public satellite/aerial photography) served from disk. No Gazebo, no PX4 SITL.
 - **Inter-process messaging:** Redis pub/sub (single local `redis-server`). Channel naming: `drones.<drone_id>.state`, `drones.<drone_id>.findings`, `egs.state`, `swarm.broadcasts.<drone_id>`, etc. See [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) Contract 9.
 - **LLM runtime:** Ollama, two instances (Gemma 4 E2B onboard, Gemma 4 E4B at EGS) — runs on Linux (CUDA), macOS (Metal), or Windows 11 with WSL2/CUDA. The exact Ollama tag for each Gemma 4 variant must be pinned in [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) once confirmed against `ollama.com/library` at integration time; do not hard-code a tag elsewhere.
@@ -123,6 +124,7 @@ If you are an AI assistant being asked to work on this repo:
 3. **Cite the function-calling schema.** Any code that produces a Gemma 4 prompt must align with `docs/09-function-calling-schema.md`.
 4. **Match the prompt style.** Prompts must follow the patterns in `docs/11-prompt-templates.md`, including the corrective re-prompt strings from the validation loop.
 5. **Flag scope creep.** If a request would expand the project beyond what's documented, push back and reference `docs/17-feasibility-and-gates.md`.
+6. **Use `uv` for Python work.** Run things via `uv run python ...` and add deps with `uv add --optional <role-extra> <pkg>` (then `uv lock`) — do not create or resurrect per-role `requirements.txt` files; the single source of truth is `pyproject.toml` + `uv.lock`. See [`docs/13-runtime-setup.md`](docs/13-runtime-setup.md).
 
 ## Contact / Owner
 

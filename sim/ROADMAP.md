@@ -15,6 +15,13 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 - 73 new pytest cases (sim + mesh + scripts).
 - Docs aligned: `docs/13-runtime-setup.md` covers WSL2 / 24.04 / PEP 668; `docs/15-multi-drone-spawning.md` points at the real scripts.
 
+## Done (shipped on `feature/uv-and-ci`)
+
+- `pyproject.toml` + `uv.lock` at repo root — single source of truth for Python deps via role-scoped extras (`sim`, `mesh`, `drone`, `egs`, `ws_bridge`, `ml`, `dev`).
+- All seven per-role `requirements.txt` files deleted; install is now `uv sync --extra <role> --extra dev`.
+- `.github/workflows/test.yml` — migrated to `astral-sh/setup-uv@v3` + `uv sync --frozen`; new `sim_mesh` CI job covers `pytest sim/ agents/mesh_simulator/ scripts/tests/`. `bridge`, `flutter`, `bridge_e2e` jobs intact.
+- Docs updated for the uv switch: `docs/13-runtime-setup.md` (uv primary, pip fallback), `docs/23-submission-checklist.md`, `frontend/flutter_dashboard/README.md`, `scripts/launch_dashboard_dev.sh`, `scripts/run_dashboard_dev.sh`, `frontend/ws_bridge/tests/conftest.py`, `TODOS.md`, and the entry-point `CLAUDE.md` so other collaborators' Claude Code picks up the change.
+
 ## Phases ahead (in order, no dates)
 
 ### Phase A — Live multi-drone smoke
@@ -66,6 +73,6 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 - `shared/config.yaml`'s `mission.drone_count` is set statically — sim could soft-assert it against the scenario YAML (and fail fast on mismatch).
 - `sim/waypoint_runner.py` and `sim/frame_server.py` default `--redis-url` to `redis://localhost:6379/0` directly; could read `shared/config.yaml` `transport.redis_url` instead.
 - `scripts/launch_swarm.sh` `--drones=` is hardcoded `drone1,drone2,drone3` by default; could derive from the scenario YAML's `drones[].drone_id` list.
-- `.github/workflows/sim-tests.yml` for CI on every push (pytest sim/ + agents/mesh_simulator/ + scripts/tests/).
+- ~~`.github/workflows/sim-tests.yml` for CI on every push (pytest sim/ + agents/mesh_simulator/ + scripts/tests/).~~ Done as the `sim_mesh` job in `.github/workflows/test.yml` on `feature/uv-and-ci`.
 - Add `--duration <seconds>` flag to runners so they self-terminate cleanly (useful for scripted demos and CI).
 - Pydantic `Scenario` could cross-validate that scripted_events `drone_id` references exist in `drones[]`.
