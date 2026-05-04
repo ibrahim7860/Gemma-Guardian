@@ -202,7 +202,7 @@ If Gemma 4 E4B is too slow, fall back to E2B for the EGS too. Frame it in the wr
 
 ## Optional: Driving Findings Without the Drone Agent
 
-Until Person 2's `agents/drone_agent/main.py` lands, you can rehearse Task 6
+Until Kaleel's `agents/drone_agent/main.py` lands, you can rehearse Task 6
 (Aggregated Finding Management) and Task 7 (Telemetry Monitoring) end-to-end
 by piping hand-typed findings onto `drones.<id>.findings` from
 [`sim/manual_pilot.py`](../sim/manual_pilot.py). It's a recommendation, not

@@ -42,7 +42,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 **Channel:** `drones.<id>.state`
 **Frequency:** 2 Hz
-**Owner:** Person 1's `sim/waypoint_runner.py` publishes the kinematic fields (position, velocity, heading, battery decay) from the scripted scenario; Person 2's drone agent overwrites the agent-state fields (`current_task`, `last_action`, `validation_failures_total`, `findings_count`, `agent_status`) on the same channel as a merged record.
+**Owner:** Hazim's `sim/waypoint_runner.py` publishes the kinematic fields (position, velocity, heading, battery decay) from the scripted scenario; Kaleel's drone agent overwrites the agent-state fields (`current_task`, `last_action`, `validation_failures_total`, `findings_count`, `agent_status`) on the same channel as a merged record.
 
 ```json
 {
@@ -78,7 +78,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
 
 **Channel:** `egs.state`
 **Frequency:** 1 Hz
-**Owner:** Person 3 publishes; Person 4 consumes (via the FastAPI WebSocket bridge mirroring this channel out to Flutter).
+**Owner:** Qasim publishes; Ibrahim consumes (via the FastAPI WebSocket bridge mirroring this channel out to Flutter).
 
 ```json
 {
@@ -153,7 +153,7 @@ Validation code in Python imports these schemas. Frontend imports them too.
 ## Contract 5: Task Assignment Schema
 
 **Channel:** `drones.<id>.tasks`
-**Owner:** Person 3 (EGS) publishes; Person 2 (drone agent) consumes.
+**Owner:** Qasim (EGS) publishes; Kaleel (drone agent) consumes.
 
 ```json
 {
@@ -241,7 +241,7 @@ The `mesh_simulator` process subscribes to `swarm.broadcasts.*` (Redis pattern s
 ## Contract 8: WebSocket Endpoint
 
 **Endpoint:** `ws://localhost:9090`
-**Owner:** Person 4 connects; Person 3 hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
+**Owner:** Ibrahim connects; Qasim hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
 
 Messages from EGS to Flutter (every 1 second):
 
@@ -314,7 +314,7 @@ gemma-guardian/
 │   │   └── main.py
 │   ├── egs_agent/
 │   │   ├── __init__.py
-│   │   ├── validation.py        # contracts plan stub (cross-drone dedup); Person 3 fleshes out the rest
+│   │   ├── validation.py        # contracts plan stub (cross-drone dedup); Qasim fleshes out the rest
 │   │   ├── coordinator.py
 │   │   ├── command_translator.py
 │   │   ├── replanning.py

@@ -56,7 +56,7 @@ scripts/run_full_demo.sh disaster_zone_v1 --duration=30
 
 Behaviour notes worth knowing before you run it:
 
-- **Missing-component tolerance.** The script guards every agent invocation with `[ -f <path> ]`. Components that haven't been built yet (e.g. `agents/drone_agent/main.py` in the early sim-only phase) are logged as `[skip]` rather than failing the launch. This is what lets Person 1 run sim + mesh end-to-end before Persons 2/3/4 ship.
+- **Missing-component tolerance.** The script guards every agent invocation with `[ -f <path> ]`. Components that haven't been built yet (e.g. `agents/drone_agent/main.py` in the early sim-only phase) are logged as `[skip]` rather than failing the launch. This is what lets Hazim run sim + mesh end-to-end before Kaleel/Qasim/Ibrahim ship.
 - **Redis startup.** If `redis-cli ping` already responds, the script reuses the running broker. Otherwise it daemonizes its own `redis-server` and logs to `$LOG_DIR/redis.log`.
 - **`--dry-run` and `GG_NO_TMUX=1`.** Both modes print `[plan] tmux:<window> :: <command>` lines instead of executing. Useful for CI verification — see `scripts/tests/test_launch_scripts.py`.
 
@@ -95,7 +95,7 @@ To drop back to 2 drones for the demo, edit `sim/scenarios/disaster_zone_v1.yaml
 
 ## Manual pilot — interactive drone-agent stand-in
 
-When Person 2 is iterating on the real drone agent and you need a fast loop
+When Kaleel is iterating on the real drone agent and you need a fast loop
 to drive findings / broadcasts into a live sim by hand,
 [`sim/manual_pilot.py`](../sim/manual_pilot.py) is the REPL.
 
@@ -123,7 +123,7 @@ raw function calls.
 
 The validation floor is JSON-Schema only. Semantic checks (battery actually
 low, GPS-in-zone, duplicate-finding, severity↔confidence) live in
-`agents/drone_agent/validation.py` and are Person 2's territory — see the
+`agents/drone_agent/validation.py` and are Kaleel's territory — see the
 `SchemaValidationError` TODO in `sim/manual_pilot.py`.
 
 `--frames-out-dir` (default `/tmp`) is where `frame` writes the latest JPEG

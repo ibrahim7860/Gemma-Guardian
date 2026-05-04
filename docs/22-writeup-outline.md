@@ -2,7 +2,7 @@
 
 ## Why This Doc Exists
 
-The technical writeup is one of the three submission deliverables (alongside repo and video). Judges read it after watching the video to evaluate technical depth. This doc gives the locked structure so Person 4 can draft cleanly without inventing the outline. (Person 1 reviews the simulation / disaster-scene section for accuracy.)
+The technical writeup is one of the three submission deliverables (alongside repo and video). Judges read it after watching the video to evaluate technical depth. This doc gives the locked structure so Ibrahim can draft cleanly without inventing the outline. (Hazim reviews the simulation / disaster-scene section for accuracy.)
 
 ## Length
 

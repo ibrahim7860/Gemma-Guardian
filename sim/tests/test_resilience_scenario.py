@@ -1,11 +1,11 @@
 """Resilience scenario v1 — geometry and event-surface invariants.
 
-The scenario is the substrate Person 3 (EGS) and Person 2 (drone agent) lean
+The scenario is the substrate Qasim (EGS) and Kaleel (drone agent) lean
 on for Phase D (mesh dropout live on the swarm) and Phase E (Gate 4 multi-
 drone coordination). It must:
 
 1. Load cleanly via the same Pydantic models as every other scenario.
-2. Reuse only the frames already on disk (Person 5's xBD swap stays
+2. Reuse only the frames already on disk (Thayyil's xBD swap stays
    orthogonal — filenames preserved, bytes change later).
 3. Geometry: drones start in-mesh and fan apart so the mesh range filter
    actually drops the drone1↔drone3 pair before t=60s, and at least one
@@ -73,7 +73,7 @@ def test_every_referenced_frame_exists_on_disk(scenario):
 
 
 def test_only_existing_placeholder_frames_used(scenario):
-    """Person 5's xBD swap is orthogonal — this scenario must not introduce
+    """Thayyil's xBD swap is orthogonal — this scenario must not introduce
     new fixture filenames. New imagery lands by replacing bytes at a kept
     name, not by adding files."""
     on_disk = {p.name for p in FRAMES_DIR.glob("*.jpg")}
@@ -126,7 +126,7 @@ def _positions_after(runner: WaypointRunner, t_seconds: float) -> dict[str, tupl
 def test_drone1_drone3_drop_out_of_mesh_range_by_t60(scenario, fake_redis):
     """Phase D resilience-demo invariant: by ~t=60s drone1 and drone3 are
     >200m apart and the mesh adjacency snapshot stops listing them as
-    neighbours. Tuning lever for Person 3's EGS replan rehearsal."""
+    neighbours. Tuning lever for Qasim's EGS replan rehearsal."""
     runner = WaypointRunner(scenario, fake_redis)
     positions = _positions_after(runner, t_seconds=60.0)
     adj = in_range_pairs(positions, range_m=MESH_RANGE_M)

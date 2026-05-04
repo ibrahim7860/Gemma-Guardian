@@ -195,7 +195,7 @@ Required fields (verify on Kaggle):
 
 - Final video editing
 - Final writeup pass
-- Reproduction test by Person 1 (clean machine if possible)
+- Reproduction test by Hazim (clean machine if possible)
 - Test demo on a different machine if available
 - Fix anything broken; no new features
 

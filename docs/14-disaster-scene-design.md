@@ -170,17 +170,17 @@ waypoints at the configured speed; there is no flight dynamics simulation.
 
 1 meter ≈ 0.0000089° latitude/longitude (rough conversion, sufficient for a 200m grid).
 
-## Authoring Workflow (Person 1 + Person 5, paired)
+## Authoring Workflow (Hazim + Thayyil, paired)
 
 A new scenario lands in three steps; each step has a stable artifact, so the
 work parallelises across the pair.
 
-**Step 1 — Skeleton (mostly Person 1).** Set up the Pydantic-validated YAML
+**Step 1 — Skeleton (mostly Hazim).** Set up the Pydantic-validated YAML
 under `sim/scenarios/<name>.yaml` with drone home positions, waypoint
 tracks, and `speed_mps`. Smoke-load it with `sim.scenario.load_scenario`
 (the test harness in `sim/tests/test_scenario_fixtures.py` is the canary).
 
-**Step 2 — Frame mappings + ground truth (mostly Person 5).** Curate xBD
+**Step 2 — Frame mappings + ground truth (mostly Thayyil).** Curate xBD
 crops or public-domain aerials into `sim/fixtures/frames/` (filenames
 preserved if a swap is replacing existing placeholders — see
 [`sim/tests/test_frames_directory.py`](../sim/tests/test_frames_directory.py)
@@ -219,7 +219,7 @@ When iterating on a live scenario:
 
 ## Validation: Does Gemma 4 See It?
 
-Before integrating with the full agent loop, Person 2 manually:
+Before integrating with the full agent loop, Kaleel manually:
 1. Takes 20 frames from `sim/fixtures/frames/` (the same files the frame server will serve)
 2. Sends each to Gemma 4 base model with the system prompt from `shared/prompts/`
 3. Verifies the model identifies the right targets with reasonable confidence

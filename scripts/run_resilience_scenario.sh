@@ -5,7 +5,7 @@
 # (T+240s). Thin wrapper around scripts/launch_swarm.sh.
 #
 # Why a dedicated script: docs/20-integration-contracts.md and the project
-# CLAUDE.md both list this script in the target file-system layout. Person 3
+# CLAUDE.md both list this script in the target file-system layout. Qasim
 # (EGS) reaches for it during Phase D / E rehearsals to exercise the mesh-
 # dropout + EGS-link-loss + replan loop without remembering scenario flags.
 #

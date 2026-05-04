@@ -20,10 +20,10 @@ The full doc index — vision, hackathon context, fine-tuning plan, demo storybo
 # install uv (one-time): https://docs.astral.sh/uv/
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # pick your role's slice (or --all-extras for everything)
-uv sync --extra sim --extra mesh --extra dev   # Person 1
-uv sync --extra drone --extra ml --extra dev   # Person 2
-uv sync --extra egs --extra dev                # Person 3
-uv sync --extra ws_bridge --extra dev          # Person 4
+uv sync --extra sim --extra mesh --extra dev   # Hazim
+uv sync --extra drone --extra ml --extra dev   # Kaleel
+uv sync --extra egs --extra dev                # Qasim
+uv sync --extra ws_bridge --extra dev          # Ibrahim
 ```
 
 Full setup (Redis, Ollama, per-platform notes, plain-pip fallback) lives in [`docs/13-runtime-setup.md`](docs/13-runtime-setup.md).
@@ -52,17 +52,17 @@ Five-person team, vertical-slice ownership. Roles, interfaces, and decision-maki
 
 | Person | Role | Primary scope |
 |---|---|---|
-| Person 1 | Sim Lead | `sim/`, `agents/mesh_simulator/`, launch scripts, Redis infra |
-| Person 2 | Drone Agent + ML | `agents/drone_agent/`, xBD fine-tuning |
-| Person 3 | EGS Coordinator | `agents/egs_agent/`, replanning, multilingual command path |
-| Person 4 | Frontend + Comms (lead) | `frontend/`, demo video, writeup, this README |
-| Person 5 | Sim Co-Pilot | paired with Person 1 — frame curation, scenario YAMLs |
+| Hazim | Sim Lead | `sim/`, `agents/mesh_simulator/`, launch scripts, Redis infra |
+| Kaleel | Drone Agent + ML | `agents/drone_agent/`, xBD fine-tuning |
+| Qasim | EGS Coordinator | `agents/egs_agent/`, replanning, multilingual command path |
+| Ibrahim | Frontend + Comms (lead) | `frontend/`, demo video, writeup, this README |
+| Thayyil | Sim Co-Pilot | paired with Hazim — frame curation, scenario YAMLs |
 
 ## Status
 
 In active development for the May 18, 2026 submission. Per-stream live status:
 
-- [`sim/ROADMAP.md`](sim/ROADMAP.md) — Person 1 / Person 5 surface (sim, mesh, scripts).
+- [`sim/ROADMAP.md`](sim/ROADMAP.md) — Hazim / Thayyil surface (sim, mesh, scripts).
 - [`TODOS.md`](TODOS.md) — cross-cutting follow-ups.
 
 ## License

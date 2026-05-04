@@ -3,8 +3,8 @@
 # launch_swarm.sh — start the full FieldAgent demo stack in a tmux session.
 #
 # Modeled on docs/15-multi-drone-spawning.md, this script tolerates missing
-# agent processes so Person 1 (sim lead) can run a partial stack while
-# Persons 2/3/4 are still building. Components that don't exist yet are
+# agent processes so Hazim (sim lead) can run a partial stack while
+# Kaleel/Qasim/Ibrahim are still building. Components that don't exist yet are
 # logged as "skipping" rather than blocking the launch.
 #
 # Usage:
@@ -139,24 +139,24 @@ if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   tmux new-session -d -s fieldagent -n placeholder
 fi
 
-# --- Sim components (Person 1 — always present) ------------------------------
+# --- Sim components (Hazim — always present) ------------------------------
 emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
 emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
 emit_if_exists mesh "agents/mesh_simulator/main.py" \
   "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/mesh.log"
 
-# --- EGS (Person 3) ----------------------------------------------------------
+# --- EGS (Qasim) ----------------------------------------------------------
 emit_if_exists egs "agents/egs_agent/main.py" \
   "cd $REPO_ROOT && python3 agents/egs_agent/main.py 2>&1 | tee $LOG_DIR/egs.log"
 
-# --- Drone agents (Person 2) -------------------------------------------------
+# --- Drone agents (Kaleel) -------------------------------------------------
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
 for ID in "${DRONE_ARRAY[@]}"; do
   emit_if_exists "$ID" "agents/drone_agent/main.py" \
     "cd $REPO_ROOT && python3 agents/drone_agent/main.py --drone-id $ID 2>&1 | tee $LOG_DIR/$ID.log"
 done
 
-# --- WebSocket bridge (Person 4) ---------------------------------------------
+# --- WebSocket bridge (Ibrahim) ---------------------------------------------
 emit_if_exists ws_bridge "frontend/ws_bridge/main.py" \
   "cd $REPO_ROOT && python3 frontend/ws_bridge/main.py 2>&1 | tee $LOG_DIR/ws_bridge.log"
 

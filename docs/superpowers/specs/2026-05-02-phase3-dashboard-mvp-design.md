@@ -2,7 +2,7 @@
 
 **Status:** approved 2026-05-02 after `/plan-eng-review` (CLEAR, 11 issues resolved, 0 critical gaps).
 **Branch:** `feat/dashboard-mvp`.
-**Owner:** Person 4 (Frontend / Demo / Comms).
+**Owner:** Ibrahim (Frontend / Demo / Comms).
 **Reviewers:** outside voice ran (Claude subagent; Codex unavailable due to CLI version mismatch). 10 findings; 7 just-do-its incorporated, 3 cross-model decisions resolved.
 
 ## Goal
@@ -17,14 +17,14 @@ Phase 3 is read-only on Panels 1–3 plus one outbound interaction (finding appr
 
 ## Non-goals (deferred with rationale)
 
-- Multilingual command box wiring — couples to Person 3's EGS translation path; not yet built.
+- Multilingual command box wiring — couples to Qasim's EGS translation path; not yet built.
 - Validation event ticker on drone status panel — Day-10 work in roadmap.
 - Static aerial base image for map — no asset committed; procedural background fine for now. Tracked in `TODOS.md`.
-- EGS-side approval echo back to dashboard — Person 3's Phase 4 work. Two-stage UI is forward-compatible without it.
+- EGS-side approval echo back to dashboard — Qasim's Phase 4 work. Two-stage UI is forward-compatible without it.
 - Mesh links between drones — Day-11 work.
 - `flutter_map` package, OSM tiles — offline system; static base only.
 - Map marker tap/hover interactivity — Phase 3 map is read-only.
-- EGS subscriber for `egs.operator_actions` — Person 3's Phase 4 seat. Phase 3 publishes the contract; `scripts/dev_actions_logger.py` lets us verify locally.
+- EGS subscriber for `egs.operator_actions` — Qasim's Phase 4 seat. Phase 3 publishes the contract; `scripts/dev_actions_logger.py` lets us verify locally.
 - Server-side `command_id` dedup — EGS responsibility once it subscribes.
 
 ## Architecture
@@ -70,7 +70,7 @@ Phase 3 is read-only on Panels 1–3 plus one outbound interaction (finding appr
                                    ▼
                   scripts/dev_actions_logger.py
                   (CLI subscriber for local verification;
-                   Person 3's EGS subscriber lands in Phase 4)
+                   Qasim's EGS subscriber lands in Phase 4)
 ```
 
 ### State machine: per-finding approval
