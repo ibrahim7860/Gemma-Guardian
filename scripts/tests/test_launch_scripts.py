@@ -136,6 +136,39 @@ def test_launch_swarm_explicit_drones_override_disables_auto():
     assert "--drone-id drone3" not in result.stdout
 
 
+def test_launch_swarm_explicit_drones_unknown_id_is_rejected():
+    """``--drones=drone7`` against disaster_zone_v1 (drones 1-3) must fail
+    fast with a clear error rather than launching a ghost agent for an id
+    the scenario never declared."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "disaster_zone_v1", "--drones=drone7", "--dry-run"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode != 0, (
+        f"expected non-zero exit; stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "drone7" in combined, f"error should mention the offending id; got: {combined!r}"
+    # No agent should have been planned for drone7.
+    assert "--drone-id drone7" not in result.stdout
+
+
+def test_launch_swarm_explicit_drones_partially_valid_is_rejected():
+    """A mix of one valid and one unknown id is still a hard failure — silent
+    truncation would be worse than a loud rejection."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "disaster_zone_v1", "--drones=drone1,droneX", "--dry-run"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "droneX" in combined
+
+
 def test_launch_swarm_duration_propagates_to_runners():
     """``launch_swarm.sh --duration=30`` should pass --duration through to
     sim/waypoint_runner.py and sim/frame_server.py (the only processes that

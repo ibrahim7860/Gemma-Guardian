@@ -58,6 +58,27 @@ if [ "$DRONES" = "auto" ]; then
     echo "[error] failed to derive drone roster from scenario '$SCENARIO'" >&2
     exit 1
   fi
+else
+  # Explicit subset: every requested id must be declared in the scenario YAML.
+  # Catching this here is cheap and prevents launching a ghost drone agent
+  # whose --drone-id isn't actually in the sim's publish set, which would
+  # otherwise look like the agent is silently broken.
+  if ! SCENARIO_DRONES="$(PYTHONPATH="$REPO_ROOT" python3 "$REPO_ROOT/sim/list_drones.py" "$SCENARIO")"; then
+    echo "[error] failed to read scenario '$SCENARIO' for --drones validation" >&2
+    exit 1
+  fi
+  IFS=',' read -ra _REQUESTED <<< "$DRONES"
+  IFS=',' read -ra _AVAILABLE <<< "$SCENARIO_DRONES"
+  for _r in "${_REQUESTED[@]}"; do
+    _found=0
+    for _a in "${_AVAILABLE[@]}"; do
+      if [ "$_r" = "$_a" ]; then _found=1; break; fi
+    done
+    if [ "$_found" -eq 0 ]; then
+      echo "[error] requested drone '$_r' is not in scenario '$SCENARIO' (available: $SCENARIO_DRONES)" >&2
+      exit 2
+    fi
+  done
 fi
 
 # Helper: in dry-run, just print the command. Else, send-keys into tmux.
