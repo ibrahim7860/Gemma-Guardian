@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 from httpx_ws import aconnect_ws
 
-from frontend.ws_bridge.tests._helpers import drain_until
+from frontend.ws_bridge.tests._helpers import drain_until, make_test_client
 
 
 _FINDING_FIXTURE = (
@@ -74,13 +74,13 @@ def _seed_finding(app, finding_id: str) -> None:
 
 @pytest.mark.asyncio
 async def test_operator_command_redis_publish_failed_emits_echo(
-    app_and_client, monkeypatch
+    app_and_redis, monkeypatch
 ):
     """When the publisher raises during ``operator_command`` republish,
     the bridge MUST echo ``redis_publish_failed`` and MUST NOT ack with
     ``operator_command_received``.
     """
-    app, http_client, _fake = app_and_client
+    app, _fake = app_and_redis
 
     async def _boom(*_a, **_kw):
         raise RuntimeError("redis is on fire")
@@ -95,12 +95,13 @@ async def test_operator_command_redis_publish_failed_emits_echo(
         "contract_version": "1.0.0",
     }
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()  # initial state envelope
-        await ws.send_text(json.dumps(frame))
-        echo = await drain_until(
-            ws, lambda m: m.get("error") == "redis_publish_failed"
-        )
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()  # initial state envelope
+            await ws.send_text(json.dumps(frame))
+            echo = await drain_until(
+                ws, lambda m: m.get("error") == "redis_publish_failed"
+            )
 
     assert echo["type"] == "echo"
     assert echo["error"] == "redis_publish_failed"
@@ -109,7 +110,7 @@ async def test_operator_command_redis_publish_failed_emits_echo(
 
 @pytest.mark.asyncio
 async def test_operator_command_bridge_internal_when_envelope_invalid(
-    app_and_client, monkeypatch
+    app_and_redis, monkeypatch
 ):
     """Force the bridge's envelope re-validation to fail by stamping a
     non-ISO timestamp. The inbound frame is well-formed, so the only
@@ -120,7 +121,7 @@ async def test_operator_command_bridge_internal_when_envelope_invalid(
     iso = _IsoMsCounter()
     monkeypatch.setattr(bridge_main, "_now_iso_ms", iso)
 
-    app, http_client, _fake = app_and_client
+    app, _fake = app_and_redis
 
     frame = {
         "type": "operator_command",
@@ -130,12 +131,13 @@ async def test_operator_command_bridge_internal_when_envelope_invalid(
         "contract_version": "1.0.0",
     }
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()
-        await ws.send_text(json.dumps(frame))
-        echo = await drain_until(
-            ws, lambda m: m.get("error") == "bridge_internal"
-        )
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()
+            await ws.send_text(json.dumps(frame))
+            echo = await drain_until(
+                ws, lambda m: m.get("error") == "bridge_internal"
+            )
 
     assert echo["type"] == "echo"
     assert echo["error"] == "bridge_internal"
@@ -149,9 +151,9 @@ async def test_operator_command_bridge_internal_when_envelope_invalid(
 
 @pytest.mark.asyncio
 async def test_finding_approval_redis_publish_failed_emits_echo(
-    app_and_client, monkeypatch
+    app_and_redis, monkeypatch
 ):
-    app, http_client, _fake = app_and_client
+    app, _fake = app_and_redis
     _seed_finding(app, "f_drone1_001")
 
     async def _boom(*_a, **_kw):
@@ -167,12 +169,13 @@ async def test_finding_approval_redis_publish_failed_emits_echo(
         "contract_version": "1.0.0",
     }
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()
-        await ws.send_text(json.dumps(frame))
-        echo = await drain_until(
-            ws, lambda m: m.get("error") == "redis_publish_failed"
-        )
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()
+            await ws.send_text(json.dumps(frame))
+            echo = await drain_until(
+                ws, lambda m: m.get("error") == "redis_publish_failed"
+            )
 
     assert echo["error"] == "redis_publish_failed"
     assert echo["command_id"] == "err-cmd-3"
@@ -181,11 +184,11 @@ async def test_finding_approval_redis_publish_failed_emits_echo(
 
 @pytest.mark.asyncio
 async def test_finding_approval_bridge_internal_when_envelope_invalid(
-    app_and_client, monkeypatch
+    app_and_redis, monkeypatch
 ):
     import frontend.ws_bridge.main as bridge_main
 
-    app, http_client, _fake = app_and_client
+    app, _fake = app_and_redis
     _seed_finding(app, "f_drone1_002")
     iso = _IsoMsCounter()
     monkeypatch.setattr(bridge_main, "_now_iso_ms", iso)
@@ -198,12 +201,13 @@ async def test_finding_approval_bridge_internal_when_envelope_invalid(
         "contract_version": "1.0.0",
     }
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()
-        await ws.send_text(json.dumps(frame))
-        echo = await drain_until(
-            ws, lambda m: m.get("error") == "bridge_internal"
-        )
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()
+            await ws.send_text(json.dumps(frame))
+            echo = await drain_until(
+                ws, lambda m: m.get("error") == "bridge_internal"
+            )
 
     assert echo["error"] == "bridge_internal"
     assert echo["command_id"] == "err-cmd-4"
@@ -216,9 +220,9 @@ async def test_finding_approval_bridge_internal_when_envelope_invalid(
 
 @pytest.mark.asyncio
 async def test_dispatch_redis_publish_failed_emits_echo(
-    app_and_client, monkeypatch
+    app_and_redis, monkeypatch
 ):
-    app, http_client, _fake = app_and_client
+    app, _fake = app_and_redis
 
     async def _boom(*_a, **_kw):
         raise RuntimeError("redis is on fire")
@@ -231,12 +235,13 @@ async def test_dispatch_redis_publish_failed_emits_echo(
         "contract_version": "1.0.0",
     }
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()
-        await ws.send_text(json.dumps(frame))
-        echo = await drain_until(
-            ws, lambda m: m.get("error") == "redis_publish_failed"
-        )
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()
+            await ws.send_text(json.dumps(frame))
+            echo = await drain_until(
+                ws, lambda m: m.get("error") == "redis_publish_failed"
+            )
 
     assert echo["error"] == "redis_publish_failed"
     assert echo["command_id"] == "err-cmd-5"
@@ -244,14 +249,14 @@ async def test_dispatch_redis_publish_failed_emits_echo(
 
 @pytest.mark.asyncio
 async def test_dispatch_bridge_internal_when_envelope_invalid(
-    app_and_client, monkeypatch
+    app_and_redis, monkeypatch
 ):
     import frontend.ws_bridge.main as bridge_main
 
     iso = _IsoMsCounter()
     monkeypatch.setattr(bridge_main, "_now_iso_ms", iso)
 
-    app, http_client, _fake = app_and_client
+    app, _fake = app_and_redis
 
     frame = {
         "type": "operator_command_dispatch",
@@ -259,12 +264,13 @@ async def test_dispatch_bridge_internal_when_envelope_invalid(
         "contract_version": "1.0.0",
     }
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()
-        await ws.send_text(json.dumps(frame))
-        echo = await drain_until(
-            ws, lambda m: m.get("error") == "bridge_internal"
-        )
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()
+            await ws.send_text(json.dumps(frame))
+            echo = await drain_until(
+                ws, lambda m: m.get("error") == "bridge_internal"
+            )
 
     assert echo["error"] == "bridge_internal"
     assert echo["command_id"] == "err-cmd-6"
