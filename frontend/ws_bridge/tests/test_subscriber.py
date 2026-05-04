@@ -133,6 +133,7 @@ async def _start_subscriber(
 
     subscriber = RedisSubscriber(
         config=config, aggregator=aggregator, validation_logger=logger,
+        validation_log_queue=asyncio.Queue(maxsize=64),
     )
     task = asyncio.create_task(subscriber.run())
     # Give the subscriber a moment to call from_url, open pubsub, and psubscribe.
@@ -426,6 +427,7 @@ async def test_reconnect_after_disconnect(
 
     subscriber = RedisSubscriber(
         config=fast_config, aggregator=aggregator, validation_logger=mock_logger,
+        validation_log_queue=asyncio.Queue(maxsize=64),
     )
     task = asyncio.create_task(subscriber.run())
     try:
@@ -519,6 +521,7 @@ async def test_signal_stop_only_sets_flag_does_not_close_pubsub(
         config=config,
         aggregator=aggregator,
         validation_logger=mock_logger,
+        validation_log_queue=asyncio.Queue(maxsize=64),
     )
     task = asyncio.create_task(sub.run())
     await asyncio.sleep(0.05)  # let it subscribe
@@ -546,6 +549,7 @@ async def test_close_is_idempotent(monkeypatch, config, aggregator, mock_logger)
         config=config,
         aggregator=aggregator,
         validation_logger=mock_logger,
+        validation_log_queue=asyncio.Queue(maxsize=64),
     )
     # Never run — just close twice.
     await sub.close()

@@ -97,6 +97,7 @@ class RedisSubscriber:
         aggregator: StateAggregator,
         validation_logger: ValidationEventLogger,
         translation_queue: Optional[asyncio.Queue] = None,
+        validation_log_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         self._config: BridgeConfig = config
         self._aggregator: StateAggregator = aggregator
@@ -108,6 +109,13 @@ class RedisSubscriber:
         # cannot back-pressure Redis ingestion (which would otherwise risk
         # Redis disconnecting us as a slow consumer).
         self._translation_queue: Optional[asyncio.Queue] = translation_queue
+        # Bounded queue for validation event records. Pushed by the dispatch
+        # path (sync, via put_nowait), drained by main.py's
+        # _validation_log_writer_loop. Single writer = no interleaving on the
+        # JSONL file. Maxsize=128 is generous for the validation event traffic
+        # pattern (~1 event per malformed frame); drop-on-full policy
+        # documented in _safe_enqueue_validation below.
+        self._validation_log_queue: Optional[asyncio.Queue] = validation_log_queue
         self._stopping: bool = False
         # Held across reconnect attempts so ``close()`` can tear them down.
         self._client: Optional[redis_async.Redis] = None
