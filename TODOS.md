@@ -13,15 +13,23 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Depends on:** Person 5's multi-drone scenario landing in `sim/scenarios/disaster_zone_v1.yaml`.
 - **Owner:** Person 4.
 
-### ~~Migrate bridge tests off `httpx-ws` private API (Phase 5+)~~ (closed in feat/bridge-and-schemas-cleanup)
-**CLOSED** — `frontend/ws_bridge/tests/conftest.py` now enters
-`ASGIWebSocketTransport` via `async with` inside a dedicated lifecycle
-task (anyio's task-group requires same-Task enter/exit). The
-`transport.exit_stack = None` private-API workaround is gone.
-`pyproject.toml`'s `[project.optional-dependencies] dev` upper
-bound bumped to `httpx-ws>=0.8,<0.9` (defensive pin against
-future breaking changes). Original entry retained below for
-historical context.
+### Migrate bridge tests off `httpx-ws` private API (Phase 5+)
+
+**Update 2026-05-04:** Attempted in feat/bridge-and-schemas-cleanup
+and reverted. httpx-ws 0.8 requires `async with ASGIWebSocketTransport(...)`
+to initialise `_task_group`, but anyio 4.x's strict same-task cancel
+scope check rejects the fixture pattern: pytest-asyncio splits setup
+and teardown across separate `runner.run()` invocations, so the task
+that enters the transport in setup is not `current_task()` at
+teardown. This produces 13 fixture-teardown errors on Linux+CPython
+3.11 even though local macOS+CPython 3.12 passes. Three workarounds
+were tried (transport-only wrap, transport+lifespan wrap, removing
+the redundant `client.aclose()` call in the lifecycle task) — all
+failed CI. Real fix likely requires either: (a) refactoring tests to
+not need a shared http_client (each test opens its own transport
+under `async with`), or (b) waiting for httpx-ws to ship a fixture-
+friendly entry pattern. Until then, keep the `transport.exit_stack
+= None` workaround on httpx-ws<0.8.
 
 - **What:** `frontend/ws_bridge/tests/conftest.py`'s `app_and_client`
   fixture pokes `transport.exit_stack = None` to break a circular ref at

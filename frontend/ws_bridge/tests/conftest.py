@@ -9,8 +9,6 @@ fakeredis bind to the same loop as the test.
 """
 from __future__ import annotations
 
-import asyncio
-
 import fakeredis.aioredis as fakeredis_async
 import httpx
 import pytest_asyncio
@@ -38,26 +36,10 @@ async def app_and_client(monkeypatch, fake_client):
     Yields:
         tuple of (FastAPI app, httpx.AsyncClient, fakeredis client)
 
-    httpx-ws 0.8 requires the transport to be entered as an async context
-    manager so ``aconnect_ws`` can read ``transport._task_group``. The
-    AsyncExitStack inside the transport handles its own cleanup, which
-    obsoletes the ``transport.exit_stack = None`` workaround we used on
-    httpx-ws 0.7.
-
-    anyio cancel-scope constraint: BOTH the
-    ``ASGIWebSocketTransport`` task group AND FastAPI's
-    ``lifespan_context`` create anyio cancel scopes that must be
-    exited from the SAME asyncio Task that entered them. pytest-asyncio
-    runs fixture teardown in a fresh ``runner.run()`` call (a new
-    Task), so we cannot let either ``async with`` span the fixture
-    yield boundary directly.
-
-    Fix: hold BOTH context managers OPEN inside one dedicated
-    lifecycle task. The fixture body signals teardown via the
-    ``_teardown`` event and awaits the lifecycle task's completion.
-    Enter and exit always happen in the same Task, satisfying anyio's
-    constraint on both Linux+CPython 3.11 and macOS+CPython 3.12 while
-    keeping all test call sites unchanged.
+    Teardown: ``transport.exit_stack = None`` is a documented workaround
+    for the httpx-ws<0.8 transport's circular-reference at shutdown. See
+    pyproject.toml ([project.optional-dependencies] dev) for the
+    upper-bound pin and the migration TODO.
     """
     import redis.asyncio as redis_async
 
@@ -70,38 +52,13 @@ async def app_and_client(monkeypatch, fake_client):
     from frontend.ws_bridge.main import create_app
 
     app = create_app()
-
-    _ready: asyncio.Queue = asyncio.Queue(maxsize=1)
-    _teardown = asyncio.Event()
-    _exc_holder: list[BaseException] = []
-
-    async def _lifecycle() -> None:
-        # IMPORTANT: do NOT call client.aclose() inside this task.
-        # httpx.AsyncClient.aclose() invokes transport.__aexit__()
-        # directly, which exits the transport's anyio task-group cancel
-        # scope. Then the outer ``async with ASGIWebSocketTransport``
-        # tries to exit it AGAIN and anyio 4.x raises "Attempted to
-        # exit cancel scope in a different task than it was entered in"
-        # (the second exit's frame's current_task() differs from the
-        # first's). Letting the ``async with`` own the transport's
-        # exit eliminates the double-exit.
+    transport = ASGIWebSocketTransport(app=app)
+    client = httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    )
+    async with app.router.lifespan_context(app):
         try:
-            async with ASGIWebSocketTransport(app=app) as transport:
-                async with app.router.lifespan_context(app):
-                    client = httpx.AsyncClient(
-                        transport=transport, base_url="http://testserver"
-                    )
-                    _ready.put_nowait(client)
-                    await _teardown.wait()
-        except BaseException as exc:  # noqa: BLE001
-            _exc_holder.append(exc)
-
-    lifecycle_task = asyncio.create_task(_lifecycle())
-    client = await _ready.get()
-    try:
-        yield app, client, fake_client
-    finally:
-        _teardown.set()
-        await lifecycle_task
-        if _exc_holder:
-            raise _exc_holder[0]
+            yield app, client, fake_client
+        finally:
+            transport.exit_stack = None
+            await client.aclose()
