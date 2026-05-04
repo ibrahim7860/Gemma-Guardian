@@ -76,6 +76,15 @@ async def app_and_client(monkeypatch, fake_client):
     _exc_holder: list[BaseException] = []
 
     async def _lifecycle() -> None:
+        # IMPORTANT: do NOT call client.aclose() inside this task.
+        # httpx.AsyncClient.aclose() invokes transport.__aexit__()
+        # directly, which exits the transport's anyio task-group cancel
+        # scope. Then the outer ``async with ASGIWebSocketTransport``
+        # tries to exit it AGAIN and anyio 4.x raises "Attempted to
+        # exit cancel scope in a different task than it was entered in"
+        # (the second exit's frame's current_task() differs from the
+        # first's). Letting the ``async with`` own the transport's
+        # exit eliminates the double-exit.
         try:
             async with ASGIWebSocketTransport(app=app) as transport:
                 async with app.router.lifespan_context(app):
@@ -83,10 +92,7 @@ async def app_and_client(monkeypatch, fake_client):
                         transport=transport, base_url="http://testserver"
                     )
                     _ready.put_nowait(client)
-                    try:
-                        await _teardown.wait()
-                    finally:
-                        await client.aclose()
+                    await _teardown.wait()
         except BaseException as exc:  # noqa: BLE001
             _exc_holder.append(exc)
 
