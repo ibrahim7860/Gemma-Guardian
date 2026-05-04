@@ -4,6 +4,12 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## Phase 4+ (post-Dashboard MVP)
 
+### CLOSED — Bridge cutover from `dev_fake_producers.py` to real sim (hybrid mode)
+- **Resolution:** Shipped `scripts/run_hybrid_demo.sh` orchestrator + `--emit` flag on `dev_fake_producers.py`. Real sim now owns `drones.<id>.state`; fake producer remains the source for `egs.state` and `drones.<id>.findings` until Qasim's EGS aligns `zone_polygon` to the scenario YAML and Kaleel's drone agent publishes findings to Redis.
+- **Migration path:** Pass `--no-fake-egs` to `run_hybrid_demo.sh` once Qasim ships. Pass `--no-fake-findings` once Kaleel ships. Both default to OFF (fakes ON), so the flip is one CLI flag — no source edits, no risk of dangling fake processes.
+- **Verification:** `scripts/check_hybrid_demo.py disaster_zone_v1 --deadline-s 20` passes against a freshly-launched hybrid stack (3-drone scenario, fake findings present). Dry-run regression coverage in `scripts/tests/test_launch_scripts.py`.
+- **Owner:** Person 4 (closed by this PR).
+
 ### Expand Playwright coverage to multi-drone scenarios (Day 8+)
 - **What:** Today's `bridge_e2e` Playwright job covers single-drone flows only — the pipeline fixture starts one `dev_fake_producers.py` instance for `drone99`. Once Person 5's multi-drone scenario YAML lands (Day 8: 2 drones, Day 10: 3 drones), expand `test_e2e_playwright.py` to cover: (a) dashboard renders one drone status card per drone, (b) findings from both drones populate the findings panel without collision, (c) language-aware translation works regardless of which drone published the finding.
 - **Why:** Multi-drone is the headline demo story ("a swarm coordinates"). Today's tests would silently pass even if the dashboard rendered drone1 over drone2 or dropped one drone's findings. Real demo regression risk.
