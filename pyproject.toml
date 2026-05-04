@@ -74,14 +74,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-timeout>=2.3",
     "pytest-playwright>=0.5",
-    # Upper-bound pin on httpx-ws: 0.8.0 introduced an API change to
-    # ASGIWebSocketTransport that requires entering the transport as an
-    # async context manager. That conflicts with pytest-asyncio's split
-    # setup/teardown runs (anyio 4.x raises "different task" because the
-    # transport's cancel scope is host-task-bound to the setup run). See
-    # frontend/ws_bridge/tests/conftest.py for the pre-0.8 workaround
-    # (transport.exit_stack = None) and TODOS.md for the migration TODO.
-    "httpx-ws>=0.7.0,<0.8",
+    "httpx-ws>=0.8",
 ]
 
 # uv project mode: this repo is a meta-project (its source is imported via
