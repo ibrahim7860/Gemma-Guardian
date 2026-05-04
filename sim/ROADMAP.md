@@ -86,7 +86,6 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 | Real xBD frames in `sim/fixtures/frames/` | Thayyil | Drop real JPEGs in place of placeholders (filenames preserved). |
 | `drone_agent` consuming `drones.<id>.camera` + writing merged state | Kaleel | First end-to-end Gemma 4 run on my sim's frames. |
 | `egs_agent` consuming `drones.<id>.findings`, issuing `drones.<id>.tasks` | Qasim | Multi-drone replan exercise. |
-| `ws_bridge` cutover from `dev_fake_producers.py` → real sim source | Ibrahim | Dashboard renders my sim's live state. |
 
 ## Polish queue (unblocked, opportunistic)
 
@@ -99,3 +98,5 @@ items here as they surface during integration sessions or live-run fallout.
 
 - `agents/drone_agent/main.py` ImportError on relative imports when run as a script (`python3 agents/drone_agent/main.py`). Ping Kaleel.
 - ~~`scripts/stop_demo.sh` shuts down Redis even when it didn't start it.~~ Shipped on `feature/sim-live-run-followups`, slice A.
+- ~~`ws_bridge` cutover from `dev_fake_producers.py` → real sim source~~ Shipped on `feature/bridge-cutover-hybrid` (PR #20). Run `scripts/run_hybrid_demo.sh disaster_zone_v1` and the dashboard renders the sim's live drone state. Fakes still cover `egs.state` and `drones.<id>.findings` until Qasim/Kaleel ship; opt out via `--no-fake-egs` / `--no-fake-findings`.
+- `scripts/launch_swarm.sh` invokes the bridge as `python3 frontend/ws_bridge/main.py`, which only constructs the FastAPI app and exits (no server). Use `python3 -m uvicorn frontend.ws_bridge.main:app --port 9090` instead — that's the form `run_hybrid_demo.sh` (PR #20) ships and `scripts/launch_dashboard_dev.sh` already uses.
