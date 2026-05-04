@@ -140,6 +140,29 @@ class TestLoadScenarioRejections:
         with pytest.raises(ValidationError):
             load_scenario(p)
 
+    def test_rejects_scripted_event_drone_id_not_in_drones(self, tmp_path: Path):
+        """A drone_failure event referencing a drone that isn't in drones[]
+        is silently a no-op at runtime (waypoint_runner._fire skips unknown
+        ids), but it's almost always an authoring typo. Fail at load time."""
+        bad = yaml.safe_load(_VALID_YAML)
+        bad["scripted_events"][0]["drone_id"] = "drone99"
+        p = tmp_path / "x.yaml"
+        p.write_text(yaml.safe_dump(bad))
+        with pytest.raises(ValidationError, match="drone99"):
+            load_scenario(p)
+
+    def test_accepts_scripted_event_without_drone_id(self, tmp_path: Path):
+        """zone_update / mission_complete / egs_link_* don't carry a drone_id;
+        cross-validation must skip None to keep them legal."""
+        ok = yaml.safe_load(_VALID_YAML)
+        # remove drone_id from the drone_failure entry → still valid (drone_id
+        # is Optional on ScriptedEvent), and shouldn't trigger the new check.
+        ok["scripted_events"][0]["drone_id"] = None
+        p = tmp_path / "x.yaml"
+        p.write_text(yaml.safe_dump(ok))
+        s = load_scenario(p)
+        assert s.scripted_events[0].drone_id is None
+
 
 _VALID_GROUNDTRUTH = textwrap.dedent("""
 {
