@@ -12,6 +12,8 @@ The principle: **build what makes the demo unforgettable; mock what doesn't move
 
 The Plan C path in the hallucination demo (below) is the only adjacent edge case: it injects a *validation* failure on a real Gemma 4 output, not a mocked LLM response. The model is still doing the work.
 
+**Disambiguation:** [`sim/manual_pilot.py`](../sim/manual_pilot.py) is a single-drone REPL that lets a developer type findings, broadcasts, and function calls into a live sim by hand. It is a **development aid, not a demo mock** — it never runs during a recorded demo or evaluation. We do not replace Gemma 4's reasoning step with the REPL; the REPL just exists alongside it so Persons 2/3/5 can *see what a drone is actually doing on the wire* while their portions of the stack are still being built. Recommended, not required. See [`docs/15-multi-drone-spawning.md`](15-multi-drone-spawning.md) for the workflow.
+
 ## Things We Mock (And Why That's Fine)
 
 ### Wildfire / Zone Segmentation

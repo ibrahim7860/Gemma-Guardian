@@ -30,6 +30,7 @@ SCRIPTS = [
     SCRIPTS_DIR / "launch_swarm.sh",
     SCRIPTS_DIR / "stop_demo.sh",
     SCRIPTS_DIR / "run_full_demo.sh",
+    SCRIPTS_DIR / "run_resilience_scenario.sh",
 ]
 
 
@@ -338,6 +339,78 @@ def test_stop_demo_leaves_redis_alone_when_sentinel_absent(tmp_path):
     assert "shutdown" not in calls, (
         f"redis-cli shutdown should NOT have been called; saw: {calls!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# run_resilience_scenario.sh — Phase D / E launcher for resilience_v1
+# ---------------------------------------------------------------------------
+
+
+def test_run_resilience_scenario_dry_run_targets_resilience_v1(tmp_path):
+    """``run_resilience_scenario.sh --dry-run`` must hand off to launch_swarm
+    with the resilience_v1 scenario id (and a sensible default --duration)
+    so Person 3 can rehearse the EGS replan loop without remembering flags."""
+    script = SCRIPTS_DIR / "run_resilience_scenario.sh"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1", "GG_LOG_DIR": str(log_dir)},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    assert "resilience_v1" in result.stdout, (
+        f"expected scenario name in plan output; saw:\n{result.stdout}"
+    )
+    # Default duration must show up on the sim runner invocations.
+    waypoint_lines = [ln for ln in result.stdout.splitlines() if "waypoint_runner.py" in ln]
+    assert waypoint_lines, "no waypoint_runner invocation in plan"
+    assert any("--duration" in ln for ln in waypoint_lines), (
+        f"expected default --duration on waypoint_runner; saw:\n{waypoint_lines}"
+    )
+
+
+def test_run_resilience_scenario_user_duration_overrides_default(tmp_path):
+    """If the user passes ``--duration=N``, the wrapper must not double-up
+    the flag (launch_swarm rejects unknown flags but this also guards
+    surprise behaviour where user intent is silently overridden)."""
+    script = SCRIPTS_DIR / "run_resilience_scenario.sh"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "--duration=15"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1", "GG_LOG_DIR": str(log_dir)},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    waypoint_lines = [ln for ln in result.stdout.splitlines() if "waypoint_runner.py" in ln]
+    assert any("--duration 15" in ln for ln in waypoint_lines), (
+        f"user-supplied --duration=15 should reach waypoint_runner; saw:\n{waypoint_lines}"
+    )
+    # The default (240) must not also appear.
+    for ln in waypoint_lines:
+        assert "--duration 240" not in ln, f"default duration leaked through: {ln}"
+
+
+def test_run_resilience_scenario_subset_drones_forwarded(tmp_path):
+    """``--drones=drone1`` (passed by the operator who wants to run the
+    manual_pilot stand-in for that id) must reach launch_swarm verbatim."""
+    script = SCRIPTS_DIR / "run_resilience_scenario.sh"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "--drones=drone2,drone3"],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1", "GG_LOG_DIR": str(log_dir)},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    # Implementation detail: launch_swarm prints planned drone agent
+    # invocations for every requested id. drone1 must NOT appear.
+    drone_lines = [ln for ln in result.stdout.splitlines() if "--drone-id" in ln]
+    if drone_lines:
+        assert not any("--drone-id drone1" in ln for ln in drone_lines), (
+            f"drone1 should be omitted; saw:\n{drone_lines}"
+        )
 
 
 # ---------------------------------------------------------------------------

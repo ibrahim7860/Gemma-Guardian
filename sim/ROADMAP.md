@@ -38,6 +38,12 @@ A date-free checklist of what Person 1 owns and what's left. Keep this current; 
 - Live multi-drone run on real Redis captured in `docs/sim-live-run-notes.md`. Surfaced and fixed a pre-existing tmux duplicate-window bug in `launch_swarm.sh` (slice F).
 - Repo-root `README.md` written (slice G).
 
+## Done (shipped on `feature/sim-resilience-and-pilot`)
+
+- `sim/scenarios/resilience_v1.yaml` + `_groundtruth.json` — Phase D / E rehearsal substrate. 3 drones start in-mesh (~25m apart), fan radially outward at 5 m/s. By t≈18s the drone1↔drone3 pair drops out of the 200m mesh range, and by t≈98s both drone1 and drone3 exit the 500m EGS link. Scripted events exercise drone_failure, fire_spread, egs_link_drop, egs_link_restore, mission_complete in one run. Reuses only existing `sim/fixtures/frames/` placeholders so Person 5's xBD swap stays orthogonal. `scripts/run_resilience_scenario.sh` wraps `launch_swarm.sh resilience_v1` with a sensible `--duration=240` default (slice A).
+- `sim/tests/test_frames_directory.py` extended with per-file JPEG sanity assertions: non-zero size, 3-byte JPEG SOI prefix, Pillow `Image.verify()` succeeds, parsed dimensions ≥ 64×64. When Person 5 swaps in real xBD JPEGs, a corrupt or empty file fails CI loudly rather than at demo time (slice B).
+- `sim/manual_pilot.py` — interactive single-drone REPL stand-in for the per-drone agent. Subscribes to `drones.<id>.state`, `drones.<id>.camera`, and `swarm.<id>.visible_to.<id>`; lets a human emit findings, broadcasts, and function calls into a live sim. Schema-only validation floor via `shared/contracts/schemas.validate` (semantic rules belong to Person 2's `agents/drone_agent/validation.py` — TODO marker in the source). `docs/15-multi-drone-spawning.md` documents the side-by-side workflow with `launch_swarm.sh --drones=drone2,drone3` (slice C).
+
 ## Phases ahead (in order, no dates)
 
 ### Phase A — Live multi-drone smoke

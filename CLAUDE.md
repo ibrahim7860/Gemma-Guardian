@@ -91,6 +91,7 @@ gemma-guardian/
 ├── sim/                             # software-only drone "simulator"
 │   ├── waypoint_runner.py           # scripted drone motion + GPS feed
 │   ├── frame_server.py              # serves pre-recorded JPEG frames per drone
+│   ├── manual_pilot.py              # interactive REPL stand-in for the drone agent (debug aid)
 │   ├── scenarios/                   # YAML scripts: waypoints, scripted failures, frame mappings
 │   └── fixtures/                    # pre-recorded disaster imagery (xBD crops, public aerials)
 ├── agents/
@@ -128,6 +129,6 @@ If you are an AI assistant being asked to work on this repo:
 
 ## Contact / Owner
 
-Project lead: Ibrahim
+The Elevator Watcher: Ibrahim
 Hackathon: Gemma 4 Good Hackathon (Kaggle × Google DeepMind)
 Submission deadline: May 18, 2026, 23:59 UTC
