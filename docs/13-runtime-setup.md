@@ -34,13 +34,21 @@ python3.11 --version    # → Python 3.11.x
 ollama --version        # → ollama version ...
 ```
 
-### Linux (Ubuntu 22.04 / Debian)
+### Linux (Ubuntu 22.04 / 24.04 / Debian)
 
 ```bash
 sudo apt update
 sudo apt install -y python3.11 python3.11-venv python3-pip redis-server
 sudo systemctl enable --now redis-server
 ```
+
+If `systemctl` errors with "System has not been booted with systemd" (common on WSL2 distros that don't have `systemd=true` in `/etc/wsl.conf`), use the `service` fallback instead:
+
+```bash
+sudo service redis-server start
+```
+
+Both end up with `redis-cli ping` returning `PONG`.
 
 Install Ollama:
 ```bash
@@ -110,14 +118,21 @@ git clone <repo-url> fieldagent
 cd fieldagent
 ```
 
-Install deps for your role (install all three if unsure):
+Install deps for your role (install all of them if unsure):
 
 ```bash
 # Core shared deps (everyone)
 pip install -r shared/requirements.txt
 
-# Drone and EGS agents
+# Sim + mesh simulator (Person 1)
+pip install -r sim/requirements.txt
+pip install -r agents/mesh_simulator/requirements.txt
+
+# Drone and EGS agents (Persons 2 & 3)
 pip install -r agents/drone_agent/requirements.txt
+
+# WebSocket bridge (Person 4)
+pip install -r frontend/ws_bridge/requirements.txt
 
 # ML fine-tuning workstream (Person 5 only, requires CUDA)
 pip install -r ml/requirements.txt
@@ -130,6 +145,8 @@ source .venv/bin/activate   # macOS/Linux
 # .venv\Scripts\activate    # Windows PowerShell
 pip install -r shared/requirements.txt
 ```
+
+**Ubuntu 24.04 / PEP 668 note:** the system Python on 24.04 is marked "externally-managed" and will refuse `pip install` with the error `error: externally-managed-environment`. Either use the venv above (preferred) or, if you genuinely want to install into the system interpreter, pass `pip install --break-system-packages -r shared/requirements.txt`. The same applies on any distro shipping pip 23.0+.
 
 ## Smoke Test
 
