@@ -117,7 +117,7 @@ async def _start_subscriber(
 ) -> tuple:
     """Patch redis.asyncio.Redis.from_url to return a shared FakeRedis instance,
     construct the subscriber, kick off its run() task, and return
-    (fake_redis, subscriber, task) for the test to drive.
+    (fake_redis, subscriber, task, validation_log_queue) for the test to drive.
 
     Caller must call `subscriber.signal_stop()`, await the task, then
     `await subscriber.close()` for clean shutdown (the `_stop_subscriber`
@@ -131,16 +131,17 @@ async def _start_subscriber(
     import redis.asyncio as redis_async
     monkeypatch.setattr(redis_async.Redis, "from_url", staticmethod(_from_url))
 
+    validation_log_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
     subscriber = RedisSubscriber(
         config=config, aggregator=aggregator, validation_logger=logger,
-        validation_log_queue=asyncio.Queue(maxsize=64),
+        validation_log_queue=validation_log_queue,
     )
     task = asyncio.create_task(subscriber.run())
     # Give the subscriber a moment to call from_url, open pubsub, and psubscribe.
     # If we publish before the psubscribe registration is in place, the message
     # is dropped on the floor by fakeredis (no buffering on un-subscribed channels).
     await asyncio.sleep(0.1)
-    return fake, subscriber, task
+    return fake, subscriber, task, validation_log_queue
 
 
 async def _stop_subscriber(subscriber: RedisSubscriber, task: asyncio.Task) -> None:
@@ -195,7 +196,7 @@ async def test_fakeredis_psubscribe_roundtrip():
 async def test_egs_state_payload_updates_egs_bucket(
     monkeypatch, config, aggregator, mock_logger, egs_payload, seed_envelope,
 ):
-    fake, subscriber, task = await _start_subscriber(
+    fake, subscriber, task, _ = await _start_subscriber(
         monkeypatch, config, aggregator, mock_logger,
     )
     try:
@@ -218,7 +219,7 @@ async def test_egs_state_payload_updates_egs_bucket(
 async def test_drone_state_payload_updates_drone_bucket(
     monkeypatch, config, aggregator, mock_logger, drone_payload,
 ):
-    fake, subscriber, task = await _start_subscriber(
+    fake, subscriber, task, _ = await _start_subscriber(
         monkeypatch, config, aggregator, mock_logger,
     )
     try:
@@ -240,7 +241,7 @@ async def test_drone_state_payload_updates_drone_bucket(
 async def test_finding_payload_added_to_findings(
     monkeypatch, config, aggregator, mock_logger, finding_payload,
 ):
-    fake, subscriber, task = await _start_subscriber(
+    fake, subscriber, task, _ = await _start_subscriber(
         monkeypatch, config, aggregator, mock_logger,
     )
     try:
@@ -270,7 +271,7 @@ async def test_finding_payload_added_to_findings(
 async def test_invalid_json_dropped_and_logged(
     monkeypatch, config, aggregator, mock_logger, seed_envelope,
 ):
-    fake, subscriber, task = await _start_subscriber(
+    fake, subscriber, task, validation_log_queue = await _start_subscriber(
         monkeypatch, config, aggregator, mock_logger,
     )
     try:
@@ -280,9 +281,9 @@ async def test_invalid_json_dropped_and_logged(
 
         # Bad bytes — not valid JSON at all.
         await fake.publish("egs.state", b"\xff\xfe not even close to json {{{")
-        # Wait for the message to be processed (logger called).
-        ok = await _wait_for(lambda: mock_logger.log.called)
-        assert ok, "expected validation logger to be called for invalid JSON"
+        # Wait for the message to be processed (record enqueued on validation_log_queue).
+        ok = await _wait_for(lambda: not validation_log_queue.empty())
+        assert ok, "expected a validation record to be enqueued for invalid JSON"
 
         # Aggregator unchanged.
         assert aggregator._egs == baseline_egs
@@ -298,7 +299,7 @@ async def test_invalid_json_dropped_and_logged(
 async def test_schema_invalid_payload_dropped_and_logged(
     monkeypatch, config, aggregator, mock_logger,
 ):
-    fake, subscriber, task = await _start_subscriber(
+    fake, subscriber, task, validation_log_queue = await _start_subscriber(
         monkeypatch, config, aggregator, mock_logger,
     )
     try:
@@ -308,16 +309,17 @@ async def test_schema_invalid_payload_dropped_and_logged(
         bad_payload = {"mission_id": "demo", "i_am_not": "valid"}
         await fake.publish("egs.state", json.dumps(bad_payload))
 
-        ok = await _wait_for(lambda: mock_logger.log.called)
-        assert ok, "expected validation logger to be called for schema-invalid payload"
+        ok = await _wait_for(lambda: not validation_log_queue.empty())
+        assert ok, "expected a validation record to be enqueued for schema-invalid payload"
 
         # Aggregator unchanged.
         assert aggregator._egs == baseline_egs
 
-        # The kwargs include rule_id="STRUCTURAL_VALIDATION_FAILED".
-        rule_ids = [
-            call.kwargs.get("rule_id") for call in mock_logger.log.call_args_list
-        ]
+        # The enqueued record must carry rule_id="STRUCTURAL_VALIDATION_FAILED".
+        records: List[Dict[str, Any]] = []
+        while not validation_log_queue.empty():
+            records.append(validation_log_queue.get_nowait())
+        rule_ids = [r.get("rule_id") for r in records]
         assert "STRUCTURAL_VALIDATION_FAILED" in rule_ids, (
             f"expected STRUCTURAL_VALIDATION_FAILED in rule_ids; got {rule_ids}"
         )
@@ -556,3 +558,204 @@ async def test_close_is_idempotent(monkeypatch, config, aggregator, mock_logger)
     await sub.close()  # must not raise
     assert sub._pubsub is None
     assert sub._client is None
+
+
+# ---- 10. latency-bound: validation log queue does not block dispatch ---------
+
+@pytest.mark.asyncio
+async def test_validation_log_queue_does_not_block_dispatch(
+    aggregator, monkeypatch
+):
+    """Eng-review 2A Option B: with the queue+writer pattern, slow disk I/O
+    must NOT stall the dispatch path. Dispatch only does ``put_nowait``
+    onto a bounded queue; the writer task drains it on its own coroutine.
+
+    This test installs a slow logger and verifies:
+      1. The subscriber drains all 5 invalid frames quickly
+         (much less than the 5×200ms blocking baseline).
+      2. The writer task eventually writes all 5 records.
+    """
+    import time
+
+    import fakeredis.aioredis
+    import redis.asyncio as redis_async
+
+    fake = fakeredis.aioredis.FakeRedis()
+    monkeypatch.setattr(
+        redis_async.Redis, "from_url",
+        staticmethod(lambda url, **kw: fake),
+    )
+
+    class _SlowLogger:
+        def __init__(self) -> None:
+            self.calls: list = []
+
+        def log(self, **kw) -> None:
+            self.calls.append(time.monotonic())
+            time.sleep(0.2)  # 200ms blocking I/O
+
+    slow = _SlowLogger()
+    config = BridgeConfig(
+        redis_url="redis://localhost", tick_s=0.05,
+        max_findings=100, broadcast_timeout_s=0.5, reconnect_max_s=2.0,
+    )
+    validation_log_queue: asyncio.Queue = asyncio.Queue(maxsize=128)
+
+    # Build the writer task ourselves (in main.py it's wired via lifespan;
+    # here we mirror the same shape so the test is self-contained).
+    async def writer():
+        while True:
+            try:
+                record = await validation_log_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None, lambda r=record: slow.log(**r)
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+
+    sub = RedisSubscriber(
+        config=config, aggregator=aggregator,
+        validation_logger=slow,
+        translation_queue=asyncio.Queue(maxsize=64),
+        validation_log_queue=validation_log_queue,
+    )
+    sub_task = asyncio.create_task(sub.run())
+    writer_task = asyncio.create_task(writer())
+    try:
+        await asyncio.sleep(0.1)  # let it subscribe
+
+        # Publish 5 schema-invalid frames in rapid succession.
+        for i in range(5):
+            await fake.publish(
+                "drones.drone1.state",
+                '{"this": "is not a valid drone_state"}',
+            )
+
+        # Wait for the SUBSCRIBER to drain the read loop. We assert that
+        # 5 records have landed on the queue (dispatch completed) within
+        # 200ms — well under the 1s baseline for sync sequential writes.
+        deadline_dispatch = time.monotonic() + 0.2
+        while (
+            time.monotonic() < deadline_dispatch
+            and validation_log_queue.qsize() + len(slow.calls) < 5
+        ):
+            await asyncio.sleep(0.005)
+        dispatch_total = validation_log_queue.qsize() + len(slow.calls)
+        assert dispatch_total == 5, (
+            f"subscriber must enqueue all 5 records within 200ms; got "
+            f"{dispatch_total} (queue={validation_log_queue.qsize()}, "
+            f"written={len(slow.calls)})"
+        )
+
+        # Now wait up to 2s for the writer to drain everything to disk.
+        # 5 × 200ms = 1s minimum; 2s gives 2× headroom for thread pool
+        # scheduling jitter.
+        deadline_drain = time.monotonic() + 2.0
+        while time.monotonic() < deadline_drain and len(slow.calls) < 5:
+            await asyncio.sleep(0.05)
+        assert len(slow.calls) == 5, (
+            f"writer task must drain all 5 records within 2s; got "
+            f"{len(slow.calls)}"
+        )
+    finally:
+        sub.signal_stop()
+        writer_task.cancel()
+        await asyncio.wait_for(sub_task, timeout=2.0)
+        try:
+            await writer_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await sub.close()
+
+
+# ---- 11. exception-path: logger exception does not crash dispatch ------------
+
+@pytest.mark.asyncio
+async def test_validation_log_exception_does_not_crash_dispatch(
+    aggregator, monkeypatch
+):
+    """Eng-review 3A: if ValidationEventLogger.log raises (e.g., disk
+    full, perms error), the writer task must keep running and the
+    subscriber must keep dispatching subsequent frames."""
+    import time
+
+    import fakeredis.aioredis
+    import redis.asyncio as redis_async
+
+    fake = fakeredis.aioredis.FakeRedis()
+    monkeypatch.setattr(
+        redis_async.Redis, "from_url",
+        staticmethod(lambda url, **kw: fake),
+    )
+
+    class _ExplodingLogger:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def log(self, **kw) -> None:
+            self.calls += 1
+            raise IOError("simulated disk full")
+
+    boom = _ExplodingLogger()
+    config = BridgeConfig(
+        redis_url="redis://localhost", tick_s=0.05,
+        max_findings=100, broadcast_timeout_s=0.5, reconnect_max_s=2.0,
+    )
+    validation_log_queue: asyncio.Queue = asyncio.Queue(maxsize=128)
+
+    async def writer():
+        while True:
+            try:
+                record = await validation_log_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None, lambda r=record: boom.log(**r)
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass  # mirror the production writer's swallow-and-continue
+
+    sub = RedisSubscriber(
+        config=config, aggregator=aggregator,
+        validation_logger=boom,
+        translation_queue=asyncio.Queue(maxsize=64),
+        validation_log_queue=validation_log_queue,
+    )
+    sub_task = asyncio.create_task(sub.run())
+    writer_task = asyncio.create_task(writer())
+    try:
+        await asyncio.sleep(0.1)
+        # Two invalid frames — first triggers exception, second must
+        # still dispatch and be processed.
+        await fake.publish("drones.drone1.state", '{"bad": 1}')
+        await asyncio.sleep(0.3)  # let the writer attempt + fail
+        await fake.publish("drones.drone1.state", '{"bad": 2}')
+        await asyncio.sleep(0.3)
+        assert boom.calls >= 2, (
+            f"second frame must be processed despite first frame's log "
+            f"raising; got {boom.calls} log calls"
+        )
+        # The writer task must NOT have crashed — verify it's still running.
+        assert not writer_task.done(), (
+            "writer task crashed on logger exception; the production loop "
+            "swallows exceptions and continues"
+        )
+    finally:
+        sub.signal_stop()
+        writer_task.cancel()
+        await asyncio.wait_for(sub_task, timeout=2.0)
+        try:
+            await writer_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await sub.close()
