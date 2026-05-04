@@ -43,8 +43,14 @@ from agents.mesh_simulator.range_filter import (
 )
 from shared.contracts.topics import (
     MESH_ADJACENCY,
+    PER_DRONE_STATE,
+    SWARM_BROADCAST,
     swarm_visible_to_channel,
 )
+
+# psubscribe patterns derived from the channel templates (single source of truth).
+_STATE_PATTERN = PER_DRONE_STATE.replace("{drone_id}", "*")
+_BROADCAST_PATTERN = SWARM_BROADCAST.replace("{drone_id}", "*")
 
 LatLon = Tuple[float, float]
 
@@ -139,7 +145,7 @@ class MeshSimulator:
     def run_forever(self, *, adjacency_hz: float = 1.0) -> None:
         """Blocking loop: psubscribe, dispatch, periodically publish adjacency."""
         pubsub = self.redis.pubsub()
-        pubsub.psubscribe("drones.*.state", "swarm.broadcasts.*")
+        pubsub.psubscribe(_STATE_PATTERN, _BROADCAST_PATTERN)
         # drain initial subscribe acks
         for _ in range(2):
             pubsub.get_message(timeout=0.5)
