@@ -28,7 +28,7 @@ from typing import Any, Dict
 import pytest
 from httpx_ws import aconnect_ws
 
-from frontend.ws_bridge.tests._helpers import drain_until
+from frontend.ws_bridge.tests._helpers import drain_until, make_test_client
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -64,29 +64,30 @@ def _invalid_envelope() -> Dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_command_translation_forwarded_to_ws_client(app_and_client):
+async def test_command_translation_forwarded_to_ws_client(app_and_redis):
     """A valid ``command_translations_envelope`` published on
     ``egs.command_translations`` is forwarded to the WS client as
     ``type=command_translation`` with bridge-only fields stripped.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
     envelope = _valid_envelope()
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()  # initial state envelope
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()  # initial state envelope
 
-        # Give the subscriber a tick to subscribe before publishing so the
-        # message isn't published into the void.
-        await asyncio.sleep(0.1)
-        await fake.publish(
-            "egs.command_translations", json.dumps(envelope)
-        )
+            # Give the subscriber a tick to subscribe before publishing so the
+            # message isn't published into the void.
+            await asyncio.sleep(0.1)
+            await fake.publish(
+                "egs.command_translations", json.dumps(envelope)
+            )
 
-        forwarded = await drain_until(
-            ws,
-            lambda m: m.get("type") == "command_translation",
-            max_frames=30,
-        )
+            forwarded = await drain_until(
+                ws,
+                lambda m: m.get("type") == "command_translation",
+                max_frames=30,
+            )
 
     assert forwarded is not None, "command_translation frame never arrived"
     assert forwarded["command_id"] == "abcd-1700000000000-3"
@@ -101,7 +102,7 @@ async def test_command_translation_forwarded_to_ws_client(app_and_client):
 
 
 @pytest.mark.asyncio
-async def test_invalid_translation_is_dropped(app_and_client):
+async def test_invalid_translation_is_dropped(app_and_redis):
     """An envelope that fails ``command_translations_envelope`` validation
     must be dropped at the subscriber — not forwarded — and the subscriber
     task must keep running (the test would hang or error out otherwise).
@@ -110,23 +111,24 @@ async def test_invalid_translation_is_dropped(app_and_client):
     an ``AssertionError`` from the helper itself, so this test asserts that
     the predicate never matches by expecting that error.
     """
-    app, http_client, fake = app_and_client
+    app, fake = app_and_redis
     bogus = _invalid_envelope()
 
-    async with aconnect_ws("ws://testserver/", client=http_client) as ws:
-        await ws.receive_text()  # initial state envelope
+    async with make_test_client(app) as http_client:
+        async with aconnect_ws("ws://testserver/", client=http_client) as ws:
+            await ws.receive_text()  # initial state envelope
 
-        await asyncio.sleep(0.1)
-        await fake.publish(
-            "egs.command_translations", json.dumps(bogus)
-        )
-
-        # We should see only periodic state_update frames; never a
-        # command_translation. drain_until raises AssertionError when no
-        # frame matches within max_frames — that's the success condition.
-        with pytest.raises(AssertionError):
-            await drain_until(
-                ws,
-                lambda m: m.get("type") == "command_translation",
-                max_frames=10,
+            await asyncio.sleep(0.1)
+            await fake.publish(
+                "egs.command_translations", json.dumps(bogus)
             )
+
+            # We should see only periodic state_update frames; never a
+            # command_translation. drain_until raises AssertionError when no
+            # frame matches within max_frames — that's the success condition.
+            with pytest.raises(AssertionError):
+                await drain_until(
+                    ws,
+                    lambda m: m.get("type") == "command_translation",
+                    max_frames=10,
+                )
