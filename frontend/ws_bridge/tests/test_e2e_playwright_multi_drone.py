@@ -332,3 +332,68 @@ def test_active_drones_covers_full_roster(multi_drone_pipeline: Dict[str, Any]) 
         f"{len(envelopes)} envelopes; missing={sorted(missing)} (saw "
         f"{sorted(seen)})"
     )
+
+
+def test_active_findings_carries_every_drone(
+    multi_drone_pipeline: Dict[str, Any],
+) -> None:
+    """active_findings[] eventually contains a finding from every drone.
+
+    Each producer emits findings every 8 ticks at tick-s=0.2 — i.e. one new
+    finding per drone every 1.6s. Within ~12s we should see all three.
+    `finding_id` is shaped `f_<drone_id>_<n>` so source attribution is
+    derivable from the id alone (we also cross-check `source_drone_id`).
+    """
+    expected: set[str] = set(multi_drone_pipeline["drone_roster"])
+    envelopes = asyncio.run(
+        _capture_envelopes(
+            multi_drone_pipeline["bridge_ws_url"],
+            min_envelopes=60,         # 60 envelopes @ 0.25s = ~15s
+            timeout_s=25.0,
+        )
+    )
+    assert envelopes, "captured zero envelopes; pipeline misconfigured"
+
+    sources_via_id: set[str] = set()
+    sources_via_field: set[str] = set()
+    finding_ids_per_drone: Dict[str, set[str]] = {d: set() for d in expected}
+
+    for env in envelopes:
+        for f in env.get("active_findings", []) or []:
+            fid = f.get("finding_id", "") or ""
+            sdi = f.get("source_drone_id", "") or ""
+            # finding_id format: f_<drone_id>_<counter>
+            if fid.startswith("f_"):
+                parts = fid.split("_")
+                if len(parts) >= 3:
+                    derived = parts[1]
+                    if derived in expected:
+                        sources_via_id.add(derived)
+                        finding_ids_per_drone[derived].add(fid)
+            if sdi in expected:
+                sources_via_field.add(sdi)
+
+    # Both attribution paths must agree — and both must cover every drone.
+    missing_id = expected - sources_via_id
+    missing_field = expected - sources_via_field
+    assert not missing_id, (
+        f"finding_id-derived sources missing {sorted(missing_id)} "
+        f"(saw {sorted(sources_via_id)})"
+    )
+    assert not missing_field, (
+        f"source_drone_id-field missing {sorted(missing_field)} "
+        f"(saw {sorted(sources_via_field)})"
+    )
+
+    # Collision check: per-drone finding_id sets must NOT share any id with
+    # another drone's set. The producer-side regex enforces this, but a
+    # bridge-side aggregation bug could collapse them — we test the
+    # observable invariant.
+    for did_a, ids_a in finding_ids_per_drone.items():
+        for did_b, ids_b in finding_ids_per_drone.items():
+            if did_a >= did_b:
+                continue
+            shared = ids_a & ids_b
+            assert not shared, (
+                f"finding_id collision between {did_a} and {did_b}: {shared}"
+            )
