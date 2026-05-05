@@ -397,3 +397,47 @@ def test_active_findings_carries_every_drone(
             assert not shared, (
                 f"finding_id collision between {did_a} and {did_b}: {shared}"
             )
+
+
+def test_operator_command_acked_in_multi_drone_state(
+    multi_drone_pipeline: Dict[str, Any],
+) -> None:
+    """The bridge acks an operator_command even when active_drones[] is
+    multi-drone. Locks the contract that `aggregator.has_finding` /
+    multi-drone state aggregation does not regress the inbound command path.
+    """
+    async def _go() -> Dict[str, Any]:
+        async with httpx.AsyncClient() as c:
+            async with aconnect_ws(multi_drone_pipeline["bridge_ws_url"], c) as ws:
+                # Drain initial seed envelope (bridge sends one immediately).
+                _ = await asyncio.wait_for(ws.receive_text(), timeout=5.0)
+
+                cmd = {
+                    "type": "operator_command",
+                    "command_id": "multi-drone-test-001",
+                    "language": "es",
+                    "raw_text": "recall drone1 to base",
+                    "contract_version": "1.0.0",
+                }
+                await ws.send_text(json.dumps(cmd))
+
+                # Read frames until we see the echo ack (skip envelopes).
+                deadline = time.monotonic() + 10.0
+                while time.monotonic() < deadline:
+                    raw = await asyncio.wait_for(
+                        ws.receive_text(),
+                        timeout=deadline - time.monotonic(),
+                    )
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if msg.get("type") == "echo" and msg.get(
+                        "ack"
+                    ) == "operator_command_received":
+                        return msg
+                raise AssertionError("no operator_command_received ack within 10s")
+
+    ack = asyncio.run(_go())
+    assert ack.get("command_id") == "multi-drone-test-001"
+    assert "error" not in ack, f"unexpected error in ack: {ack}"
