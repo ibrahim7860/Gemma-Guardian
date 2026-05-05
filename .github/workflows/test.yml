@@ -100,4 +100,4 @@ jobs:
           flutter pub get
           flutter build web --release
       - name: Run bridge e2e Playwright tests
-        run: PYTHONPATH=. uv run --no-sync python -m pytest frontend/ws_bridge/tests/test_e2e_playwright.py -m e2e -v
+        run: PYTHONPATH=. uv run --no-sync python -m pytest frontend/ws_bridge/tests/test_e2e_playwright.py frontend/ws_bridge/tests/test_e2e_playwright_multi_drone.py -m e2e -v
