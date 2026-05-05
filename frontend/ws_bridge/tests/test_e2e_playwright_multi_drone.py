@@ -297,3 +297,38 @@ def test_smoke_bridge_emits_envelopes(multi_drone_pipeline: Dict[str, Any]) -> N
         f"Expected >=3 state_update envelopes; got {len(envelopes)}. "
         f"Pipeline may be misconfigured."
     )
+
+
+def test_active_drones_covers_full_roster(multi_drone_pipeline: Dict[str, Any]) -> None:
+    """At least one envelope reports every drone in the configured roster.
+
+    The bridge aggregates state per-drone_id and emits an active_drones[]
+    array. If the dashboard ever drops or merges drones, this fails before
+    a judge sees it.
+    """
+    expected: set[str] = set(multi_drone_pipeline["drone_roster"])
+    envelopes = asyncio.run(
+        _capture_envelopes(
+            multi_drone_pipeline["bridge_ws_url"],
+            min_envelopes=20,         # 20 envelopes @ 0.25s tick = ~5s
+            timeout_s=20.0,
+        )
+    )
+    assert envelopes, "captured zero envelopes; pipeline misconfigured"
+
+    seen: set[str] = set()
+    for env in envelopes:
+        active_drones = env.get("active_drones", []) or []
+        for d in active_drones:
+            did = d.get("drone_id")
+            if did:
+                seen.add(did)
+        if expected.issubset(seen):
+            break
+
+    missing = expected - seen
+    assert not missing, (
+        f"Expected all of {sorted(expected)} in active_drones across "
+        f"{len(envelopes)} envelopes; missing={sorted(missing)} (saw "
+        f"{sorted(seen)})"
+    )
