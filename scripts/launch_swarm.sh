@@ -157,8 +157,11 @@ for ID in "${DRONE_ARRAY[@]}"; do
 done
 
 # --- WebSocket bridge (Ibrahim) ---------------------------------------------
+# Launch via uvicorn — frontend/ws_bridge/main.py only constructs the FastAPI
+# app and exits if invoked as a script (no embedded server). Same form used by
+# scripts/run_hybrid_demo.sh and scripts/launch_dashboard_dev.sh.
 emit_if_exists ws_bridge "frontend/ws_bridge/main.py" \
-  "cd $REPO_ROOT && python3 frontend/ws_bridge/main.py 2>&1 | tee $LOG_DIR/ws_bridge.log"
+  "cd $REPO_ROOT && python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   # Drop the placeholder window now that real ones exist.

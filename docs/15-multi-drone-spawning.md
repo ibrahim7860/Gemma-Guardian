@@ -62,8 +62,6 @@ Behaviour notes worth knowing before you run it:
 
 If you prefer `honcho` or `overmind` over tmux, define a `Procfile` at the repo root mirroring the same process list. The only constraint is that each process writes its stdout/stderr to its own log file under `/tmp/gemma_guardian_logs/`.
 
-> **Bridge launch caveat.** `launch_swarm.sh` invokes the bridge as `python3 frontend/ws_bridge/main.py`, which only constructs the FastAPI app and exits — there is no embedded server. Until that line is corrected, the dashboard window in `launch_swarm.sh` produces no live state. Use `scripts/run_hybrid_demo.sh` (below) which launches the bridge correctly via `python3 -m uvicorn frontend.ws_bridge.main:app --port 9090`. Pre-existing in `launch_swarm.sh`; flagged in `sim/ROADMAP.md` follow-ups.
-
 ## Hybrid Mode (real sim drone state + fake EGS/findings)
 
 [`scripts/run_hybrid_demo.sh`](../scripts/run_hybrid_demo.sh) is a parallel orchestrator for the **bridge cutover window** — the period after Hazim's sim is publishing real `drones.<id>.state` but before Qasim's EGS aligns its `zone_polygon` to the active scenario YAML and before Kaleel's drone agent publishes findings to Redis. It runs the real sim plus per-channel fake producers ([`scripts/dev_fake_producers.py --emit=<csv>`](../scripts/dev_fake_producers.py)) and the bridge:
