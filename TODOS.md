@@ -10,14 +10,11 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Verification:** `scripts/check_hybrid_demo.py disaster_zone_v1 --deadline-s 20` passes against a freshly-launched hybrid stack (3-drone scenario, fake findings present). Dry-run regression coverage in `scripts/tests/test_launch_scripts.py`.
 - **Owner:** Person 4 (closed by this PR).
 
-### Expand Playwright coverage to multi-drone scenarios (Day 8+)
-- **What:** Today's `bridge_e2e` Playwright job covers single-drone flows only — the pipeline fixture starts one `dev_fake_producers.py` instance for `drone99`. Once Person 5's multi-drone scenario YAML lands (Day 8: 2 drones, Day 10: 3 drones), expand `test_e2e_playwright.py` to cover: (a) dashboard renders one drone status card per drone, (b) findings from both drones populate the findings panel without collision, (c) language-aware translation works regardless of which drone published the finding.
-- **Why:** Multi-drone is the headline demo story ("a swarm coordinates"). Today's tests would silently pass even if the dashboard rendered drone1 over drone2 or dropped one drone's findings. Real demo regression risk.
-- **Pros:** Locks the multi-drone UI contract that the Day 12 integration session depends on. Catches "the second drone disappeared from the panel" before judges see it.
-- **Cons:** Requires extending `pipeline` fixture to spawn N producers OR using `--multi-drone` mode on the producer. Test runtime grows ~1.5x per added drone.
-- **Context:** `test_e2e_playwright.py` is post-#9 (4 inbound + 5 outbound network + 4 UI = 13 active + 1 SKIP). The `_capture_app_outbound_frames` helper from #9 is reusable. Producer launch is at `frontend/ws_bridge/tests/test_e2e_playwright.py` line ~242 (`producer_proc = subprocess.Popen([...])`).
-- **Depends on:** Person 5's multi-drone scenario landing in `sim/scenarios/disaster_zone_v1.yaml`.
-- **Owner:** Person 4.
+### CLOSED — Expand Playwright coverage to multi-drone scenarios
+- **Resolution:** Shipped `frontend/ws_bridge/tests/test_e2e_playwright_multi_drone.py` with a `multi_drone_pipeline` fixture (1 EGS + 3 per-drone fake producers + uvicorn bridge + Flutter web). Three load-bearing assertions: every drone in `active_drones[]`, every drone's findings in `active_findings[]` with no `finding_id` collision (cross-checked via both id-derivation and `source_drone_id`), and `operator_command` acks survive multi-drone aggregator state.
+- **Coverage:** Reuses `--emit=state,findings` per drone + `--emit=egs` global from PR #20's `dev_fake_producers.py` flag. No producer-side `--multi-drone` mode needed.
+- **CI:** `.github/workflows/test.yml` `bridge_e2e` job updated to invoke both Playwright test files.
+- **Owner:** Person 4 (closed by this PR).
 
 ### EGS subscriber for `egs.operator_actions`
 - **What:** EGS-side subscriber that consumes `egs.operator_actions` Redis channel (operator approve/dismiss decisions on findings) and reflects approved findings into the next `state_update` envelope.
