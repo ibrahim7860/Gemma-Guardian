@@ -202,6 +202,32 @@ def test_launch_swarm_duration_propagates_to_runners():
             assert "--duration" not in ln, f"drone_agent should not receive --duration: {ln}"
 
 
+def test_launch_swarm_bridge_invocation_uses_uvicorn():
+    """Regression: the bridge window must invoke uvicorn, not the bare
+    ``python3 frontend/ws_bridge/main.py`` form, which only constructs the
+    FastAPI app and exits without serving. Same uvicorn form used by
+    scripts/run_hybrid_demo.sh and scripts/launch_dashboard_dev.sh."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    bridge_lines = [ln for ln in result.stdout.splitlines() if "ws_bridge" in ln]
+    assert bridge_lines, f"no ws_bridge plan line; stdout was:\n{result.stdout}"
+    assert any("uvicorn frontend.ws_bridge.main:app" in ln for ln in bridge_lines), (
+        f"ws_bridge invocation must use uvicorn; saw:\n{bridge_lines}"
+    )
+    # And the dead form must be gone.
+    for ln in bridge_lines:
+        assert "python3 frontend/ws_bridge/main.py" not in ln, (
+            f"ws_bridge still invokes the bare-script form (which exits silently): {ln}"
+        )
+
+
 def test_launch_swarm_default_no_duration_flag_anywhere():
     """When --duration is omitted, no runner should get a --duration flag."""
     script = SCRIPTS_DIR / "launch_swarm.sh"
