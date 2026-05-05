@@ -122,6 +122,17 @@ def multi_drone_pipeline() -> Iterator[Dict[str, Any]]:
 
     Yields ports/urls and the resolved drone roster. Tears everything down in
     a ``try/finally`` so a test failure never leaks subprocesses.
+
+    FIFO eviction note (module-scope gotcha):
+        The bridge keeps at most ``BRIDGE_MAX_FINDINGS`` findings (default
+        50, see ``frontend/ws_bridge/config.py``). Three drone producers at
+        ``--tick-s 0.2`` ship ~one finding/second aggregate, so the cap
+        fills in ~50s of fixture wall-clock. Tests that share this fixture
+        (module scope) will see oldest findings evicted across the suite.
+        Assertions should hold across eviction — e.g., "at least one
+        finding from each drone is present at some point in the capture
+        window" rather than "the first finding ever produced is still
+        present in test N".
     """
     if not _FLUTTER_WEB_DIR.is_dir() or not (_FLUTTER_WEB_DIR / "index.html").exists():
         pytest.skip(
@@ -252,7 +263,12 @@ async def _capture_envelopes(
     async with httpx.AsyncClient() as c:
         async with aconnect_ws(bridge_ws_url, c) as ws:
             while time.monotonic() < deadline and len(envelopes) < min_envelopes:
-                remaining = deadline - time.monotonic()
+                # Clamp to non-negative: on a slow runner, the gap between
+                # the loop guard and this line can flip ``remaining`` negative,
+                # which would make ``asyncio.wait_for`` raise immediately.
+                # Clamping makes the deadline-elapsed exit path explicit
+                # rather than relying on accidentally-correct exception flow.
+                remaining = max(0.0, deadline - time.monotonic())
                 try:
                     raw = await asyncio.wait_for(ws.receive_text(), timeout=remaining)
                 except asyncio.TimeoutError:
