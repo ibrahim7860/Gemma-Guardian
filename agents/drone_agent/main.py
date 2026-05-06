@@ -15,27 +15,15 @@ from agents.drone_agent.memory import MemoryStore
 from agents.drone_agent.perception import PerceptionBundle, PerceptionNode
 from agents.drone_agent.reasoning import ReasoningNode, render_user_message
 from agents.drone_agent.validation import ValidationNode
+from shared.contracts.logging import ValidationEventLogger
 
-VALIDATION_LOG_PATH = Path("/tmp/fieldagent_logs/validation_events.jsonl")
+VALIDATION_LOG_PATH = Path("/tmp/gemma_guardian_logs/validation_events.jsonl")
 
 logger = logging.getLogger("drone_agent")
 
 
 def _safe_fallback() -> dict:
     return {"function": "continue_mission", "arguments": {}}
-
-
-def _log_validation_event(drone_id: str, task: str, attempt: int, result, call: dict | None) -> None:
-    VALIDATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with VALIDATION_LOG_PATH.open("a") as f:
-        f.write(json.dumps({
-            "agent_id": drone_id,
-            "task": task,
-            "attempt": attempt,
-            "outcome": "passed" if result.valid else "failed",
-            "failure_reason": result.failure_reason,
-            "call": call,
-        }) + "\n")
 
 
 class DroneAgent:
@@ -47,6 +35,7 @@ class DroneAgent:
         self.action = ActionNode(drone_id=drone_id, publisher=StdoutPublisher())
         self.memory = MemoryStore(drone_id=drone_id)
         self.max_retries = max_retries
+        self._validation_log = ValidationEventLogger(path=VALIDATION_LOG_PATH)
 
     async def step(self, bundle: PerceptionBundle) -> dict:
         conversation = self.reasoning._initial_messages(bundle)
@@ -56,15 +45,38 @@ class DroneAgent:
             response = await self.reasoning.call(bundle, conversation)
             last_call = self.reasoning.parse_function_call(response)
             result = self.validation.validate(last_call, bundle)
-            _log_validation_event(self.drone_id, "report_finding" if last_call else "parse", attempt, result, last_call)
+
+            function_or_command = (last_call or {}).get("function") or "<no_call>"
 
             if result.valid:
+                outcome = "success_first_try" if attempt == 0 else "corrected_after_retry"
+                self._validation_log.log(
+                    agent_id=self.drone_id,
+                    layer="drone",
+                    function_or_command=function_or_command,
+                    attempt=attempt + 1,
+                    valid=True,
+                    rule_id=None,
+                    outcome=outcome,
+                    raw_call=last_call,
+                )
                 self.validation.record_success(last_call, bundle)
                 self.memory.record_decision(last_call, result, attempt)
                 self.action.execute(last_call, sender_position={
                     "lat": bundle.state.lat, "lon": bundle.state.lon, "alt": bundle.state.alt,
                 })
                 return last_call
+
+            self._validation_log.log(
+                agent_id=self.drone_id,
+                layer="drone",
+                function_or_command=function_or_command,
+                attempt=attempt + 1,
+                valid=False,
+                rule_id=result.failure_reason.value if result.failure_reason else None,
+                outcome="in_progress",
+                raw_call=last_call,
+            )
 
             assistant_msg = response.get("message", {})
             conversation.append({
@@ -80,6 +92,17 @@ class DroneAgent:
                 ),
             })
 
+        # Max retries exhausted — log a final failed_after_retries record then fall back.
+        self._validation_log.log(
+            agent_id=self.drone_id,
+            layer="drone",
+            function_or_command=(last_call or {}).get("function") or "<no_call>",
+            attempt=self.max_retries,
+            valid=False,
+            rule_id=None,
+            outcome="failed_after_retries",
+            raw_call=last_call,
+        )
         fallback = _safe_fallback()
         self.memory.record_decision(fallback, type("R", (), {"valid": True, "failure_reason": "max_retries_exhausted"})(), self.max_retries)
         self.action.execute(fallback, sender_position={
