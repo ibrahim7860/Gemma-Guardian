@@ -36,6 +36,7 @@ drone = [
     "httpx>=0.27",
     "opencv-python>=4.9",
     "numpy>=1.26",
+    "fakeredis>=2.20",
 ]
 # Person 3: EGS coordinator (LangGraph + Gemma 4 E4B via Ollama).
 egs = [

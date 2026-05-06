@@ -627,6 +627,7 @@ dev = [
     { name = "pytest-timeout" },
 ]
 drone = [
+    { name = "fakeredis" },
     { name = "httpx" },
     { name = "numpy" },
     { name = "opencv-python" },
@@ -671,6 +672,7 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'ml'", specifier = ">=1.0" },
     { name = "bitsandbytes", marker = "sys_platform == 'linux' and extra == 'ml'", specifier = ">=0.44" },
     { name = "datasets", marker = "extra == 'ml'", specifier = ">=3.0" },
+    { name = "fakeredis", marker = "extra == 'drone'", specifier = ">=2.20" },
     { name = "fakeredis", marker = "extra == 'mesh'", specifier = ">=2.20" },
     { name = "fakeredis", marker = "extra == 'sim'", specifier = ">=2.20" },
     { name = "fakeredis", marker = "extra == 'ws-bridge'", specifier = ">=2.20" },
