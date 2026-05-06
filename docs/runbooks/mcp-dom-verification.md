@@ -130,4 +130,4 @@ redis-cli -p $REDIS SHUTDOWN NOSAVE
   - With LIVE Ollama: remember Gemma needs ~16 s cold-load; the disaster image window is only 15 s wide. Pre-warm Ollama before starting the agent.
 - **Dashboard shows a connection-status `reconnecting in Ns` instead of `connected`:** the dashboard is hitting the wrong WS URL. Verify the `?ws=ws://127.0.0.1:<BRIDGE>/` query parameter matches the running bridge port.
 - **Screenshot shows blank canvas:** Flutter is rendering, but the page is in a degenerate state. Run `mcp__playwright__browser_console_messages` to inspect the JS console — most often a WS connection error.
-- **Findings panel shows the tile but APPROVE/DISMISS aren't visible:** browser viewport too narrow. Default Playwright viewport is 1280×720; widen via `mcp__playwright__browser_resize` if needed.
+- **Findings panel shows the tile but APPROVE/DISMISS aren't visible:** browser viewport too narrow. Default Playwright MCP viewport is around 1440×673 in current builds; widen via `mcp__playwright__browser_resize` if your local default is narrower.
