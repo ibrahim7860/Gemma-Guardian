@@ -237,3 +237,25 @@ The verbatim phrase "person prone in rubble, partial cover" never appears in `sh
 5. Findings appear in `/tmp/gemma_guardian_logs/validation_events.jsonl` and on Redis channel `drones.drone1.findings`.
 6. Tear down with `kill -TERM <pids>` then `redis-cli -p 6390 SHUTDOWN NOSAVE`.
 
+---
+
+## 2026-05-06 — Gap #1 MCP DOM-render verification (one-shot demo capture)
+
+**Setup:**
+- Stack: redis (port 52279) + waypoint + frame + drone agent + scripts/ollama_mock_server.py (port 52280) + ws_bridge uvicorn (port 52281) + flutter `build/web/` static-served on port 52282 via `python3 -m http.server`.
+- Ollama variant: **mock** (deterministic, first call returns canned `report_finding`).
+- Browser: Playwright MCP Chromium (default 1280×720 viewport).
+- Dashboard URL: `http://127.0.0.1:52282/?ws=ws://127.0.0.1:52281/` — uses the `?ws=` query param plumbing added in commit `471605a` (Task 7).
+
+**Outcome: finding renders in dashboard end-to-end. Screenshot captured.**
+
+- Navigation: page title resolves to `FieldAgent Operator Dashboard` and connection status reaches `connected` within 5 s.
+- Accessibility tree (via `mcp__playwright__browser_snapshot`) contains the expected `group "VICTIM severity 4 from drone1 VICTIM (severity 4, conf 0.78) drone1 · 2026-05-06T20:33:50.068Z person prone in rubble, partial cover"` inside the `Findings` panel, with two child buttons `APPROVE` and `DISMISS`. The accessible label `VICTIM severity 4 from drone1` is the one emitted by the `Semantics(label: ...)` wrapper added in Task 3 / commit `5506d480`.
+- Validation event log confirms the finding came from a real Contract-4-validated tool call (`report_finding` at `2026-05-06T20:33:50.066Z`, valid: true, success_first_try).
+- Screenshot saved to `docs_assets/dashboard-finding-rendered.png` (72 KB, 1280×720 viewport). Shows all four panels populated: Map (3 drones positioned), Drone Status (battery/task/findings counts), Findings (the `VICTIM` tile with APPROVE/DISMISS), Command (translate UI idle).
+
+**Conclusion:**
+- The full chain works under MCP automation: agent → Redis (`drones.drone1.findings`) → bridge psubscribe → in-memory `StateAggregator` → WebSocket `state_update` envelope → Flutter `MissionState.applyRawFrame` → `FindingsPanel` rebuild → `_FindingTile`'s `Semantics` wrapper → CanvasKit semantics overlay → DOM `flt-semantics` node with the queryable identifier.
+- This complements the durable pytest test (`frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`, commit `471605a`) which asserts the same chain headlessly + repeatably.
+- Procedure documented as a runbook at `docs/runbooks/mcp-dom-verification.md` for future demo-video capture and pre-submission sanity checks.
+
