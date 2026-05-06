@@ -4,6 +4,11 @@ The mock server is used implicitly by the GATE 2 e2e
 (frontend/ws_bridge/tests/test_e2e_playwright_real_drone_findings.py); this
 test asserts its tool-call shape and /api/tags response directly so a future
 refactor that breaks the mock surfaces here, not in a flaky e2e.
+
+Skipped on CI jobs that don't install the `ws_bridge` extra (e.g. `sim_mesh`)
+since FastAPI is only pulled in by ws_bridge. The mock server file lives under
+`scripts/` for co-location with the runnable script; its test follows the same
+location for discoverability, which is why we gate on import here.
 """
 from __future__ import annotations
 
@@ -11,7 +16,9 @@ import importlib
 import json
 
 import pytest
-from fastapi.testclient import TestClient
+
+pytest.importorskip("fastapi", reason="fastapi is in the ws_bridge extra; not in sim_mesh CI")
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture
