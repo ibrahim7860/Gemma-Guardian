@@ -57,7 +57,11 @@ Read docs in this order when getting up to speed:
 ### Submission
 - [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md) — 90-second video plan
 - [`docs/22-writeup-outline.md`](docs/22-writeup-outline.md) — technical writeup structure
+- [`docs/22-writeup-draft.md`](docs/22-writeup-draft.md) — current writeup draft (all 11 sections, on main as of May 6)
 - [`docs/23-submission-checklist.md`](docs/23-submission-checklist.md) — what must be ready May 18
+
+### Living status
+- [`docs/STATUS.md`](docs/STATUS.md) — Day-N snapshot per role, updated at standup. Read this first if you want "are we on track for the next gate?"
 
 ## Key Constraints (Always Respect)
 
