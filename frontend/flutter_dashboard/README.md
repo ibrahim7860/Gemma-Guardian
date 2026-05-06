@@ -25,6 +25,16 @@ This starts:
 
 Ctrl-C cleans everything up.
 
+## Pointing the dashboard at a non-default bridge
+
+The dashboard's WebSocket endpoint defaults to `Channels.wsEndpoint` (`ws://localhost:9090/`). For test isolation or running against a non-default bridge port, append a `?ws=` query parameter to the dashboard URL:
+
+```
+http://localhost:8000/?ws=ws://127.0.0.1:9091/
+```
+
+`_wsBridgeUrl()` in `lib/main.dart` reads `Uri.base.queryParameters['ws']` (kIsWeb-guarded) before falling back to the default. This is how `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py` points headless Chromium at a per-test free port.
+
 ## Run tests
 
 Python (bridge + contracts):

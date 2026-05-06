@@ -59,6 +59,11 @@ Dates below are anchored to the recalibrated 16-working-day schedule in [`19-day
 - Inference latency per cycle: ≤5 seconds
 - No crashes in a 5-minute continuous run
 
+**Evidence as of 2026-05-06:**
+- Last-hop DOM render: `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py` asserts the finding renders in the dashboard's accessibility tree end-to-end (commit `471605a`).
+- Live Gemma `report_finding`: `docs/sim-live-run-notes.md` Gap #2 appendix documents 5 successful tool-call firings on the CC0 FEMA Katrina image.
+- Demo capture procedure: `docs/runbooks/mcp-dom-verification.md`; reference asset `docs_assets/dashboard-finding-rendered.png`.
+
 **If pass:** continue to multi-drone work in Week 3.
 
 **If fail (any criterion missing):**

@@ -63,6 +63,9 @@ Read docs in this order when getting up to speed:
 ### Living status
 - [`docs/STATUS.md`](docs/STATUS.md) — Day-N snapshot per role, updated at standup. Read this first if you want "are we on track for the next gate?"
 
+### Runbooks
+- [`docs/runbooks/mcp-dom-verification.md`](docs/runbooks/mcp-dom-verification.md) — Playwright MCP procedure for capturing `docs_assets/dashboard-finding-rendered.png` and verifying agent → Redis → bridge → Flutter DOM render before submission.
+
 ## Key Constraints (Always Respect)
 
 1. **Gemma 4 must be doing real work.** No mocking the LLM itself. If Gemma 4 isn't visibly the agentic brain, the project has no submission.

@@ -188,6 +188,8 @@ for the JPEG-sanity guard). Wire `frame_mappings.<drone_id>` to the
 scripted waypoint timeline. Author `<name>_groundtruth.json` with victims,
 fires, damaged structures, and blocked routes consistent with the imagery.
 
+**Note (2026-05-06):** The fixture `sim/fixtures/frames/placeholder_victim_01.jpg` is no longer a placeholder — it's a CC0 FEMA Hurricane Katrina aerial of a destroyed Mississippi school; provenance in [`sim/fixtures/frames/LICENSES.md`](../sim/fixtures/frames/LICENSES.md). The filename is preserved per the stability contract, so the three scenario YAMLs (`disaster_zone_v1`, `resilience_v1`, `single_drone_smoke`) and their ground-truth manifests still reference it. Live Gemma `report_finding` on this image is verified in [`docs/sim-live-run-notes.md`](sim-live-run-notes.md) Gap #2.
+
 **Step 3 — Scripted events (paired).** Add `scripted_events` for the
 narrative beats (drone failures, fire spread, EGS link drops, mission
 complete). Cross-check timing against the geometry: e.g. the

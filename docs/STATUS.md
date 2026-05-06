@@ -40,7 +40,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ### Ibrahim — Frontend + Demo + Comms (project lead)
 
-**Done:** WS bridge (`frontend/ws_bridge/`) with typed Redis publish; Flutter dashboard (`frontend/flutter_dashboard/lib/`) with two-stage UI, a11y, map markers, multi-drone aggregation; bridge cutover hybrid mode + multi-drone Playwright e2e; writeup draft `docs/22-writeup-draft.md`; storyboard pass `docs/21-demo-storyboard.md`. PRs: #2, #3, #5, #8, #9, #10, #15, #16, #20, #21, #22, #23, #24.
+**Done:** WS bridge (`frontend/ws_bridge/`) with typed Redis publish; Flutter dashboard (`frontend/flutter_dashboard/lib/`) with two-stage UI, a11y, map markers, multi-drone aggregation; bridge cutover hybrid mode + multi-drone Playwright e2e; writeup draft `docs/22-writeup-draft.md`; storyboard pass `docs/21-demo-storyboard.md`. GATE 2 demo-capture: stable a11y hooks on FindingTile (`Semantics(identifier: 'finding-tile-<id>')`); `?ws=` query-param override in `main.dart`; new pytest fixtures `flutter_web_build_dir` + `flutter_static_server` in `frontend/ws_bridge/tests/conftest.py`; e2e DOM-render test `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`; one-shot MCP capture at `docs_assets/dashboard-finding-rendered.png` per new runbook `docs/runbooks/mcp-dom-verification.md`. Live Gemma `report_finding` verified on real CC0 FEMA Katrina image (commit `30577e7`); see `docs/sim-live-run-notes.md` 2026-05-06 appendices. PRs: #2, #3, #5, #8, #9, #10, #15, #16, #20, #21, #22, #23, #24.
 
 **Left (storyboard-blocking, before demo capture Day 14):** `STANDALONE MODE ACTIVE` rendering in dashboard (Beat 4); `LICENSE` file at repo root (Beat 5 caveat); EGS-link-severed card; findings approval flow polish; static aerial base image for map panel (TODOS, depends on Thayyil).
 
@@ -64,6 +64,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 | GATE 3 NO-GO (fine-tuning fails) | Documented | Low — fall back to base Gemma 4 + heavy prompts | Kaleel | Decision Day 10 May 12 |
 | Storyboard Beat 4 unfilmable (no STANDALONE UI) | Medium | Medium — fall back to Backup Beat 4 (GPS-failure replan) | Ibrahim | Build standalone UI Days 7–13 OR use backup |
 | xBD frames not in `sim/fixtures/frames/` by Day 9 | Low | Medium — Kaleel iterates on placeholders, vision quality drops | Thayyil | Swap is one commit; filenames preserved |
+| ~~Beat 3b unfilmable: live Gemma `report_finding` not verified end-to-end through dashboard~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-06.** Live `report_finding` on CC0 FEMA Katrina image verified 5× (`docs/sim-live-run-notes.md` Gap #2); DOM render verified by `test_e2e_playwright_dom_render.py` + MCP capture at `docs_assets/dashboard-finding-rendered.png`. |
 
 ## How to update this doc
 

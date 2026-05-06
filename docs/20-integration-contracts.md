@@ -243,6 +243,8 @@ The `mesh_simulator` process subscribes to `swarm.broadcasts.*` (Redis pattern s
 **Endpoint:** `ws://localhost:9090`
 **Owner:** Ibrahim connects; Qasim hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
 
+**Endpoint discovery (Flutter web).** The dashboard's `_wsBridgeUrl()` in `frontend/flutter_dashboard/lib/main.dart` reads `Uri.base.queryParameters['ws']` (kIsWeb-guarded) and falls back to `Channels.wsEndpoint` (`ws://localhost:9090/`). This `?ws=ws://host:port/` override is the canonical way to point the dashboard at a per-test bridge port; e2e tests under `frontend/ws_bridge/tests/` use it via the `flutter_static_server` fixture in `conftest.py`. It is **not** a deployment knob — the production demo always uses the default endpoint.
+
 Messages from EGS to Flutter (every 1 second):
 
 ```json

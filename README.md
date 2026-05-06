@@ -4,6 +4,10 @@ Multi-drone disaster-response coordinator powered entirely by on-device Gemma 4.
 
 In post-disaster zones, cell towers fail in the first hour. Drones with cloud-AI dependencies become useless when they're needed most. We took the strongest published architecture for AI-driven disaster response ([Nguyen, Truong, Le 2026](https://arxiv.org/abs/2601.14437)) and removed its cloud GPT-4.1 dependency. Every drone has a brain. Every brain stays local. Every decision survives the disaster that broke the network.
 
+![Operator dashboard rendering a live `report_finding` from drone1](docs_assets/dashboard-finding-rendered.png)
+
+*Live capture: drone1's onboard Gemma 4 E2B fires `report_finding` on a CC0 FEMA Hurricane Katrina aerial; the finding traverses Redis → FastAPI bridge → Flutter dashboard. Capture procedure: [`docs/runbooks/mcp-dom-verification.md`](docs/runbooks/mcp-dom-verification.md).*
+
 ## Where to start
 
 - **What we're building and why:** [`docs/01-vision-and-pitch.md`](docs/01-vision-and-pitch.md)
