@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.e2e, pytest.mark.timeout(180)]
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -68,7 +70,6 @@ def _spawn(cmd: list[str], env: dict | None = None, name: str = "child"):
             proc.kill()
 
 
-@pytest.mark.timeout(180)
 def test_finding_renders_in_flutter_semantics_tree(tmp_path, flutter_static_server):
     if not shutil.which("redis-server"):
         pytest.skip("redis-server not on PATH")
