@@ -1,8 +1,14 @@
 """Action node — translates a validated function call into Redis pub/sub publishes.
 
 Publishing is stubbed via a Publisher protocol so the agent runs without redis-py in Day-1 standalone mode.
-The real Redis publisher (frontend/ws_bridge or sim/waypoint_runner-side helper) gets injected at boot.
+The real Redis publisher (RedisPublisher in redis_io.py) gets injected at boot.
 Channel names follow Contract 9 in docs/20-integration-contracts.md (dot-notation, e.g. drones.drone1.findings).
+
+Outbound finding and peer_broadcast payloads are schema-validated against
+shared/schemas/finding.json and shared/schemas/peer_broadcast.json before
+publishing. Validation failures raise ContractError — the loop logs the
+exception and falls back to continue_mission rather than emitting a malformed
+message that would break downstream consumers.
 """
 from __future__ import annotations
 
@@ -10,7 +16,17 @@ import json
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Protocol
+from pathlib import Path
+from typing import Optional, Protocol
+
+from shared.contracts import validate_or_raise
+from shared.contracts.topics import (
+    per_drone_cmd_channel,
+    per_drone_findings_channel,
+    swarm_broadcast_channel,
+)
+
+FRAMES_DIR = Path("/tmp/gemma_guardian_logs/frames")
 
 
 class Publisher(Protocol):
@@ -26,74 +42,104 @@ class ActionNode:
     def __init__(self, drone_id: str, publisher: Publisher | None = None):
         self.drone_id = drone_id
         self.publisher = publisher or StdoutPublisher()
+        self._finding_counter = 0
 
-    def execute(self, call: dict, sender_position: dict) -> None:
+    def execute(self, call: dict, sender_position: dict, raw_frame_jpeg: bytes | None = None) -> None:
         name = call["function"]
         args = call.get("arguments") or {}
         method = getattr(self, f"_act_{name}")
-        method(args, sender_position)
+        method(args, sender_position, raw_frame_jpeg)
 
-    def _act_report_finding(self, args: dict, sender_position: dict) -> None:
-        finding_id = f"f_{self.drone_id}_{uuid.uuid4().hex[:8]}"
+    def _act_report_finding(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
+        self._finding_counter += 1
+        finding_id = f"f_{self.drone_id}_{self._finding_counter}"
         ts = _now_iso()
+
+        image_path = self._persist_frame(finding_id, raw_frame_jpeg) if raw_frame_jpeg else "<no_capture>"
+
         finding = {
             "finding_id": finding_id,
             "source_drone_id": self.drone_id,
             "timestamp": ts,
             "type": args["type"],
-            "severity": args["severity"],
-            "gps_lat": args["gps_lat"],
-            "gps_lon": args["gps_lon"],
-            "altitude": 0,
-            "confidence": args["confidence"],
+            "severity": int(args["severity"]),
+            "gps_lat": float(args["gps_lat"]),
+            "gps_lon": float(args["gps_lon"]),
+            "altitude": float(sender_position.get("alt", 0)),
+            "confidence": float(args["confidence"]),
             "visual_description": args["visual_description"],
+            "image_path": image_path,
             "validated": True,
             "validation_retries": 0,
             "operator_status": "pending",
         }
-        self.publisher.publish(f"drones.{self.drone_id}.findings", finding)
+        validate_or_raise("finding", finding)
+        self.publisher.publish(per_drone_findings_channel(self.drone_id), finding)
 
         broadcast = {
             "broadcast_id": f"{self.drone_id}_b{uuid.uuid4().hex[:6]}",
             "sender_id": self.drone_id,
-            "sender_position": sender_position,
+            "sender_position": {
+                "lat": float(sender_position["lat"]),
+                "lon": float(sender_position["lon"]),
+                "alt": float(sender_position["alt"]),
+            },
             "timestamp": ts,
             "broadcast_type": "finding",
-            "payload": {k: finding[k] for k in ("type", "severity", "gps_lat", "gps_lon", "confidence", "visual_description")},
+            "payload": {
+                "type": finding["type"],
+                "severity": finding["severity"],
+                "gps_lat": finding["gps_lat"],
+                "gps_lon": finding["gps_lon"],
+                "confidence": finding["confidence"],
+                "visual_description": finding["visual_description"],
+            },
         }
-        self.publisher.publish(f"swarm.broadcasts.{self.drone_id}", broadcast)
+        validate_or_raise("peer_broadcast", broadcast)
+        self.publisher.publish(swarm_broadcast_channel(self.drone_id), broadcast)
 
-    def _act_mark_explored(self, args: dict, sender_position: dict) -> None:
-        # mark_explored is an internal state update only. The drone agent's
-        # validation node tracks last_coverage_by_zone, and the next
-        # drones.<id>.state publish will carry the updated current_task /
-        # findings_count fields. No dedicated channel per Contract 9; the
-        # validation_events.jsonl entry produced by the validation node is
-        # the cross-process record of this call.
+    def _act_mark_explored(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
         return
 
-    def _act_request_assist(self, args: dict, sender_position: dict) -> None:
+    def _act_request_assist(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
         broadcast = {
             "broadcast_id": f"{self.drone_id}_b{uuid.uuid4().hex[:6]}",
             "sender_id": self.drone_id,
-            "sender_position": sender_position,
+            "sender_position": {
+                "lat": float(sender_position["lat"]),
+                "lon": float(sender_position["lon"]),
+                "alt": float(sender_position["alt"]),
+            },
             "timestamp": _now_iso(),
             "broadcast_type": "assist_request",
-            "payload": args,
+            "payload": {
+                "reason": args["reason"],
+                "urgency": args["urgency"],
+                **({"related_finding_id": args["related_finding_id"]}
+                   if "related_finding_id" in args else {}),
+            },
         }
-        self.publisher.publish(f"swarm.broadcasts.{self.drone_id}", broadcast)
+        validate_or_raise("peer_broadcast", broadcast)
+        self.publisher.publish(swarm_broadcast_channel(self.drone_id), broadcast)
 
-    def _act_return_to_base(self, args: dict, sender_position: dict) -> None:
-        self.publisher.publish(f"drones.{self.drone_id}.cmd", {
+    def _act_return_to_base(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
+        self.publisher.publish(per_drone_cmd_channel(self.drone_id), {
             "drone_id": self.drone_id,
             "timestamp": _now_iso(),
             "command": "return_to_base",
             "reason": args["reason"],
         })
 
-    def _act_continue_mission(self, args: dict, sender_position: dict) -> None:
+    def _act_continue_mission(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
         return
+
+    def _persist_frame(self, finding_id: str, raw_jpeg: bytes) -> str:
+        FRAMES_DIR.mkdir(parents=True, exist_ok=True)
+        out = FRAMES_DIR / f"{finding_id}.jpg"
+        out.write_bytes(raw_jpeg)
+        return str(out)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    now = datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"

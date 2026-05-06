@@ -64,7 +64,7 @@ class DroneAgent:
                 self.memory.record_decision(last_call, result, attempt)
                 self.action.execute(last_call, sender_position={
                     "lat": bundle.state.lat, "lon": bundle.state.lon, "alt": bundle.state.alt,
-                })
+                }, raw_frame_jpeg=bundle.raw_frame_jpeg)
                 return last_call
 
             self._validation_log.log(
@@ -107,7 +107,7 @@ class DroneAgent:
         self.memory.record_decision(fallback, type("R", (), {"valid": True, "failure_reason": "max_retries_exhausted"})(), self.max_retries)
         self.action.execute(fallback, sender_position={
             "lat": bundle.state.lat, "lon": bundle.state.lon, "alt": bundle.state.alt,
-        })
+        }, raw_frame_jpeg=bundle.raw_frame_jpeg)
         logger.warning("max retries exhausted; fell back to continue_mission")
         return fallback
 
