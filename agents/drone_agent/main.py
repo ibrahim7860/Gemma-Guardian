@@ -15,9 +15,9 @@ from agents.drone_agent.memory import MemoryStore
 from agents.drone_agent.perception import PerceptionBundle, PerceptionNode
 from agents.drone_agent.reasoning import ReasoningNode, render_user_message
 from agents.drone_agent.validation import ValidationNode
-from shared.contracts.logging import ValidationEventLogger
+from shared.contracts.logging import ValidationEventLogger, default_log_dir
 
-VALIDATION_LOG_PATH = Path("/tmp/gemma_guardian_logs/validation_events.jsonl")
+VALIDATION_LOG_PATH = default_log_dir() / "validation_events.jsonl"
 
 logger = logging.getLogger("drone_agent")
 

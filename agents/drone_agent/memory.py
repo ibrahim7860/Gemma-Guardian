@@ -13,9 +13,11 @@ PERSIST_INTERVAL_S = 10.0
 
 
 class MemoryStore:
-    def __init__(self, drone_id: str, persist_dir: str | Path = "/tmp/gemma_guardian_logs"):
+    def __init__(self, drone_id: str, persist_dir: str | Path | None = None):
+        from shared.contracts.logging import default_log_dir
         self.drone_id = drone_id
-        self.persist_path = Path(persist_dir) / f"{drone_id}_memory.jsonl"
+        base = Path(persist_dir) if persist_dir is not None else default_log_dir()
+        self.persist_path = base / f"{drone_id}_memory.jsonl"
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
         self.short_term: deque[dict] = deque(maxlen=200)
         self.findings: list[dict] = []

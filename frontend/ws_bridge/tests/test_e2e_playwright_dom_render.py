@@ -73,9 +73,19 @@ def test_finding_renders_in_flutter_semantics_tree(tmp_path, flutter_static_serv
     if not shutil.which("redis-server"):
         pytest.skip("redis-server not on PATH")
     try:
-        from playwright.sync_api import sync_playwright  # noqa: F401
+        from playwright.sync_api import sync_playwright
     except ImportError:
         pytest.skip("playwright not installed")
+    # The python package is always present (declared dep), but the Chromium
+    # binary is downloaded by a separate `playwright install chromium` step.
+    # Skip cleanly if missing rather than failing 5s into the subprocess fan-out
+    # with a confusing "Executable doesn't exist at /…/Chromium" error.
+    with sync_playwright() as _p:
+        if not Path(_p.chromium.executable_path).exists():
+            pytest.skip(
+                "playwright chromium binary not installed — run "
+                "`uv run playwright install chromium`"
+            )
 
     redis_port = _free_port()
     ollama_port = _free_port()

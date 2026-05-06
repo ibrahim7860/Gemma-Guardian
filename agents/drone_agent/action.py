@@ -27,7 +27,9 @@ from shared.contracts.topics import (
     swarm_broadcast_channel,
 )
 
-FRAMES_DIR = Path("/tmp/gemma_guardian_logs/frames")
+from shared.contracts.logging import default_log_dir
+
+FRAMES_DIR = default_log_dir() / "frames"
 
 
 class Publisher(Protocol):
