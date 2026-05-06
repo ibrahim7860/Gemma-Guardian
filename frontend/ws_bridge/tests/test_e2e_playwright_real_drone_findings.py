@@ -133,15 +133,46 @@ def test_real_drone_finding_renders_in_dashboard(tmp_path):
                 assert got is not None, "no real finding observed within 60s"
                 assert got["source_drone_id"] == "drone1"
                 assert got["type"] == "victim"
+                victim_finding_id = got["finding_id"]
 
-                # Optional Playwright UI check — stubbed out for now.
-                try:
-                    from playwright.sync_api import sync_playwright  # noqa: F401
-                except ImportError:
-                    pytest.skip("playwright not installed — protocol-level check passed")
+                # Bridge → WebSocket assertion: prove the bridge's drones.<id>.findings
+                # subscriber forwards the agent's real finding into the dashboard's
+                # state_update envelopes. Mirrors test_e2e_playwright_multi_drone.py
+                # but against the real drone agent (not the fake findings producer).
+                import asyncio as _asyncio
+                import httpx as _httpx
+                from httpx_ws import aconnect_ws as _aconnect_ws
 
-                pytest.skip("Playwright UI assertion: copy the helper from "
-                            "test_e2e_playwright_multi_drone.py — out of scope for skeleton")
+                async def _wait_for_finding_in_envelope(ws_url: str, fid: str,
+                                                        timeout_s: float = 30.0) -> dict:
+                    deadline = _asyncio.get_event_loop().time() + timeout_s
+                    async with _httpx.AsyncClient() as c:
+                        async with _aconnect_ws(ws_url, c) as ws:
+                            while _asyncio.get_event_loop().time() < deadline:
+                                remaining = max(0.0, deadline - _asyncio.get_event_loop().time())
+                                try:
+                                    raw = await _asyncio.wait_for(ws.receive_text(), timeout=remaining)
+                                except _asyncio.TimeoutError:
+                                    break
+                                try:
+                                    env = json.loads(raw)
+                                except json.JSONDecodeError:
+                                    continue
+                                if env.get("type") != "state_update":
+                                    continue
+                                for f in env.get("active_findings") or []:
+                                    if f.get("finding_id") == fid:
+                                        return f
+                    raise AssertionError(
+                        f"finding {fid!r} did not appear in any state_update envelope "
+                        f"within {timeout_s}s — bridge.findings subscriber may be broken"
+                    )
+
+                ws_url = f"ws://127.0.0.1:{bridge_port}/"
+                rendered = _asyncio.run(_wait_for_finding_in_envelope(ws_url, victim_finding_id))
+                assert rendered["source_drone_id"] == "drone1"
+                assert rendered["type"] == "victim"
+                assert rendered["severity"] == 4
 
     finally:
         redis_proc.terminate()
