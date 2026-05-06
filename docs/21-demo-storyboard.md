@@ -125,7 +125,7 @@ The storyboard above assumes a fully integrated stack. As of today, several beat
 
 | Beat | Depends on | Owner | Today's state |
 |---|---|---|---|
-| 3b drone-eye reasoning trace + `report_finding` overlay | `agents/drone_agent/main.py` publishing real findings on `drones.<id>.findings` | Kaleel | Stub in repo; not publishing |
+| 3b drone-eye reasoning trace + `report_finding` overlay | `agents/drone_agent/main.py` publishing real findings on `drones.<id>.findings` | Kaleel | ✅ Done. Live Gemma fires `report_finding` on CC0 FEMA Katrina image; 5× verified 2026-05-06 (`docs/sim-live-run-notes.md` Gap #2). DOM render verified end-to-end by `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py` and MCP capture per `docs/runbooks/mcp-dom-verification.md`; reference asset `docs_assets/dashboard-finding-rendered.png`. |
 | 3c "EGS hallucinates 27 of 25 points → caught → corrected" | `agents/egs_agent/main.py` running `assign_survey_points` with the validation loop wired | Qasim | Not yet shipped |
 | 4 `command_translation` showing Spanish input → structured task | EGS Gemma 4 E4B path producing real `preview_text_in_operator_language` (TODOS.md tracks this as a Phase 5+ stub) | Qasim | Bridge accepts ops commands; translation echoes English |
 | 4 `EGS LINK SEVERED` card + "STANDALONE MODE ACTIVE" panel state | Dashboard rendering EGS-offline state (no `STANDALONE` string anywhere in `frontend/flutter_dashboard/lib/` today) | Person 4 (Ibrahim) | Not implemented |
@@ -159,6 +159,8 @@ This is less impressive but more reliable to capture.
 3. **Use OBS Studio** (free, supports multi-source recording, scene composition).
 
 4. **Edit in DaVinci Resolve** (free) or any video editor familiar to Ibrahim.
+
+5. **For deterministic single-frame demo captures** (e.g., the Beat 3b finding-rendered hero shot), use the procedure in [`docs/runbooks/mcp-dom-verification.md`](runbooks/mcp-dom-verification.md). The MOCK Ollama path produces the same `report_finding` deterministically in ~1 second; the LIVE path uses real Gemma 4 E2B and matches the recorded video. Reference asset already captured: `docs_assets/dashboard-finding-rendered.png`.
 
 ### Visual Style
 

@@ -80,43 +80,48 @@ class _FindingTile extends StatelessWidget {
         : null;
 
     final isSelected = mission.selectedFindingId == id;
-    return Container(
-      key: isSelected
-          ? ValueKey('findings-row-highlight-$id')
-          : null,
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
-        border: Border(left: BorderSide(color: borderColor, width: 4)),
-      ),
-      child: Opacity(
-        opacity: state == ApprovalState.dismissed ? 0.5 : 1.0,
-        child: ListTile(
-          title: Text(
-            "${(finding["type"] as String).toUpperCase()} "
-            "(severity ${finding["severity"]}, conf ${finding["confidence"]})",
-            style: titleStyle,
-          ),
-          subtitle: Text(
-            "${finding["source_drone_id"]} · ${finding["timestamp"]}\n"
-            "${finding["visual_description"]}",
-          ),
-          isThreeLine: true,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ApprovalIcon(state: state, findingId: id),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: disabled ? null : () => mission.markFinding(id, "approve"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
-                child: const Text("APPROVE"),
-              ),
-              const SizedBox(width: 4),
-              OutlinedButton(
-                onPressed: disabled ? null : () => mission.markFinding(id, "dismiss"),
-                child: const Text("DISMISS"),
-              ),
-            ],
+    return Semantics(
+      identifier: 'finding-tile-$id',
+      label: '${(finding["type"] as String).toUpperCase()} '
+          'severity ${finding["severity"]} from ${finding["source_drone_id"]}',
+      child: Container(
+        key: isSelected
+            ? ValueKey('findings-row-highlight-$id')
+            : null,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
+          border: Border(left: BorderSide(color: borderColor, width: 4)),
+        ),
+        child: Opacity(
+          opacity: state == ApprovalState.dismissed ? 0.5 : 1.0,
+          child: ListTile(
+            title: Text(
+              "${(finding["type"] as String).toUpperCase()} "
+              "(severity ${finding["severity"]}, conf ${finding["confidence"]})",
+              style: titleStyle,
+            ),
+            subtitle: Text(
+              "${finding["source_drone_id"]} · ${finding["timestamp"]}\n"
+              "${finding["visual_description"]}",
+            ),
+            isThreeLine: true,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ApprovalIcon(state: state, findingId: id),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: disabled ? null : () => mission.markFinding(id, "approve"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+                  child: const Text("APPROVE"),
+                ),
+                const SizedBox(width: 4),
+                OutlinedButton(
+                  onPressed: disabled ? null : () => mission.markFinding(id, "dismiss"),
+                  child: const Text("DISMISS"),
+                ),
+              ],
+            ),
           ),
         ),
       ),

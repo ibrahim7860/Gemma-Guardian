@@ -131,7 +131,7 @@ def _summarize_operator_commands(cmds: list) -> str:
 
 
 class ReasoningNode:
-    def __init__(self, model: str = "gemma4:e2b", endpoint: str = "http://localhost:11434", timeout_s: float = 30.0, send_image: bool = True, extra_options: dict | None = None):
+    def __init__(self, model: str = "gemma4:e2b", endpoint: str = "http://localhost:11434", timeout_s: float = 120.0, send_image: bool = True, extra_options: dict | None = None):
         self.model = model
         self.endpoint = endpoint.rstrip("/")
         self.timeout_s = timeout_s

@@ -14,6 +14,14 @@ import 'widgets/drone_status_panel.dart';
 import 'widgets/findings_panel.dart';
 import 'widgets/map_panel.dart';
 
+String _wsBridgeUrl() {
+  if (kIsWeb) {
+    final fromQuery = Uri.base.queryParameters['ws'];
+    if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+  }
+  return Channels.wsEndpoint;
+}
+
 void main() {
   runApp(const FieldAgentDashboard());
   // On web, Flutter ships a11y disabled by default for performance and only
@@ -80,7 +88,7 @@ class _DashboardShellState extends State<_DashboardShell> {
     final mission = context.read<MissionState>();
     mission.setConnectionStatus("connecting");
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(Channels.wsEndpoint));
+      _channel = WebSocketChannel.connect(Uri.parse(_wsBridgeUrl()));
       mission.attachSink(_channel!.sink);
       _sub = _channel!.stream.listen(
         (frame) {

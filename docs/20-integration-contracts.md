@@ -243,6 +243,8 @@ The `mesh_simulator` process subscribes to `swarm.broadcasts.*` (Redis pattern s
 **Endpoint:** `ws://localhost:9090`
 **Owner:** Ibrahim connects; Qasim hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
 
+**Endpoint discovery (Flutter web).** The dashboard's `_wsBridgeUrl()` in `frontend/flutter_dashboard/lib/main.dart` reads `Uri.base.queryParameters['ws']` (kIsWeb-guarded) and falls back to `Channels.wsEndpoint` (`ws://localhost:9090/`). This `?ws=ws://host:port/` override is the canonical way to point the dashboard at a per-test bridge port; e2e tests under `frontend/ws_bridge/tests/` use it via the `flutter_static_server` fixture in `conftest.py`. It is **not** a deployment knob — the production demo always uses the default endpoint.
+
 Messages from EGS to Flutter (every 1 second):
 
 ```json
@@ -365,6 +367,10 @@ All logs go to `/tmp/gemma_guardian_logs/` with this structure:
 
 `validation_events.jsonl` is the source for the writeup's quantitative claims.
 
+**Producer:** `agents/drone_agent` (via `shared.contracts.logging.ValidationEventLogger`).
+**Consumer:** `agents/egs_agent` aggregates the last N entries into `egs.state.recent_validation_events`.
+**Path:** `/tmp/gemma_guardian_logs/validation_events.jsonl` — note the `gemma_guardian_logs` (not `fieldagent_logs`) directory; this aligns with the `logging.base_dir` field in `shared/config.yaml`.
+
 ## Contract 12: Configuration
 
 `shared/config.yaml`:
@@ -381,8 +387,8 @@ transport:
   channel_prefix: ""                # if non-empty, prefixed to every channel (test isolation)
 
 inference:
-  drone_model: "gemma-4:e2b"
-  egs_model: "gemma-4:e4b"
+  drone_model: "gemma4:e2b"     # ollama.com/library/gemma4 — pinned 2026-05-06 after live verification on Apple Silicon
+  egs_model: "gemma4:e4b"       # ollama.com/library/gemma4 — pinned 2026-05-06
   drone_sampling_hz: 1.0
   ollama_drone_endpoint: "http://localhost:11434"
   ollama_egs_endpoint: "http://localhost:11435"

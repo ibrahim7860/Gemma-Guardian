@@ -1,13 +1,18 @@
 """Component logger setup and ValidationEventLogger.
 
-Per Contract 11: every agent logs to /tmp/gemma_guardian_logs/<component>.log
-and every validation event lands in /tmp/gemma_guardian_logs/validation_events.jsonl
+Per Contract 11: every agent logs to <GG_LOG_DIR>/<component>.log
+and every validation event lands in <GG_LOG_DIR>/validation_events.jsonl
 in the shape of shared/schemas/validation_event.json.
+
+GG_LOG_DIR defaults to /tmp/gemma_guardian_logs and is honored by the shell
+entry points (launch_swarm.sh, run_full_demo.sh) AND by the Python defaults
+in this module so test isolation via env-var override actually works.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Union
@@ -21,12 +26,26 @@ Outcome = Literal[
 ]
 
 
+def default_log_dir() -> Path:
+    """Resolve the canonical log/data dir, honoring GG_LOG_DIR env var.
+
+    All component logs, validation events, frames, and memory go under here.
+    Shell entry points (launch_swarm.sh, run_full_demo.sh) read this var and
+    callers from Python should too — otherwise test-isolation pass-through
+    via `env={"GG_LOG_DIR": ...}` is a silent no-op.
+    """
+    return Path(os.environ.get("GG_LOG_DIR", "/tmp/gemma_guardian_logs"))
+
+
 def setup_logging(
     component_name: str,
-    base_dir: Union[Path, str] = "/tmp/gemma_guardian_logs",
+    base_dir: Union[Path, str, None] = None,
 ) -> logging.Logger:
-    """Create a per-component file logger at <base_dir>/<component_name>.log."""
-    base = Path(base_dir)
+    """Create a per-component file logger at <base_dir>/<component_name>.log.
+
+    `base_dir` defaults to `default_log_dir()` (honors GG_LOG_DIR env var).
+    """
+    base = Path(base_dir) if base_dir is not None else default_log_dir()
     base.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(component_name)
     if not logger.handlers:
@@ -39,7 +58,7 @@ def setup_logging(
     return logger
 
 
-def _now_iso_ms() -> str:
+def now_iso_ms() -> str:
     """Produce an ISO 8601 UTC timestamp with millisecond precision and trailing Z.
 
     Matches _common.json#/$defs/iso_timestamp_utc_ms pattern:
@@ -57,9 +76,12 @@ class ValidationEventLogger:
 
     def __init__(
         self,
-        path: Union[Path, str] = "/tmp/gemma_guardian_logs/validation_events.jsonl",
+        path: Union[Path, str, None] = None,
     ):
-        self.path = Path(path)
+        self.path = (
+            Path(path) if path is not None
+            else default_log_dir() / "validation_events.jsonl"
+        )
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def log(
@@ -75,7 +97,7 @@ class ValidationEventLogger:
         raw_call: Optional[Dict[str, Any]],
     ) -> None:
         record = {
-            "timestamp": _now_iso_ms(),
+            "timestamp": now_iso_ms(),
             "agent_id": agent_id,
             "layer": layer,
             "function_or_command": function_or_command,

@@ -26,6 +26,7 @@ class DroneState:
 class PerceptionBundle:
     frame_jpeg: bytes
     state: DroneState
+    raw_frame_jpeg: bytes = b""  # original-resolution JPEG for image_path persistence
     peer_broadcasts: list = field(default_factory=list)
     operator_commands: list = field(default_factory=list)
     corrective_context: list = field(default_factory=list)
@@ -44,6 +45,11 @@ class PerceptionNode:
     ) -> PerceptionBundle:
         import cv2  # heavy dep — lazy-import keeps the module importable in contract-only test lanes
 
+        # Build the 512x512 downsampled JPEG that the reasoning prompt sends
+        # to Gemma. The image_path-bound raw_frame_jpeg is supplied by the
+        # runtime from the wire bytes (no re-encode needed — eng-review
+        # issue 6). Standalone callers can still set raw_frame_jpeg from a
+        # one-off cv2.imencode of the source numpy.
         resized = cv2.resize(raw_frame, (self.downsample_size, self.downsample_size))
         ok, buf = cv2.imencode(".jpg", resized, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
         if not ok:

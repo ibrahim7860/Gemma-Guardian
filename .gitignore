@@ -21,3 +21,4 @@ ml/adapters/*/
 .vscode/
 .idea/
 .DS_Store
+.playwright-mcp/

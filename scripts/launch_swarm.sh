@@ -152,8 +152,8 @@ emit_if_exists egs "agents/egs_agent/main.py" \
 # --- Drone agents (Kaleel) -------------------------------------------------
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
 for ID in "${DRONE_ARRAY[@]}"; do
-  emit_if_exists "$ID" "agents/drone_agent/main.py" \
-    "cd $REPO_ROOT && python3 agents/drone_agent/main.py --drone-id $ID 2>&1 | tee $LOG_DIR/$ID.log"
+  emit_if_exists "$ID" "agents/drone_agent/__main__.py" \
+    "cd $REPO_ROOT && python3 -m agents.drone_agent --drone-id $ID --scenario $SCENARIO 2>&1 | tee $LOG_DIR/$ID.log"
 done
 
 # --- WebSocket bridge (Ibrahim) ---------------------------------------------
