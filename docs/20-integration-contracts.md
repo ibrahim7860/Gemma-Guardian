@@ -385,8 +385,8 @@ transport:
   channel_prefix: ""                # if non-empty, prefixed to every channel (test isolation)
 
 inference:
-  drone_model: "gemma-4:e2b"
-  egs_model: "gemma-4:e4b"
+  drone_model: "gemma4:e2b"     # ollama.com/library/gemma4 — pinned 2026-05-06 after live verification on Apple Silicon
+  egs_model: "gemma4:e4b"       # ollama.com/library/gemma4 — pinned 2026-05-06
   drone_sampling_hz: 1.0
   ollama_drone_endpoint: "http://localhost:11434"
   ollama_egs_endpoint: "http://localhost:11435"

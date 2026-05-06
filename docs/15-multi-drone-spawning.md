@@ -28,6 +28,8 @@ For a 3-drone swarm, launch these processes (each in its own terminal or tmux pa
 
 **Drone agent** subscribes to `drones.<id>.camera` (Contract 1, raw JPEG bytes) and `drones.<id>.state` (Contract 2, sim-published kinematics) on Redis, runs the Algorithm 1 retry loop on each step, and publishes Contract-4 findings to `drones.<id>.findings`, Contract-6 peer broadcasts to `swarm.broadcasts.<id>`, and an agent-merged `drones.<id>.state` republish carrying the agent-owned fields (`last_action`, `findings_count`, `validation_failures_total`). Validation events stream to `/tmp/gemma_guardian_logs/validation_events.jsonl` per Contract 11.
 
+**Drone-agent CLI flags.** The full surface is `python -m agents.drone_agent --help`. Beyond `--drone-id` (required) and `--scenario`, the entry point accepts `--redis-url`, `--model`, `--ollama-endpoint`, `--max-retries`, `--zone-buffer-m` (metres of slack on the per-drone bbox; default 50), `--text-only` (skip vision; useful when validating wire shape against a text-only Gemma stand-in), and `--cpu-only` (forces `num_gpu=0` in Ollama options — workaround for Metal shader bugs on macOS). All non-required flags default to values from `shared/config.yaml`.
+
 **WebSocket bridge** subscribes to `egs.state`, `drones.*.state`, and `drones.*.findings`, then forwards a merged envelope to all connected Flutter dashboard clients at 1 Hz. Operator commands flow back through the same WebSocket.
 
 ## Launch Script

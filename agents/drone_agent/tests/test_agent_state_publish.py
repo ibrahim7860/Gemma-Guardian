@@ -132,3 +132,46 @@ async def test_agent_republishes_state_with_findings_count_after_finding(
     finally:
         await runtime.stop()
         await runtime_task
+
+
+def test_observe_step_result_increments_validation_failures_counter():
+    """Direct unit test for runtime._observe_step_result.
+
+    Eng-review issue 7: counter increments instead of walking memory.decisions
+    every step. Asserts the counter actually reflects validation failures
+    (the e2e tests above only exercise the happy path)."""
+    from agents.drone_agent.runtime import DroneRuntime
+    import fakeredis
+    import fakeredis.aioredis
+
+    server = fakeredis.FakeServer()
+    sync_client = fakeredis.FakeStrictRedis(server=server, decode_responses=False)
+    async_client = fakeredis.aioredis.FakeRedis(server=server, decode_responses=False)
+    scenario = load_scenario(SCENARIO_PATH)
+
+    rt = DroneRuntime(
+        drone_id="drone1", scenario=scenario,
+        zone_bounds={"lat_min": 33.99, "lat_max": 34.01,
+                     "lon_min": -118.51, "lon_max": -118.49},
+        sync_client=sync_client, async_client=async_client,
+    )
+    assert rt._validation_failures_total == 0
+
+    # Simulate a successful decision followed by a failure followed by another success.
+    rt.agent.memory.decisions.append({"valid": True, "function": "continue_mission"})
+    rt._observe_step_result({"function": "continue_mission", "arguments": {}})
+    assert rt._validation_failures_total == 0
+
+    rt.agent.memory.decisions.append({"valid": False, "function": "report_finding",
+                                      "failure_reason": "GPS_OUTSIDE_ZONE"})
+    rt._observe_step_result({"function": "report_finding", "arguments": {}})
+    assert rt._validation_failures_total == 1
+
+    rt.agent.memory.decisions.append({"valid": False, "function": "report_finding",
+                                      "failure_reason": "DUPLICATE_FINDING"})
+    rt._observe_step_result({"function": "report_finding", "arguments": {}})
+    assert rt._validation_failures_total == 2
+
+    rt.agent.memory.decisions.append({"valid": True, "function": "continue_mission"})
+    rt._observe_step_result({"function": "continue_mission", "arguments": {}})
+    assert rt._validation_failures_total == 2  # success doesn't increment

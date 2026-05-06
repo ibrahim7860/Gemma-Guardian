@@ -111,3 +111,11 @@ async def test_extra_options_threaded_through(monkeypatch):
     await node.call(_bundle())
     assert captured["body"]["options"]["num_gpu"] == 0
     assert captured["body"]["options"]["temperature"] == 0.2
+
+
+def test_default_timeout_is_120s():
+    """Regression guard: cold-loading 7.2GB gemma4:e2b + first vision+tools call
+    on Apple Silicon CPU exceeds 30s. The default was bumped from 30 to 120 in
+    the live-smoke commit; if anyone reverts it, the live runbook breaks again."""
+    node = ReasoningNode(model="gemma4:e2b")
+    assert node.timeout_s == 120.0
