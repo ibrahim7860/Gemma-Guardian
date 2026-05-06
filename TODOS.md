@@ -45,3 +45,28 @@ Deferred work captured during planning and reviews. Each entry includes context 
 ## Phase 3 in-scope work tracked here for breadcrumbs
 
 (none — see `docs/superpowers/specs/2026-05-02-phase3-dashboard-mvp-design.md` once it lands)
+
+## Drone-Agent Follow-ups
+
+### Migrate drone agent zone source to `egs.state.zone_polygon` (GATE 4)
+- **What:** Replace `agents/drone_agent/zone_bounds.py` scenario-derived bbox with a subscriber on `egs.state` that reads the canonical mission polygon Qasim's EGS publishes.
+- **Why:** Single source of truth for the survey area. Today Kaleel and Qasim independently derive zones from the same scenario YAML; if either changes its derivation logic, they drift.
+- **Pros:** Architectural consistency; matches the EGS-as-mission-owner narrative in the writeup.
+- **Cons:** Couples drone agent startup to EGS being up.
+- **Context:** GATE 2 plan ships scenario-derived bbox with a 50m buffer. Zone migration deferred to GATE 4 with the cross-drone awareness work.
+- **Owner:** Kaleel.
+
+### Wire `agent_status` flips in drone state republish (GATE 4 / Beat 4 demo)
+- **What:** Have the drone runtime flip `agent_status` to `"returning"` on `return_to_base`, `"standalone"` on lost-EGS-link, `"error"` on max-retries-exhausted. Today the republish copies whatever the sim emitted (`"active"` or `"offline"`).
+- **Why:** Storyboard Beat 4's STANDALONE MODE UI in the dashboard depends on a non-`active` `agent_status` to render the badge. Without this, the resilience demo falls back to Backup Beat 4.
+- **Owner:** Kaleel (with Ibrahim consuming on the dashboard side).
+
+### Drone-agent Ollama startup healthcheck (delivered, monitor)
+- **What:** Plan ships an httpx `GET /api/tags` healthcheck logging a clear warning if the model isn't pulled or the daemon is down. Track whether the warning is actually surfacing in operator runs.
+- **Why:** The Day 1-7 standalone work assumed Ollama Just Works; partial pulls and daemon-not-running have already cost an integration session.
+- **Owner:** Kaleel (delivered); Ibrahim verifies in demo prep.
+
+### Replace `ActionNode._finding_counter` with `MemoryStore.next_finding_id()`
+- **What:** `MemoryStore.next_finding_id()` already exists with the canonical `f_drone\d+_\d+` format. The action node maintains its own parallel counter — drift risk if either changes.
+- **Why:** DRY. Pre-existing technical debt; surfaced during the Redis wiring plan but out of scope for that PR.
+- **Owner:** Kaleel.

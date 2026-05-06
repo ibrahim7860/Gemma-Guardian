@@ -14,9 +14,9 @@ For a 3-drone swarm, launch these processes (each in its own terminal or tmux pa
 | 2 | Waypoint runner | `python sim/waypoint_runner.py --scenario disaster_zone_v1` |
 | 3 | Frame server | `python sim/frame_server.py --scenario disaster_zone_v1` |
 | 4 | EGS agent | `python agents/egs_agent/main.py` |
-| 5 | Drone agent 1 | `python agents/drone_agent/main.py --drone-id drone1` |
-| 6 | Drone agent 2 | `python agents/drone_agent/main.py --drone-id drone2` |
-| 7 | Drone agent 3 | `python agents/drone_agent/main.py --drone-id drone3` |
+| 5 | Drone agent 1 | `python -m agents.drone_agent --drone-id drone1 --scenario disaster_zone_v1` |
+| 6 | Drone agent 2 | `python -m agents.drone_agent --drone-id drone2 --scenario disaster_zone_v1` |
+| 7 | Drone agent 3 | `python -m agents.drone_agent --drone-id drone3 --scenario disaster_zone_v1` |
 | 8 | Mesh simulator | `python agents/mesh_simulator/main.py` |
 | 9 | WebSocket bridge | `python frontend/ws_bridge/main.py` |
 
@@ -25,6 +25,8 @@ For a 3-drone swarm, launch these processes (each in its own terminal or tmux pa
 **Frame server** reads the scenario's `frames` mapping and publishes `drones.<id>.camera` (raw JPEG bytes, not JSON) to Redis at the configured frame rate. Each drone agent subscribes to its own camera channel and passes frames to Gemma 4.
 
 **Mesh simulator** pattern-subscribes to `swarm.broadcasts.*`, filters messages by Euclidean distance using live drone state, and republishes accepted messages to `swarm.<receiver_id>.visible_to.<receiver_id>`. See Contract 9 in `docs/20-integration-contracts.md` for the full channel registry.
+
+**Drone agent** subscribes to `drones.<id>.camera` (Contract 1, raw JPEG bytes) and `drones.<id>.state` (Contract 2, sim-published kinematics) on Redis, runs the Algorithm 1 retry loop on each step, and publishes Contract-4 findings to `drones.<id>.findings`, Contract-6 peer broadcasts to `swarm.broadcasts.<id>`, and an agent-merged `drones.<id>.state` republish carrying the agent-owned fields (`last_action`, `findings_count`, `validation_failures_total`). Validation events stream to `/tmp/gemma_guardian_logs/validation_events.jsonl` per Contract 11.
 
 **WebSocket bridge** subscribes to `egs.state`, `drones.*.state`, and `drones.*.findings`, then forwards a merged envelope to all connected Flutter dashboard clients at 1 Hz. Operator commands flow back through the same WebSocket.
 

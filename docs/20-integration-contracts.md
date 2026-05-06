@@ -365,6 +365,10 @@ All logs go to `/tmp/gemma_guardian_logs/` with this structure:
 
 `validation_events.jsonl` is the source for the writeup's quantitative claims.
 
+**Producer:** `agents/drone_agent` (via `shared.contracts.logging.ValidationEventLogger`).
+**Consumer:** `agents/egs_agent` aggregates the last N entries into `egs.state.recent_validation_events`.
+**Path:** `/tmp/gemma_guardian_logs/validation_events.jsonl` — note the `gemma_guardian_logs` (not `fieldagent_logs`) directory; this aligns with the `logging.base_dir` field in `shared/config.yaml`.
+
 ## Contract 12: Configuration
 
 `shared/config.yaml`:

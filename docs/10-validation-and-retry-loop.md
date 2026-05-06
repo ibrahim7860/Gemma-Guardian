@@ -213,6 +213,10 @@ Log structure:
 }
 ```
 
+## Validation Event Persistence
+
+The drone agent uses `shared.contracts.logging.ValidationEventLogger` to write each retry attempt to `/tmp/gemma_guardian_logs/validation_events.jsonl` per **Contract 11** (`shared/schemas/validation_event.json`). Each line conforms to that schema: `timestamp`, `agent_id`, `layer`, `function_or_command`, `attempt` (1-indexed), `valid`, `rule_id`, `outcome` ∈ {`success_first_try`, `corrected_after_retry`, `failed_after_retries`, `in_progress`}, `raw_call`, `contract_version`. The EGS reads this file to populate `egs.state.recent_validation_events` for the dashboard's drone status panel.
+
 ## Demo: Engineering a Reliable Catch-and-Correct Moment
 
 The video needs at least one clear hallucination-correction moment on screen. We do NOT rely on Gemma 4 spontaneously hallucinating during the demo run. We **engineer the scenario**.

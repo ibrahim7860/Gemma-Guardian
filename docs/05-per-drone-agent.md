@@ -247,3 +247,17 @@ Full command list lives in [`docs/15-multi-drone-spawning.md`](15-multi-drone-sp
 | Redis channel unavailable / frame_server not running | Perception node uses last known frame and lowers confidence |
 | Redis pub/sub lag | Set 0.5 Hz sampling, document |
 | Network drop in simulation | Mesh dropout simulation via mesh_simulator; expected and demonstrable feature |
+
+## Redis I/O Architecture (live wiring)
+
+The drone agent process is a single asyncio runtime (`agents/drone_agent/runtime.py::DroneRuntime`) that multiplexes:
+
+- `CameraSubscriber` — `drones.<id>.camera` (Contract 1) → numpy frame slot
+- `StateSubscriber` — `drones.<id>.state` (Contract 2) → DroneState slot + raw sim-payload cache
+- `PeerSubscriber` — `swarm.<id>.visible_to.<id>` (Contract 6 mesh-filtered) → ring buffer
+- `_step_loop` — assembles a `PerceptionBundle` from the slots, calls `agent.step(bundle)`
+- `_state_republish_loop` — every 500ms, merges agent-owned fields onto the latest sim-shaped payload and publishes back on `drones.<id>.state`
+
+Outbound traffic flows through a `RedisPublisher` that implements the existing `Publisher` Protocol used by `ActionNode`. Findings are persisted to disk at `/tmp/gemma_guardian_logs/frames/<finding_id>.jpg` so the published Contract-4 finding carries a real `image_path`. Every outbound payload is schema-validated via `shared.contracts.validate_or_raise` before publish — a malformed call raises `ContractError` and falls back to `continue_mission`.
+
+CLI: `python -m agents.drone_agent --drone-id drone1 --scenario disaster_zone_v1`. Defaults source from `shared/config.yaml` via `shared.contracts.config.CONFIG`. Per-drone zone bounds are derived at startup from the drone's home + waypoints in the scenario YAML (GATE 4 will migrate to `egs.state.zone_polygon`).
