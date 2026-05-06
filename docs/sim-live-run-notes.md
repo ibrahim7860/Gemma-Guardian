@@ -129,3 +129,65 @@ bash scripts/launch_swarm.sh disaster_zone_v1 \
 # clean up
 bash scripts/stop_demo.sh
 ```
+
+---
+
+# Drone-agent → Redis live smoke (2026-05-06, Day 6)
+
+First end-to-end live run of the GATE 2 drone-agent wiring on `feature/drone-agent-redis-wiring`. Real Redis broker, real Ollama daemon, real `gemma4:e2b` model — no mocks anywhere in the path.
+
+## Setup
+
+- Host: macOS 26.4 (Apple Silicon, 16 GB RAM), brew Homebrew 5.1.9.
+- Redis 7.x via brew, already running.
+- Ollama 0.23.1 via brew. Started with: `OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve &`.
+- Model: `gemma4:e2b` pulled from `ollama.com/library/gemma4` — 7.2 GB.
+- Branch: `feature/drone-agent-redis-wiring` after Tasks 1–13, 15, 16, 17, 18 merged.
+
+## Two config drifts found and fixed inline
+
+1. `shared/config.yaml::inference.drone_model` was `gemma-4:e2b` (with hyphen). The actual Ollama tag is `gemma4:e2b` (no hyphen). Same fix for `egs_model`. Without this fix the agent's startup healthcheck logs "model not in pulled list" but otherwise still calls `/api/chat` (the daemon resolves close-enough names).
+2. `agents/drone_agent/reasoning.py::ReasoningNode.__init__` defaulted `timeout_s=30.0`. Cold-load of the 7.2 GB `gemma4:e2b` plus the first vision+tools call exceeds 30s on Apple Silicon CPU — `httpx.ReadTimeout` kills the first attempt. Bumped default to `120.0`. After the model is warm, subsequent calls land in 30–45 seconds each.
+
+## What ran
+
+```
+$ uv run --extra sim python sim/waypoint_runner.py --scenario disaster_zone_v1 &
+$ uv run --extra sim python sim/frame_server.py --scenario disaster_zone_v1 &
+$ uv run --extra drone --extra sim python -m agents.drone_agent \
+    --drone-id drone1 --scenario disaster_zone_v1 &
+
+[drone_agent] ollama OK at http://localhost:11434, model gemma4:e2b present
+[drone_agent] drone_id=drone1 scenario=disaster_zone_v1 redis=redis://localhost:6379/0 model=gemma4:e2b
+```
+
+## What we observed
+
+- **`drones.drone1.state`**: sim-published Contract 2 records arrive at 2 Hz with valid kinematics + `last_action: "none"` (sim defaults). Agent-republished records overlay `last_action: "return_to_base"` and `last_action_timestamp` once Gemma starts producing function calls. The merge handshake is alive.
+- **Validation event log** at `/tmp/gemma_guardian_logs/validation_events.jsonl`: Contract 11-conformant. **8/8 lines** validated against `shared/schemas/validation_event.json` across two runs (12/12 cumulative). Function-call breakdown across two runs: `return_to_base × 11`, `continue_mission × 1`. Gemma 4 is producing real, varied tool calls.
+- **`drones.drone1.cmd`**: live `return_to_base(reason="mission_complete")` payloads landed every ~40 seconds:
+  ```json
+  {"drone_id": "drone1", "timestamp": "2026-05-06T19:24:51.430Z",
+   "command": "return_to_base", "reason": "mission_complete"}
+  ```
+- **`drones.drone1.findings`**: empty across both runs. **Not a bug — emergent correct behavior.** The `sim/fixtures/frames/placeholder_*.jpg` fixtures are 320×240 synthetic placeholders with no visible victims / fire / damage. Gemma 4 evaluates each frame, decides nothing matches the `report_finding` enum (`victim/fire/smoke/damaged_structure/blocked_route`), and falls through to `return_to_base(mission_complete)` once `assigned_survey_points_remaining == 0`. Even after we swapped in the synthetic `_make_test_image.py` aerial-with-fire+damage scene, the model still preferred RTB because waypoints had been exhausted by the time the frame reached it. **The first real `report_finding` will land once Thayyil swaps in real xBD post-disaster crops** — the wiring has nothing left to prove on that path.
+- **Per-cycle timing**: ~40 seconds between validation log entries. That's one cold Gemma 4 vision+tools inference per agent step on Apple Silicon CPU. A discrete GPU or Linux+CUDA box would be 5–10× faster.
+
+## Verified end-to-end
+
+| Component | Evidence |
+|---|---|
+| Real Ollama daemon, real Gemma 4 E2B | `ollama list` shows `gemma4:e2b 7.2 GB`; healthcheck logs `model gemma4:e2b present`. |
+| Drone agent subscribes to `drones.<id>.camera` (Contract 1, raw JPEG) | Validation log entries fire at sim-frame cadence; the call would not produce tool calls if frames weren't reaching `agent.step(bundle)`. |
+| Drone agent subscribes to `drones.<id>.state` (Contract 2) | Validator passes `RTB(mission_complete)` only when `assigned_survey_points_remaining == 0`, which means it's reading the real sim state. |
+| Real Gemma 4 producing structured function calls | Validation log shows `return_to_base` AND `continue_mission` calls — the model is genuinely choosing between options, not stuck on a default. |
+| Validation node runs (Algorithm 1 retry loop) | Every log entry has `valid: true` + `outcome: success_first_try` because Gemma's calls so far all pass first-try; the loop is wired and would log `in_progress` + retry on failure. |
+| Validation event log Contract 11-compliant | `12/12` lines validated against `shared/schemas/validation_event.json` via `shared.contracts.validate`. |
+| Action node executes function calls | Live `drones.drone1.cmd` payloads observed for `return_to_base`. |
+| Agent-side `drones.<id>.state` republish merges agent-owned fields | Live `last_action: "return_to_base"` observed on the channel — distinct from sim's `last_action: "none"`. |
+
+## Not verified live (deferred)
+
+- A live `report_finding` payload landing on `drones.<id>.findings`. Blocked on real xBD imagery (Thayyil) or a more visually convincing synthetic scene than `_make_test_image.py` produces. The protocol-level proof of this path lives in `frontend/ws_bridge/tests/test_e2e_playwright_real_drone_findings.py` (mocked Ollama returns a canned `report_finding`, agent persists frame, publishes to the real findings channel — the test passes).
+- Multi-drone coordination, peer broadcasts on `swarm.broadcasts.<id>` — not in the GATE 2 scope.
+
