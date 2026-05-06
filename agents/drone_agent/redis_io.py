@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 
 import numpy as np
 import redis as _redis_sync
@@ -21,7 +22,11 @@ import redis.asyncio as _redis_async
 from agents.drone_agent.perception import DroneState
 from agents.drone_agent.state_translator import translate_drone_state
 from shared.contracts import validate as schema_validate
-from shared.contracts.topics import per_drone_camera_channel, per_drone_state_channel
+from shared.contracts.topics import (
+    per_drone_camera_channel,
+    per_drone_state_channel,
+    swarm_visible_to_channel,
+)
 from sim.scenario import Scenario
 
 logger = logging.getLogger(__name__)
@@ -167,6 +172,51 @@ class StateSubscriber:
     def latest_raw_sim(self) -> dict | None:
         """Last sim-shaped payload (agent republishes are filtered out)."""
         return self._latest_raw_sim
+
+    async def stop(self) -> None:
+        self._stop.set()
+
+
+class PeerSubscriber:
+    """Async subscriber for swarm.<drone_id>.visible_to.<drone_id>.
+
+    Buffers incoming peer broadcasts in a bounded ring keyed by
+    `broadcast_id`. Duplicates (re-deliveries from the mesh layer) are
+    silently dropped. The buffer caps at `max_size`; oldest entries fall off.
+    """
+
+    def __init__(self, client: _redis_async.Redis, drone_id: str, *, max_size: int = 10):
+        self._client = client
+        self._channel = swarm_visible_to_channel(drone_id)
+        self._buf: deque[dict] = deque(maxlen=max_size)
+        self._seen_ids: set[str] = set()
+        self._stop = asyncio.Event()
+
+    async def run(self) -> None:
+        pubsub = self._client.pubsub()
+        await pubsub.subscribe(self._channel)
+        try:
+            while not self._stop.is_set():
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+                if msg is None:
+                    continue
+                data = msg.get("data")
+                text = data.decode("utf-8", errors="replace") if isinstance(data, (bytes, bytearray)) else data
+                try:
+                    payload = json.loads(text)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                bid = payload.get("broadcast_id")
+                if not isinstance(bid, str) or bid in self._seen_ids:
+                    continue
+                self._seen_ids.add(bid)
+                self._buf.append(payload)
+        finally:
+            await pubsub.unsubscribe(self._channel)
+            await pubsub.close()
+
+    def recent(self) -> list[dict]:
+        return list(self._buf)
 
     async def stop(self) -> None:
         self._stop.set()
