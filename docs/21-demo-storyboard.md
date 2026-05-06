@@ -20,13 +20,15 @@ Hard cap. Judges have hundreds of submissions. Going over loses attention.
 
 ## Beat 1: The Problem (0:00 - 0:10)
 
-**Goal:** establish the stakes in 10 seconds.
+**Goal:** establish the stakes in 10 seconds, anchored in a named event so the framing isn't generic.
 
-**Visual:** B-roll of disaster aftermath (free stock footage from Pexels / Pixabay — wildfire, hurricane wreckage, downed power lines).
+**Visual:** Open on NASA SVS imagery from the **Eaton Fire (Los Angeles, January 2025)** — [`https://svs.gsfc.nasa.gov/5558/`](https://svs.gsfc.nasa.gov/5558/), the same footprint the reference paper benchmarks against. Cut to short B-roll of cell-tower failures / downed infrastructure (Pexels / Pixabay).
 
-**Voiceover/text:** "After every major disaster, communication infrastructure fails in the first hour. Cloud-AI drone systems become useless when they're needed most."
+**Voiceover/text:** "January 2025. The Eaton Fire collapsed cell coverage across the foothills in the first hour. Cloud-AI drone systems became useless in the same hour they were needed most."
 
 **Title card at end:** *"FieldAgent: Offline drone swarm coordination with Gemma 4."*
+
+This naming aligns with the writeup's §1 framing (`docs/22-writeup-draft.md`) and matches the gating advice in `docs/02-hackathon-context.md` to anchor with a specific event rather than aggregate statistics.
 
 ## Beat 2: The Academic Anchor (0:10 - 0:25)
 
@@ -34,7 +36,7 @@ Hard cap. Judges have hundreds of submissions. Going over loses attention.
 
 **Visual:** Side-by-side: paper PDF (Nguyen et al. 2026) on left; our system architecture diagram on right.
 
-**Voiceover/text:** "In January 2026, INRS published the strongest architecture for AI-driven disaster response drones. It works — but it depends on cloud GPT-4.1. We replaced every LLM in their architecture with Gemma 4 running locally. Same architecture. Zero cloud."
+**Voiceover/text:** "In January 2026, INRS published the most directly relevant architecture for AI-driven disaster response drones. It works — but it depends on cloud GPT-4.1. We replaced every LLM in their architecture with Gemma 4 running locally. Same architecture. Zero cloud."
 
 **Caption on screen:** *"Reference: Nguyen, Truong, Le 2026 (arXiv 2601.14437)"*
 
@@ -44,7 +46,7 @@ Hard cap. Judges have hundreds of submissions. Going over loses attention.
 
 ### Sub-beat 3a: Mission Start (0:25 - 0:35)
 
-**Visual:** Wide shot of the software-only Python simulation. Disaster zone with damaged buildings, debris, victims. 2-3 drones launching from ground station.
+**Visual:** Wide shot of the software-only Python simulation rendered in the Flutter dashboard's map panel. Disaster zone with the locked-bbox map background, damaged-building markers, and 2-3 drones beginning their scripted waypoint tracks from their `home` positions in `sim/scenarios/disaster_zone_v1.yaml`.
 
 **Caption:** *"3 simulated drones, each running Gemma 4 E2B. Edge ground station running Gemma 4 E4B. No internet."*
 
@@ -113,7 +115,24 @@ Then the dramatic moment: a card appears: *"EGS LINK SEVERED."* The dashboard sh
 
 **Final visual:** the GitHub repo URL on screen.
 
-**Voiceover/text:** "3.6 billion people live in disaster-vulnerable regions. When the towers fall, the swarm keeps going. FieldAgent. Open source. Apache 2.0."
+**Voiceover/text:** "3.6 billion people live in disaster-vulnerable regions. When the towers fall, the swarm keeps going. FieldAgent. Open source on GitHub."
+
+> **License caveat:** the repo currently has **no `LICENSE` file**. The earlier draft of this script claimed "Apache 2.0", which would be misleading until a LICENSE is committed. Either add one (Apache-2.0 or MIT both fit the permissively-licensed-stack framing in `docs/01-vision-and-pitch.md`) before filming and restore the explicit license name to the voiceover, or keep the hedged "Open source on GitHub" wording.
+
+## Pre-Flight Checklist — what must ship before this storyboard can be filmed
+
+The storyboard above assumes a fully integrated stack. As of today, several beats depend on components that haven't landed yet. Before scheduling a capture session, verify:
+
+| Beat | Depends on | Owner | Today's state |
+|---|---|---|---|
+| 3b drone-eye reasoning trace + `report_finding` overlay | `agents/drone_agent/main.py` publishing real findings on `drones.<id>.findings` | Kaleel | Stub in repo; not publishing |
+| 3c "EGS hallucinates 27 of 25 points → caught → corrected" | `agents/egs_agent/main.py` running `assign_survey_points` with the validation loop wired | Qasim | Not yet shipped |
+| 4 `command_translation` showing Spanish input → structured task | EGS Gemma 4 E4B path producing real `preview_text_in_operator_language` (TODOS.md tracks this as a Phase 5+ stub) | Qasim | Bridge accepts ops commands; translation echoes English |
+| 4 `EGS LINK SEVERED` card + "STANDALONE MODE ACTIVE" panel state | Dashboard rendering EGS-offline state (no `STANDALONE` string anywhere in `frontend/flutter_dashboard/lib/` today) | Person 4 (Ibrahim) | Not implemented |
+| 4 `egs_link_drop` event firing in sim | `sim/scenarios/resilience_v1.yaml` — already ships `egs_link_drop` at t=120s and `egs_link_restore` at t=180s | Hazim | ✅ Done |
+| 5 offline proof terminal + `ollama list` showing two models | Demo box has both Gemma 4 tags pulled per `docs/20-integration-contracts.md` | Person 4 (demo box owner) | Verify on Day 14 |
+
+The Pre-Flight Checklist is the operational counterpart to the storyboard. **Do not schedule a capture session until every row has a green check.** If a row is still red on Day 14 (May 16), fall back to the Backup Beat 4 below and / or reduce Beat 3c to the Backup Hallucination Trigger described in `docs/10-validation-and-retry-loop.md` Approach 2 / Approach 3.
 
 ## Backup Beat 4 (If EGS-link-severed scenario doesn't work cleanly)
 
