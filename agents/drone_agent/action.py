@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from shared.contracts import validate_or_raise
+from shared.contracts.logging import now_iso_ms
 from shared.contracts.topics import (
     per_drone_cmd_channel,
     per_drone_findings_channel,
@@ -53,7 +54,7 @@ class ActionNode:
     def _act_report_finding(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
         self._finding_counter += 1
         finding_id = f"f_{self.drone_id}_{self._finding_counter}"
-        ts = _now_iso()
+        ts = now_iso_ms()
 
         image_path = self._persist_frame(finding_id, raw_frame_jpeg) if raw_frame_jpeg else "<no_capture>"
 
@@ -110,7 +111,7 @@ class ActionNode:
                 "lon": float(sender_position["lon"]),
                 "alt": float(sender_position["alt"]),
             },
-            "timestamp": _now_iso(),
+            "timestamp": now_iso_ms(),
             "broadcast_type": "assist_request",
             "payload": {
                 "reason": args["reason"],
@@ -125,7 +126,7 @@ class ActionNode:
     def _act_return_to_base(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
         self.publisher.publish(per_drone_cmd_channel(self.drone_id), {
             "drone_id": self.drone_id,
-            "timestamp": _now_iso(),
+            "timestamp": now_iso_ms(),
             "command": "return_to_base",
             "reason": args["reason"],
         })
@@ -138,8 +139,3 @@ class ActionNode:
         out = FRAMES_DIR / f"{finding_id}.jpg"
         out.write_bytes(raw_jpeg)
         return str(out)
-
-
-def _now_iso() -> str:
-    now = datetime.now(timezone.utc)
-    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"

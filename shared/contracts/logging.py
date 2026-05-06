@@ -39,7 +39,7 @@ def setup_logging(
     return logger
 
 
-def _now_iso_ms() -> str:
+def now_iso_ms() -> str:
     """Produce an ISO 8601 UTC timestamp with millisecond precision and trailing Z.
 
     Matches _common.json#/$defs/iso_timestamp_utc_ms pattern:
@@ -75,7 +75,7 @@ class ValidationEventLogger:
         raw_call: Optional[Dict[str, Any]],
     ) -> None:
         record = {
-            "timestamp": _now_iso_ms(),
+            "timestamp": now_iso_ms(),
             "agent_id": agent_id,
             "layer": layer,
             "function_or_command": function_or_command,
