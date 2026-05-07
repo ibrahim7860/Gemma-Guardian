@@ -228,6 +228,29 @@ def test_launch_swarm_bridge_invocation_uses_uvicorn():
         )
 
 
+def test_launch_swarm_passes_egs_anchor_to_mesh_simulator():
+    """Regression: the mesh simulator must receive ``--egs-lat / --egs-lon``
+    derived from the scenario's ``origin``. Without this, ``mesh.adjacency_matrix``
+    snapshots silently omit the ``egs`` node (it never enters the position
+    cache) and resilience scenarios can't observe drone↔EGS link drops at
+    ``mesh.egs_link_range_meters``. Surfaced during the Phase D resilience
+    run on 2026-05-07."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "resilience_v1", "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    mesh_lines = [ln for ln in result.stdout.splitlines() if "tmux:mesh" in ln]
+    assert mesh_lines, f"no mesh plan line; stdout was:\n{result.stdout}"
+    line = mesh_lines[0]
+    assert "--egs-lat 34.0" in line, f"missing --egs-lat 34.0 in: {line}"
+    assert "--egs-lon -118.5" in line, f"missing --egs-lon -118.5 in: {line}"
+
+
 def test_launch_swarm_default_no_duration_flag_anywhere():
     """When --duration is omitted, no runner should get a --duration flag."""
     script = SCRIPTS_DIR / "launch_swarm.sh"

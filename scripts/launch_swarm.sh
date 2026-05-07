@@ -142,12 +142,25 @@ fi
 # --- Sim components (Hazim — always present) ------------------------------
 emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
 emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
+# EGS anchor: scenarios pin it to their declared `origin`. Without this, the
+# mesh simulator never sees an EGS position and `mesh.adjacency_matrix` snapshots
+# omit the `egs` node, which means resilience-scenario egs_link drops are
+# invisible. Falls back to the disaster_zone_v1 anchor (34.0,-118.5) on YAML
+# read failure rather than failing the whole launch.
+EGS_ORIGIN="$(PYTHONPATH="$REPO_ROOT" python3 "$REPO_ROOT/sim/scenario_origin.py" "$SCENARIO" 2>/dev/null || echo "34.0,-118.5")"
+EGS_LAT="${EGS_ORIGIN%,*}"
+EGS_LON="${EGS_ORIGIN#*,}"
 emit_if_exists mesh "agents/mesh_simulator/main.py" \
-  "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/mesh.log"
+  "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL --egs-lat $EGS_LAT --egs-lon $EGS_LON 2>&1 | tee $LOG_DIR/mesh.log"
 
 # --- EGS (Qasim) ----------------------------------------------------------
+# PYTHONPATH=$REPO_ROOT — `agents/egs_agent/main.py` does `from shared.contracts
+# import CONFIG`. Invoking it directly as a script puts only the script's own
+# directory on sys.path, so the import explodes with ModuleNotFoundError.
+# Surfaced during the resilience-run integration on 2026-05-07; mirrors the
+# pre-existing pattern Kaleel uses for the drone agent (`python3 -m agents.drone_agent`).
 emit_if_exists egs "agents/egs_agent/main.py" \
-  "cd $REPO_ROOT && python3 agents/egs_agent/main.py 2>&1 | tee $LOG_DIR/egs.log"
+  "cd $REPO_ROOT && PYTHONPATH=$REPO_ROOT python3 agents/egs_agent/main.py 2>&1 | tee $LOG_DIR/egs.log"
 
 # --- Drone agents (Kaleel) -------------------------------------------------
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
