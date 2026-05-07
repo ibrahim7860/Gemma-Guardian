@@ -259,3 +259,20 @@ The verbatim phrase "person prone in rubble, partial cover" never appears in `sh
 - This complements the durable pytest test (`frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`, commit `471605a`) which asserts the same chain headlessly + repeatably.
 - Procedure documented as a runbook at `docs/runbooks/mcp-dom-verification.md` for future demo-video capture and pre-submission sanity checks.
 
+
+## 2026-05-07 — Cross-stack smoke after PRs #28 + #29
+
+**Why:** After landing 4 PRs in 24 h (#25 dom-render, #28 Beat 4 banner+badge, #29 Playwright e2e + MCP capture, plus Hazim's #26/#27 sim-side), verify the integrated stack still cohered before Qasim's GATE 2 EGS-findings work lands on top.
+
+**Setup:** system Redis on 6379 + `dev_fake_producers.py --emit=state,egs,findings` + `uvicorn frontend.ws_bridge.main:app --port 9090` + Flutter `build/web/` static-served on a free port + Playwright MCP Chromium against `?ws=ws://127.0.0.1:9090/`.
+
+**Outcome: all four panels render cleanly, no regressions from Beat 4 work.**
+
+- Header: `v1.0.0 · connected` — bridge handshake healthy.
+- Map: drone99 marker plotted on equirectangular grid.
+- Drone Status: `drone99 — active` with battery 89%, task: survey, findings 8, validation fails 2; ticker row shows `Validation: 0 fails` from EGS recent_validation_events.
+- Findings: 3 tiles (DAMAGED_STRUCTURE / SMOKE / FIRE, all severity 4 / conf 0.78) with APPROVE/DISMISS buttons.
+- Command: language selector + input + TRANSLATE/CLEAR buttons.
+- Beat 4 dormant: `egs-link-severed-banner` NOT present (egs.state heartbeat fresh); `standalone-badge-drone99` NOT present (status is `active`). Both are exactly the right behavior under nominal traffic.
+
+**Conclusion:** PRs #28 + #29 are safe under live traffic. The dashboard still renders all nominal states, and the new Beat 4 surfaces correctly stay dormant when they should. Stack ready to receive Qasim's GATE 2 piece.
