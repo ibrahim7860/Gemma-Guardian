@@ -1,9 +1,14 @@
 import asyncio
+import json
 import logging
 import pytest
 from unittest.mock import AsyncMock, patch
-from agents.egs_agent.validation import EGSValidationNode
+
+from agents.egs_agent import validation_log_tail
 from agents.egs_agent.coordinator import EGSCoordinator
+from agents.egs_agent.scenario_state import build_initial_egs_state
+from agents.egs_agent.validation import EGSValidationNode
+from shared.contracts import VERSION
 
 @pytest.fixture
 def coordinator():
@@ -160,3 +165,93 @@ def test_process_findings_increments_only_known_types(coordinator, caplog):
         f"unknown finding type should not emit an accepted log line, got: "
         f"{[r.getMessage() for r in accepted_records]}"
     )
+
+
+def _validation_event(attempt: int, ts: str):
+    """Hand-rolled schema-valid validation_event payload for coordinator tests."""
+    return {
+        "timestamp": ts,
+        "agent_id": "drone1",
+        "layer": "drone",
+        "function_or_command": "report_finding",
+        "attempt": attempt,
+        "valid": True,
+        "rule_id": None,
+        "outcome": "success_first_try",
+        "raw_call": None,
+        "contract_version": VERSION,
+    }
+
+
+def _empty_state(egs_state):
+    return {
+        "egs_state": egs_state,
+        "incoming_telemetry": [],
+        "incoming_findings": [],
+        "incoming_commands": [],
+        "messages_to_publish": [],
+        "trigger_replan": False,
+    }
+
+
+def test_coordinator_refreshes_recent_validation_events(tmp_path, monkeypatch):
+    """Task 4: after VALIDATION_REFRESH_EVERY_N_TICKS=5 invocations of the
+    graph, recent_validation_events should reflect the on-disk JSONL log."""
+    # Seed a 3-event log file and point the tail module at it.
+    log = tmp_path / "validation_events.jsonl"
+    events = [
+        _validation_event(i, f"2026-05-07T10:00:{i:02d}.000Z")
+        for i in range(1, 4)
+    ]
+    with log.open("w") as f:
+        for e in events:
+            f.write(json.dumps(e) + "\n")
+    monkeypatch.setattr(validation_log_tail, "LOG_PATH", log)
+
+    async def run():
+        coord = EGSCoordinator(EGSValidationNode())
+        state = _empty_state(build_initial_egs_state("disaster_zone_v1"))
+        # The on-disk log has 3 entries; the field starts empty.
+        assert state["egs_state"]["recent_validation_events"] == []
+
+        # Run the graph 5 times sequentially. Counter goes 1→5; the 5th tick
+        # is when (counter % 5 == 0) fires the refresh.
+        last_state = state
+        for _ in range(5):
+            last_state = await coord.graph.ainvoke(_empty_state(last_state["egs_state"]))
+
+        rve = last_state["egs_state"]["recent_validation_events"]
+        assert len(rve) == 3, (
+            f"expected 3 events after 5 ticks, got {len(rve)}: {rve}"
+        )
+        assert [e["attempt"] for e in rve] == [1, 2, 3]
+
+    asyncio.run(run())
+
+
+def test_coordinator_does_not_refresh_on_off_ticks(tmp_path, monkeypatch):
+    """Task 4: the every-5th-tick gate must hold off the refresh on ticks 1-4."""
+    log = tmp_path / "validation_events.jsonl"
+    events = [
+        _validation_event(i, f"2026-05-07T10:00:{i:02d}.000Z")
+        for i in range(1, 4)
+    ]
+    with log.open("w") as f:
+        for e in events:
+            f.write(json.dumps(e) + "\n")
+    monkeypatch.setattr(validation_log_tail, "LOG_PATH", log)
+
+    async def run():
+        coord = EGSCoordinator(EGSValidationNode())
+        state = _empty_state(build_initial_egs_state("disaster_zone_v1"))
+
+        last_state = state
+        for _ in range(4):  # only 4 ticks — short of the 5-tick gate
+            last_state = await coord.graph.ainvoke(_empty_state(last_state["egs_state"]))
+
+        rve = last_state["egs_state"]["recent_validation_events"]
+        assert rve == [], (
+            f"refresh should not fire on ticks 1-4; got {rve}"
+        )
+
+    asyncio.run(run())
