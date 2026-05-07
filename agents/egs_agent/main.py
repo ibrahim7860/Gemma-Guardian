@@ -10,6 +10,7 @@ from shared.contracts.topics import (
 )
 from agents.egs_agent.validation import EGSValidationNode
 from agents.egs_agent.coordinator import EGSCoordinator
+from agents.egs_agent.scenario_state import build_initial_egs_state
 
 logging.basicConfig(level=getattr(logging, CONFIG.logging.level, "INFO"))
 logger = logging.getLogger(__name__)
@@ -39,26 +40,8 @@ async def main():
     validation_node = EGSValidationNode()
     coordinator = EGSCoordinator(validation_node)
     
-    # Initialize initial egs_state (mock data per contract for demo)
-    egs_state = {
-        "mission_id": CONFIG.mission.scenario_id,
-        "mission_status": "active",
-        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "zone_polygon": [
-            [34.1230, -118.5680], [34.1240, -118.5680],
-            [34.1240, -118.5670], [34.1230, -118.5670]
-        ],
-        "survey_points": [
-            {"id": "sp_001", "lat": 34.1232, "lon": -118.5675, "status": "unassigned"},
-            {"id": "sp_002", "lat": 34.1234, "lon": -118.5673, "status": "unassigned"}
-        ],
-        "drones_summary": {},
-        "findings_count_by_type": {
-            "victim": 0, "fire": 0, "smoke": 0, "damaged_structure": 0, "blocked_route": 0
-        },
-        "recent_validation_events": [],
-        "active_zone_ids": []
-    }
+    # Initial state derived from the active scenario YAML (Contract 3-compliant).
+    egs_state = build_initial_egs_state(CONFIG.mission.scenario_id)
     
     state_ref = {"egs_state": egs_state}
     
