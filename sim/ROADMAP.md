@@ -59,10 +59,10 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 - I report the gate trajectory at standup.
 
 ### Phase D — Mesh dropout live on the swarm
-- `agents/mesh_simulator/main.py` already runs against fakeredis in tests. Phase D is wiring it into the integrated stack and tuning `range_meters` / `egs_link_range_meters` in `shared/config.yaml` until resilience scenario 1 (drone_failure → EGS replan) fires correctly.
+- ✅ Done on `sim/phase-d-mesh-dropout-live`. `scripts/run_resilience_scenario.sh` against the integrated stack: drone1↔drone3 mesh link drops at `sim_t≈18 s`, drone1↔egs and drone3↔egs both drop at `sim_t≈98 s`, drone_failure at `sim_t=30 s` flips drone2 to `agent_status=offline`. `shared/config.yaml::mesh.range_meters` and `egs_link_range_meters` left at `200 / 500` — the `resilience_v1.yaml` geometry was authored against those values and the predictions held within ±0.5 s. Two launcher gaps fixed: `launch_swarm.sh` now plumbs `--egs-lat / --egs-lon` from `sim/scenario_origin.py` (without it the mesh sim has no EGS in its position cache), and EGS now starts with `PYTHONPATH=$REPO_ROOT` (mirroring Kaleel's drone-agent fix). EGS replan path itself is **blocked** on two Qasim bugs (`egs_state` schema missing `assigned_to`; `replanning.py` re-raises Ollama errors instead of falling back deterministically) — clean repros in [`docs/sim-resilience-run-notes.md`](../docs/sim-resilience-run-notes.md).
 
 ### Phase E — Gate 4 (multi-drone coordination)
-- 2–3 drones coordinating; scripted resilience events fire on schedule; mesh dropout produces the right adjacency dynamics.
+- ✅ Done as part of the same run. 3 drone agents publish state and emit `continue_mission` tool calls; mesh adjacency dynamics match the predicted before/after; sim, mesh, drone, and ws_bridge logs are clean. Single carve-out: 268 × `STRUCTURAL_VALIDATION_FAILED` on `egs_state` from the bridge's defensive validator — same Qasim bug above. Detailed evidence in [`docs/sim-resilience-run-notes.md`](../docs/sim-resilience-run-notes.md).
 
 ### Phase F — Demo capture
 - Stable, jitter-free sim runs for video capture. Fix any flakiness Ibrahim surfaces during recording.
