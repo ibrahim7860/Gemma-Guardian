@@ -23,6 +23,12 @@ The Plan C path in the hallucination demo (below) is the only adjacent edge case
 - **What we do:** Predefined polygons hardcoded in the world file or a config file. Optionally a polygon that "expands" on a timer to simulate fire spread.
 - **Why it's fine:** The judges care about the LLM agentic behavior, not the segmentation pipeline. State this honestly: "U-Net segmentation is out of scope; the EGS uses pre-defined zones for our prototype." Nobody loses points for skipping a vision task that's not the focus.
 
+**Update 2026-05-07:** the predefined polygon is now derived from the
+scenario YAML's waypoint extents (`agents/egs_agent/scenario_state.build_initial_egs_state`),
+not hardcoded in `agents/egs_agent/main.py`. The mock framing is unchanged —
+we still don't run U-Net — but the polygon is at least guaranteed to match
+the active scenario.
+
 ### Real Satellite Imagery
 - **What the paper does:** Continuous satellite feeds drive zone updates
 - **What we do:** A single static aerial image (one of the xBD base frames or a public-domain satellite photograph) used as the EGS's "satellite view"

@@ -229,3 +229,115 @@ curl -sI "http://127.0.0.1:$FLUTTER/" | head -1   # expect 200
 pkill -f "synth_ws.py"
 pkill -f "http.server $FLUTTER"
 ```
+
+## Beat 3 EGS-findings-count capture — `findings_count_by_type` lit by live drone
+
+**Last verified:** stub — manual capture pending. Reference asset
+(target): `docs_assets/dashboard-egs-state-counts.png`.
+
+**Purpose:** capture a screenshot of the dashboard's findings-count chips
+lit up by a live drone-agent finding (or, as a stand-in, by
+`scripts/dev_fake_producers.py --emit=findings`) flowing through the real
+EGS process into `egs.state.findings_count_by_type`. This is the GATE 2
+acceptance asset for Qasim's EGS path: the polygon is scenario-derived,
+the counts are real, the dashboard reflects what the EGS published.
+
+The fully-automated equivalent (sans screenshot save) lives at
+`frontend/ws_bridge/tests/test_e2e_playwright_egs_findings.py`; this
+runbook section is the manual MCP-driven version used for the demo asset.
+
+### 1. Pick free ports + log dir
+
+```bash
+DEMO_DIR=/tmp/gg_beat3_capture
+mkdir -p "$DEMO_DIR"
+python3 -c "
+import socket
+for tag in ['BRIDGE', 'FLUTTER']:
+    s = socket.socket(); s.bind(('127.0.0.1', 0))
+    print(f'{tag}={s.getsockname()[1]}'); s.close()
+" > "$DEMO_DIR/ports.env"
+source "$DEMO_DIR/ports.env"
+```
+
+### 2. Boot order
+
+System Redis must already be running and own port 6379 (the EGS,
+drone agent, and bridge all default to it):
+
+```bash
+redis-cli ping  # expect PONG; if not, brew services start redis (or apt/systemctl)
+```
+
+Then start the rest in order — EGS first so it's subscribed before any
+finding lands:
+
+```bash
+cd /path/to/Gemma-Guardian
+
+# 1) EGS — owns egs.state publishes + findings aggregation.
+nohup uv run python -m agents.egs_agent.main \
+      > "$DEMO_DIR/egs.log" 2>&1 &
+sleep 2  # let the subscriber attach before findings arrive
+
+# 2a) Live path: real drone agent (requires Ollama up with gemma4:e2b).
+nohup uv run python -m agents.drone_agent --drone-id drone1 \
+      --scenario disaster_zone_v1 \
+      > "$DEMO_DIR/agent.log" 2>&1 &
+# 2b) Stand-in path: dev_fake_producers emits one Contract-4 finding.
+#     Use this if Ollama isn't pre-warmed or you want a deterministic
+#     capture window.
+# nohup uv run python scripts/dev_fake_producers.py --emit=findings \
+#       --drone-id drone1 > "$DEMO_DIR/fake.log" 2>&1 &
+
+# 3) Bridge.
+nohup uv run python -m uvicorn frontend.ws_bridge.main:app \
+      --host 127.0.0.1 --port $BRIDGE \
+      > "$DEMO_DIR/bridge.log" 2>&1 &
+
+# 4) Flutter static server (pre-built bundle).
+( cd frontend/flutter_dashboard/build/web && \
+  nohup python3 -m http.server $FLUTTER --bind 127.0.0.1 \
+        > "$DEMO_DIR/flutter.log" 2>&1 ) &
+
+sleep 5
+```
+
+Confirm the EGS actually consumed the finding before screenshotting:
+
+```bash
+tail -F "$DEMO_DIR/egs.log" | grep "egs.findings accepted"
+```
+
+### 3. Drive Playwright MCP from a Claude session
+
+1. `mcp__playwright__browser_navigate` → `http://127.0.0.1:<FLUTTER>/?ws=ws://127.0.0.1:<BRIDGE>/`
+2. `mcp__playwright__browser_wait_for` → `time: 6` (let `egs.state` arrive on the next 1 Hz publish + Flutter render)
+3. `mcp__playwright__browser_snapshot` → confirm the accessibility tree exposes the count chips
+4. `mcp__playwright__browser_take_screenshot` → save to `docs_assets/dashboard-egs-state-counts.png` with `fullPage: true`
+
+### 4. Verify the rendered DOM contains
+
+- At least one `[flt-semantics-identifier^="finding-tile-"]` node (proves the
+  Findings panel rendered the bridge's forwarded Contract-4 envelope).
+- A `[flt-semantics-identifier="findings-count-victim"]` node (or whichever
+  type the rotation produced — `findings-count-fire`, `findings-count-smoke`,
+  `findings-count-damaged_structure`, `findings-count-blocked_route`)
+  with a numeric value `>= 1`.
+- Header reads `v<contract-version> · connected`.
+- Map panel polygon outline encloses the drone marker(s) — the
+  scenario-derived bbox at work.
+
+### 5. Tear down
+
+```bash
+pkill -f "agents.egs_agent.main"
+pkill -f "agents.drone_agent"
+pkill -f "dev_fake_producers"
+pkill -f "uvicorn frontend.ws_bridge"
+pkill -f "http.server $FLUTTER"
+```
+
+The screenshot file `docs_assets/dashboard-egs-state-counts.png` is
+captured manually by Ibrahim or Qasim during a demo-prep pass; it is
+not yet committed.

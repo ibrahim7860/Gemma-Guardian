@@ -7,7 +7,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 ## Where we are
 
 - **Today:** Day 7 (Wednesday May 7) — **GATE 2 evaluation day** (single-drone full agentic loop)
-- **GATE 2 status:** 5 of 7 criteria GREEN (Kaleel + Ibrahim + Hazim done); 2 owned by Qasim (EGS subscribes to real findings + reflects into `egs.state`; align `zone_polygon` to active scenario)
+- **GATE 2 status:** 7 of 7 criteria GREEN; GATE 2 closed by Qasim's branch
 - **Next gate:** GATE 3 — Day 10 (Monday May 12) — fine-tuning go/no-go (Kaleel)
 - **Days remaining to submission:** 11 (deadline Sunday May 18 23:59 UTC)
 
@@ -33,11 +33,9 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ### Qasim — EGS / Coordination
 
-**Done:** EGS process scaffolded — `agents/egs_agent/{main,coordinator,validation,replanning,command_translator}.py`. Phase 4 command-translation path with finding allowlist + CI gate. PRs: #4, #5.
+**Done:** EGS process scaffolded. Phase 4 command-translation path with finding allowlist + CI gate. **GATE 2 closure (2026-05-07):** scenario-derived initial state (`agents/egs_agent/scenario_state.py`) replaces hardcoded LA bbox; `findings_count_by_type` increments on real `drones.<id>.findings`; `recent_validation_events` consumes Contract 11 log via `validation_log_tail.py` with Contract-11→Contract-3 projection; initial-replan trigger fires on first `agent_status="active"`; replan runs as a fire-and-forget background task so the coordinator tick never blocks on the LLM. 37 EGS unit/integration tests + 1 Playwright e2e + 3 Flutter widget tests. PRs: #4, #5, #<this>.
 
-**Left (GATE 2 critical, today/tomorrow):** EGS subscribes to `drones.<id>.findings` from real drone agents (not fake producers); reflects findings into `egs.state` for the dashboard; **align hardcoded `zone_polygon` in `agents/egs_agent/main.py` with the active scenario YAML** (still ships the demo LA bbox). Spec: [`docs/06-edge-ground-station.md`](06-edge-ground-station.md).
-
-**Left (GATE 4 critical, Day 13 / May 15):** Replanning logic triggered by drone failure (TODOS marker), multilingual command path producing real `preview_text_in_operator_language` via Gemma 4 E4B (TODOS Phase 5+ stub today), standalone-mode tolerance when EGS goes offline, EGS-side subscriber for `egs.operator_actions` (TODOS open). The "wow moment" demo trigger (hallucination catch in survey-point assignment) per [`docs/10-validation-and-retry-loop.md`](10-validation-and-retry-loop.md) Approach 1.
+**Left (GATE 4 critical, Day 13 / May 15):** Replanning logic triggered by drone failure; multilingual command path producing real `preview_text_in_operator_language` via Gemma 4 E4B; standalone-mode tolerance when EGS goes offline; EGS-side subscriber for `egs.operator_actions`. The "wow moment" demo trigger (hallucination catch in survey-point assignment).
 
 ### Ibrahim — Frontend + Demo + Comms (project lead)
 
@@ -61,7 +59,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 | Risk | Likelihood | Impact | Owner | Mitigation |
 |---|---|---|---|---|
-| **GATE 2 slips today (Qasim's EGS not consuming real findings + reflecting into `egs.state`)** | **Medium** | High — descope to single-drone-only demo | Qasim | `manual_pilot.py` drives Kaleel's flow as fallback for the demo loop; Qasim aligns `zone_polygon` today |
+| ~~GATE 2 slips today (Qasim's EGS not consuming real findings + reflecting into `egs.state`)~~ | ~~closed~~ | — | Qasim | **CLOSED 2026-05-07.** Scenario-derived `zone_polygon` + real findings consumption + Contract-11 validation-events tail shipped on `feature/qasim-egs-gate2-scenario-aligned`; 37 EGS tests + Playwright e2e green. |
 | GATE 3 NO-GO (fine-tuning fails) | Documented | Low — fall back to base Gemma 4 + heavy prompts | Kaleel | Decision Day 10 May 12 |
 | xBD frames not in `sim/fixtures/frames/` by Day 9 (TODAY = Day 7) | Medium | Medium — Kaleel iterates on placeholders, vision quality drops before fine-tune | Thayyil | Swap is one commit; filenames preserved. Escalate at standup if not landed by Day 8 |
 | ~~Beat 3b unfilmable: live Gemma `report_finding` not verified end-to-end through dashboard~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-06.** Live `report_finding` on CC0 FEMA Katrina image verified 5× (`docs/sim-live-run-notes.md` Gap #2); DOM render verified by `test_e2e_playwright_dom_render.py` + MCP capture at `docs_assets/dashboard-finding-rendered.png`. |

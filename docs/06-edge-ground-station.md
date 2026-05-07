@@ -134,7 +134,7 @@ If the operator text doesn't match a command structure, Gemma 4 returns an `unkn
 Drones independently emit findings. The EGS:
 
 1. Receives all findings via `drones.*.findings` (Redis pattern subscribe `PSUBSCRIBE drones.*.findings`)
-2. Deduplicates: if two findings have the same type and GPS within 10 meters and within 60 seconds, merge them (take the higher confidence, append both visual descriptions)
+2. Deduplicates: if two findings have the same type and GPS within 10 meters and within 30 seconds, merge them (take the higher confidence, append both visual descriptions)
 3. Prioritizes: maintain a priority queue ordered by `severity × confidence`
 4. Pushes to operator UI via WebSocket bridge
 
@@ -177,6 +177,27 @@ The EGS maintains a single shared state object:
 ```
 
 This state is published in full to the FastAPI WebSocket bridge (`frontend/ws_bridge/main.py`) every 1 second via the `egs.state` Redis channel. Flutter renders from it.
+
+### Scenario-derived initial state
+
+The initial `egs.state` is derived from the active scenario YAML at startup
+by `agents/egs_agent/scenario_state.build_initial_egs_state`:
+
+- `mission_id` ← `scenario.scenario_id`
+- `zone_polygon` ← axis-aligned bbox of all drones[].waypoints, outset 50m (CCW closed polygon)
+- `survey_points` ← one entry per scenario waypoint, `status="unassigned"`, `assigned_to=null`
+- All other fields zeroed/empty per Contract 3.
+
+This guarantees the dashboard's map panel renders a polygon that contains
+the drones plotted from `drones.<id>.state`, and that survey assignment
+operates on real waypoint IDs the drone agent already knows.
+
+`recent_validation_events` is populated every 5th coordinator tick by
+`validation_log_tail.tail()`, which reads `validation_events.jsonl`
+(Contract 11), filters out schema-invalid lines and `outcome=="in_progress"`
+events, then projects each to the truncated Contract 3 shape
+`{timestamp, agent, task, outcome, issue}` before exposing it on
+`egs.state`.
 
 ## Implementation Notes
 

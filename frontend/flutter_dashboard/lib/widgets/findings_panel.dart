@@ -21,25 +21,139 @@ class FindingsPanel extends StatelessWidget {
             .toList();
         final archivedIds = mission.archivedFindingIds();
 
-        if (upstream.isEmpty && archivedIds.isEmpty) {
-          return const Center(child: Text("Findings — no findings yet"));
-        }
-
-        final tiles = <Widget>[];
-        for (final f in upstream) {
-          tiles.add(_FindingTile(finding: f));
-        }
-        for (final id in archivedIds) {
-          tiles.add(_ArchivedTile(findingId: id, state: mission.findingState(id)!));
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: tiles.length,
-          separatorBuilder: (_, i) => const Divider(),
-          itemBuilder: (_, i) => tiles[i],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const FindingsCountSummary(),
+            Expanded(
+              child: _buildList(upstream, archivedIds, mission),
+            ),
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildList(
+    List<Map<String, dynamic>> upstream,
+    List<String> archivedIds,
+    MissionState mission,
+  ) {
+    if (upstream.isEmpty && archivedIds.isEmpty) {
+      return const Center(child: Text("Findings — no findings yet"));
+    }
+
+    final tiles = <Widget>[];
+    for (final f in upstream) {
+      tiles.add(_FindingTile(finding: f));
+    }
+    for (final id in archivedIds) {
+      tiles.add(_ArchivedTile(findingId: id, state: mission.findingState(id)!));
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: tiles.length,
+      separatorBuilder: (_, i) => const Divider(),
+      itemBuilder: (_, i) => tiles[i],
+    );
+  }
+}
+
+/// Per-type findings count strip (`egs_state.findings_count_by_type`).
+///
+/// Renders all five locked types (victim/fire/smoke/damaged_structure/
+/// blocked_route) regardless of zero/non-zero count so the layout is
+/// stable AND the Playwright e2e test can find the same Semantics
+/// identifiers from a cold start. Each chip carries:
+///
+///   `Semantics(identifier: 'findings-count-<type>', label: '<type>: <n>')`
+///
+/// matching the precedent in [`drone_status_panel.dart`]'s
+/// `_StandaloneBadge`. The identifiers are load-bearing for both the
+/// Flutter widget test and the Playwright e2e — DO NOT rename without
+/// also updating `test_e2e_playwright_egs_findings.py`.
+class FindingsCountSummary extends StatelessWidget {
+  const FindingsCountSummary({super.key});
+
+  // Order matches the Contract 4 finding-type enum and the EGS
+  // `findings_count_by_type` initial dict in
+  // `agents/egs_agent/scenario_state.py`.
+  static const List<String> _typeOrder = [
+    "victim",
+    "fire",
+    "smoke",
+    "damaged_structure",
+    "blocked_route",
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<MissionState>(
+      builder: (context, mission, _) {
+        final raw = mission.egsState?["findings_count_by_type"];
+        final Map<String, int> counts = {};
+        if (raw is Map) {
+          for (final key in _typeOrder) {
+            final v = raw[key];
+            counts[key] = v is int ? v : 0;
+          }
+        } else {
+          for (final key in _typeOrder) {
+            counts[key] = 0;
+          }
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.shade300, width: 1),
+            ),
+          ),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final type in _typeOrder)
+                _FindingsCountChip(type: type, count: counts[type] ?? 0),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FindingsCountChip extends StatelessWidget {
+  final String type;
+  final int count;
+  const _FindingsCountChip({required this.type, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      identifier: 'findings-count-$type',
+      label: '$type: $count',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: count > 0 ? Colors.indigo.shade50 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: count > 0 ? Colors.indigo.shade300 : Colors.grey.shade300,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          "$type: $count",
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: count > 0 ? FontWeight.w600 : FontWeight.normal,
+            color: count > 0 ? Colors.indigo.shade900 : Colors.grey.shade700,
+          ),
+        ),
+      ),
     );
   }
 }
