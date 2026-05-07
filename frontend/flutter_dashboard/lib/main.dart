@@ -42,7 +42,7 @@ class FieldAgentDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => MissionState(),
+      create: (_) => MissionState(autoRecompute: true),
       child: MaterialApp(
         title: "FieldAgent Operator Dashboard",
         theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
@@ -149,7 +149,51 @@ class _DashboardShellState extends State<_DashboardShell> {
           ),
         ],
       ),
-      body: const _FourPanelGrid(),
+      body: Column(
+        children: const [
+          _EgsLinkSeveredBanner(),
+          Expanded(child: _FourPanelGrid()),
+        ],
+      ),
+    );
+  }
+}
+
+class _EgsLinkSeveredBanner extends StatelessWidget {
+  const _EgsLinkSeveredBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<MissionState>(
+      builder: (_, m, _) {
+        if (!m.egsLinkSevered) return const SizedBox.shrink();
+        return Semantics(
+          identifier: 'egs-link-severed-banner',
+          label: 'EGS LINK SEVERED — drones operating in standalone mode',
+          child: Container(
+            width: double.infinity,
+            color: Colors.red.shade700,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text(
+                  "EGS LINK SEVERED — drones operating in standalone mode",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

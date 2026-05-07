@@ -33,12 +33,63 @@ enum CommandState { sending, translating, ready, dispatching, dispatched, failed
 /// frames — the bridge validates on the publisher side, so the dashboard
 /// trusts shape on `state_update`.
 class MissionState extends ChangeNotifier {
+  /// Tolerance window for missing egs.state heartbeats before declaring the
+  /// EGS link severed. Contract 3 publishes egs.state at 1 Hz; 5 s gives a
+  /// 5x slack window so a single dropped publish doesn't flip the banner.
+  static const Duration egsHeartbeatStaleAfter = Duration(seconds: 5);
+
   String? lastTimestamp;
   String? contractVersion;
   Map<String, dynamic>? egsState;
   List<dynamic> activeFindings = const [];
   List<dynamic> activeDrones = const [];
   String connectionStatus = "disconnected";
+
+  // ---- EGS heartbeat staleness --------------------------------------------
+  //
+  // Schemas are locked (docs/20-integration-contracts.md) so we can't add a
+  // top-level link_status field. Derive "EGS link severed" from absence of
+  // an egs_state envelope for >egsHeartbeatStaleAfter while the WS itself
+  // is still connected (a disconnected WS is reported separately).
+  DateTime? _egsLastSeenAt;
+  bool _egsLinkSeveredCached = false;
+  Timer? _egsHeartbeatTimer;
+  final DateTime Function() _now;
+
+  /// [autoRecompute] starts a 1 Hz Timer that re-evaluates [egsLinkSevered]
+  /// against the wall clock. Defaults to `false` so widget tests don't trip
+  /// flutter_test's pending-timers invariant; production callers in
+  /// `main.dart` explicitly opt in via `autoRecompute: true`. Tests that
+  /// want to assert the staleness flip can drive it manually via
+  /// [debugRecomputeEgsLinkSevered].
+  MissionState({DateTime Function()? now, bool autoRecompute = false})
+      : _now = now ?? DateTime.now {
+    if (autoRecompute) {
+      _egsHeartbeatTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _recomputeEgsLinkSevered(),
+      );
+    }
+  }
+
+  bool get egsLinkSevered => _egsLinkSeveredCached;
+
+  bool _computeEgsLinkSevered() {
+    if (_egsLastSeenAt == null) return false;
+    if (connectionStatus != "connected") return false;
+    return _now().difference(_egsLastSeenAt!) > egsHeartbeatStaleAfter;
+  }
+
+  void _recomputeEgsLinkSevered() {
+    final v = _computeEgsLinkSevered();
+    if (v != _egsLinkSeveredCached) {
+      _egsLinkSeveredCached = v;
+      notifyListeners();
+    }
+  }
+
+  @visibleForTesting
+  void debugRecomputeEgsLinkSevered() => _recomputeEgsLinkSevered();
 
   // ---- outbound + per-finding state ----------------------------------------
 
@@ -402,6 +453,10 @@ class MissionState extends ChangeNotifier {
     lastTimestamp = envelope["timestamp"] as String?;
     contractVersion = envelope["contract_version"] as String?;
     egsState = envelope["egs_state"] as Map<String, dynamic>?;
+    if (egsState != null) {
+      _egsLastSeenAt = _now();
+      if (_egsLinkSeveredCached) _egsLinkSeveredCached = false;
+    }
     activeFindings = (envelope["active_findings"] as List?) ?? const [];
     activeDrones = (envelope["active_drones"] as List?) ?? const [];
     // Promote any non-confirmed/non-dismissed state to confirmed when
@@ -471,6 +526,8 @@ class MissionState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _egsHeartbeatTimer?.cancel();
+    _egsHeartbeatTimer = null;
     for (final t in _commandTimers.values) {
       t.cancel();
     }
