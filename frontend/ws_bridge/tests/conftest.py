@@ -23,6 +23,27 @@ import pytest_asyncio
 REPO_ROOT_FOR_FLUTTER = Path(__file__).resolve().parents[3]
 
 
+def _flutter_bundle_is_stale(build_index: Path, lib_dir: Path) -> bool:
+    """Return True iff any ``lib/**/*.dart`` is newer than ``build_index``.
+
+    Cheap path: a single ``os.path.getmtime`` per file with early exit on
+    the first newer source. No build is performed here. The common case
+    (developer with a fresh bundle) walks the source tree once and
+    returns False — well under 50 ms on a modern laptop.
+    """
+    if not build_index.exists() or not lib_dir.exists():
+        return False
+    build_mtime = build_index.stat().st_mtime
+    for src in lib_dir.rglob("*.dart"):
+        try:
+            if src.stat().st_mtime > build_mtime:
+                return True
+        except OSError:
+            # File vanished mid-walk (rare; e.g. concurrent edit). Skip.
+            continue
+    return False
+
+
 @pytest_asyncio.fixture
 async def fake_client():
     """A fakeredis client bound to the running pytest-asyncio loop.
@@ -84,8 +105,14 @@ def _wait_for_http_ok(port: int, deadline_s: float = 5.0) -> bool:
 def flutter_web_build_dir() -> Path:
     """Returns Path to a built Flutter web bundle. Skips if Flutter SDK absent.
 
-    Builds on first call per session if build/web/index.html is missing.
-    Subsequent fixtures reuse the artifact.
+    Builds on first call per session if either:
+
+    * ``build/web/index.html`` is missing (CI fresh-checkout path); OR
+    * any ``lib/**/*.dart`` source is newer than ``build/web/index.html``
+      (local-developer stale-bundle path — see ``_flutter_bundle_is_stale``).
+
+    Subsequent fixtures reuse the artifact. The staleness check is mtime-only
+    so the common case (fresh bundle) adds no build cost.
     """
     flutter_root = REPO_ROOT_FOR_FLUTTER / "frontend" / "flutter_dashboard"
     build_dir = flutter_root / "build" / "web"
@@ -94,7 +121,10 @@ def flutter_web_build_dir() -> Path:
         pytest.skip(f"Flutter SDK not found at {flutter_bin}")
 
     index_html = build_dir / "index.html"
-    if not index_html.exists():
+    needs_build = not index_html.exists() or _flutter_bundle_is_stale(
+        index_html, flutter_root / "lib",
+    )
+    if needs_build:
         proc = subprocess.run(
             [flutter_bin, "build", "web", "--release"],
             cwd=str(flutter_root),
