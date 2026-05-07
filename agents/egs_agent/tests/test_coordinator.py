@@ -168,12 +168,17 @@ def test_process_findings_increments_only_known_types(coordinator, caplog):
 
 
 def _validation_event(attempt: int, ts: str):
-    """Hand-rolled schema-valid validation_event payload for coordinator tests."""
+    """Hand-rolled schema-valid validation_event payload for coordinator tests.
+
+    Uses a per-attempt `function_or_command` so coordinator tests can pin
+    refresh ordering on the projected Contract 3 `task` field (since the
+    Contract 11 `attempt` field is dropped during projection in tail()).
+    """
     return {
         "timestamp": ts,
         "agent_id": "drone1",
         "layer": "drone",
-        "function_or_command": "report_finding",
+        "function_or_command": f"task_{attempt:02d}",
         "attempt": attempt,
         "valid": True,
         "rule_id": None,
@@ -224,7 +229,9 @@ def test_coordinator_refreshes_recent_validation_events(tmp_path, monkeypatch):
         assert len(rve) == 3, (
             f"expected 3 events after 5 ticks, got {len(rve)}: {rve}"
         )
-        assert [e["attempt"] for e in rve] == [1, 2, 3]
+        # tail() returns Contract 3 nested shape: {timestamp, agent, task,
+        # outcome, issue}. Pin order on the projected `task` field.
+        assert [e["task"] for e in rve] == ["task_01", "task_02", "task_03"]
 
     asyncio.run(run())
 

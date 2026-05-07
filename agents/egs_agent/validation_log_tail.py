@@ -9,16 +9,36 @@ from __future__ import annotations
 import json
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from shared.contracts import CONFIG, validate
 
 LOG_PATH = Path(CONFIG.logging.base_dir) / "validation_events.jsonl"
 
 
+def _project_to_egs_state_shape(evt: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Project a Contract 11 validation_event to the Contract 3
+    egs_state.recent_validation_events shape. Returns None for events
+    in non-terminal states (outcome=='in_progress') which Contract 3
+    doesn't accept.
+    """
+    if evt.get("outcome") == "in_progress":
+        return None
+    return {
+        "timestamp": evt["timestamp"],
+        "agent": evt["agent_id"],
+        "task": evt["function_or_command"],
+        "outcome": evt["outcome"],
+        "issue": evt.get("rule_id"),
+    }
+
+
 def tail(n: int = 10, path: Path | None = None) -> List[Dict[str, Any]]:
     """Return the last n schema-valid validation events as parsed dicts,
-    oldest-first.
+    oldest-first. Returns events projected from Contract 11 to Contract 3
+    nested shape (`{timestamp, agent, task, outcome, issue}`) so the result
+    can be dropped directly into `egs_state.recent_validation_events` without
+    failing `validate("egs_state", ...)`.
 
     Per eng-review Q3 (2026-05-07), each parsed event is run through
     `validate("validation_event", evt)` before inclusion. This protects
@@ -26,6 +46,11 @@ def tail(n: int = 10, path: Path | None = None) -> List[Dict[str, Any]]:
     being poisoned by a malformed-but-JSON-valid line, which would otherwise
     fail `validate("egs_state", ...)` downstream and break the dashboard
     publish path.
+
+    Events whose Contract 11 `outcome` is `"in_progress"` are dropped during
+    projection: Contract 3's `recent_validation_events` only accepts the three
+    terminal outcomes (success_first_try, corrected_after_retry,
+    failed_after_retries).
 
     Returns [] if the file does not exist or is empty. Lines that fail JSON
     parse OR schema validation are skipped silently (best-effort read of a
@@ -52,5 +77,8 @@ def tail(n: int = 10, path: Path | None = None) -> List[Dict[str, Any]]:
                 continue
             if not validate("validation_event", evt).valid:
                 continue
-            buf.append(evt)
+            projected = _project_to_egs_state_shape(evt)
+            if projected is None:
+                continue
+            buf.append(projected)
     return list(buf)

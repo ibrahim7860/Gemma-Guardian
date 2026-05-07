@@ -154,18 +154,6 @@ def test_egs_state_remains_schema_valid_after_validation_event_refresh(
     `tail()`. Catches silent-poisoning regressions that the unit-level
     `test_validation_log_tail.py` cannot cover (it only exercises tail()
     in isolation, never through the LangGraph tick).
-
-    Schema-shape note (2026-05-07): the validation_event payload shape
-    (`{timestamp, agent_id, layer, function_or_command, attempt, valid,
-    rule_id, outcome, raw_call, contract_version}`) does not match the
-    truncated `recent_validation_events` item shape required by Contract
-    3 (`{timestamp, agent, task, outcome, issue}`). The existing Task 4
-    refresh path stores the full validation_event payload as-is, so a
-    full `validate("egs_state", ...)` after a refresh tick currently
-    fails on the recent_validation_events item shape. That is a Task 4
-    contract-shape bug, not what this test is gating; this test pins the
-    Q3 invariant (no schema-invalid line poisons the list) which holds
-    independently of the shape gap.
     """
     # Seed the log with TWO schema-valid events plus ONE schema-invalid
     # poison line (missing `outcome`). After the 5th tick fires the
@@ -227,17 +215,19 @@ def test_egs_state_remains_schema_valid_after_validation_event_refresh(
             f"expected 2 events after the 5th-tick refresh (poison line "
             f"filtered), got {len(rve)}: {rve}"
         )
-        # Every entry that DID land must individually pass Contract 11.
-        # This is the integration-level pin of Q3: no schema-invalid line
-        # poisons the list, even after the LangGraph tick path.
-        for evt in rve:
-            outcome = validate("validation_event", evt)
-            assert outcome.valid, (
-                f"recent_validation_events entry failed Contract 11 "
-                f"validation, indicating the Q3 filter regressed: "
-                f"{outcome.errors}"
-            )
-        # And the poison line's tell-tale attempt=99 must not appear.
+        # Original load-bearing assertion (now reinstated after the
+        # Contract 11 -> Contract 3 projection in tail() closed the shape
+        # gap): the full envelope must remain Contract 3 schema-valid
+        # after the refresh tick fires.
+        outcome = validate("egs_state", last_state["egs_state"])
+        assert outcome.valid, (
+            f"egs_state failed Contract 3 schema validation after the 5-tick "
+            f"refresh repopulated recent_validation_events: {outcome.errors}"
+        )
+        # And the poison line's tell-tale attempt=99 must not appear. The
+        # projected entries are in Contract 3 shape so `attempt` is dropped
+        # entirely; checking via `.get("attempt")` returns None for every
+        # entry, which is correct — the poison value cannot leak through.
         assert all(e.get("attempt") != 99 for e in rve), rve
 
     asyncio.run(run())
