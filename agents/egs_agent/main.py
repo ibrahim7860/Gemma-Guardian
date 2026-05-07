@@ -38,21 +38,22 @@ async def main():
     await pubsub.subscribe("egs.operator_commands") # Assuming this channel exists for incoming commands
     
     validation_node = EGSValidationNode()
-    coordinator = EGSCoordinator(validation_node)
+    coordinator = EGSCoordinator(validation_node, redis_client=redis_client)
     
     # Initial state derived from the active scenario YAML (Contract 3-compliant).
     egs_state = build_initial_egs_state(CONFIG.mission.scenario_id)
     
     state_ref = {"egs_state": egs_state}
     
-    # Initial trigger to assign points
+    # Coordinator now triggers initial replan on first agent_status="active"
+    # telemetry, so we no longer need the unconditional startup flag.
     state = {
         "egs_state": egs_state,
         "incoming_telemetry": [],
         "incoming_findings": [],
         "incoming_commands": [],
         "messages_to_publish": [],
-        "trigger_replan": True
+        "trigger_replan": False
     }
     
     asyncio.create_task(publish_egs_state(redis_client, state_ref))
