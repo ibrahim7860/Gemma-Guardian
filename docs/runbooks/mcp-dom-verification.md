@@ -131,3 +131,101 @@ redis-cli -p $REDIS SHUTDOWN NOSAVE
 - **Dashboard shows a connection-status `reconnecting in Ns` instead of `connected`:** the dashboard is hitting the wrong WS URL. Verify the `?ws=ws://127.0.0.1:<BRIDGE>/` query parameter matches the running bridge port.
 - **Screenshot shows blank canvas:** Flutter is rendering, but the page is in a degenerate state. Run `mcp__playwright__browser_console_messages` to inspect the JS console — most often a WS connection error.
 - **Findings panel shows the tile but APPROVE/DISMISS aren't visible:** browser viewport too narrow. Default Playwright MCP viewport is around 1440×673 in current builds; widen via `mcp__playwright__browser_resize` if your local default is narrower.
+
+## Beat 4 capture path — `EGS LINK SEVERED` + `STANDALONE MODE ACTIVE`
+
+**Last verified:** 2026-05-07. Reference asset: `docs_assets/dashboard-egs-severed.png`.
+
+The Beat 4 dashboard signals (banner + badge) need a stack that publishes `egs_state` exactly once and then stops. The full integrated stack republishes at 1 Hz, so we use a tiny synthetic WebSocket server in lieu of redis + sim + bridge for capture-only purposes. This is the same pattern as `frontend/ws_bridge/tests/test_e2e_playwright_standalone_mode.py`.
+
+### 1. Pick free ports + log dir
+
+```bash
+DEMO_DIR=/tmp/gg_beat4_capture
+mkdir -p "$DEMO_DIR"
+python3 -c "
+import socket
+for tag in ['WS', 'FLUTTER']:
+    s = socket.socket(); s.bind(('127.0.0.1', 0))
+    print(f'{tag}={s.getsockname()[1]}'); s.close()
+" > "$DEMO_DIR/ports.env"
+source "$DEMO_DIR/ports.env"
+```
+
+### 2. Drop the synthetic WS server
+
+Save this to `$DEMO_DIR/synth_ws.py` — sends one `state_update` envelope with `egs_state` populated and `drone3` in `agent_status="standalone"`, then holds open without further publishes:
+
+```python
+import asyncio, json, sys
+import websockets
+
+PORT = int(sys.argv[1])
+ENVELOPE = {
+    "type": "state_update",
+    "timestamp": "2026-05-07T10:00:00.000Z",
+    "contract_version": "1.0.0",
+    "egs_state": {
+        "mission_id": "beat4_demo", "mission_status": "active",
+        "timestamp": "2026-05-07T10:00:00.000Z",
+        "zone_polygon": [[34.123, -118.568], [34.124, -118.568],
+                          [34.124, -118.567], [34.123, -118.567]],
+        "survey_points": [], "drones_summary": {},
+        "findings_count_by_type": {"victim": 0, "fire": 0, "smoke": 0,
+                                    "damaged_structure": 0, "blocked_route": 0},
+        "recent_validation_events": [], "active_zone_ids": [],
+    },
+    "active_findings": [],
+    "active_drones": [
+        {"drone_id": "drone1", "agent_status": "active",     "battery_pct": 88, "current_task": "survey", "findings_count": 0, "validation_failures_total": 0},
+        {"drone_id": "drone2", "agent_status": "returning",  "battery_pct": 71, "current_task": "rtb",    "findings_count": 2, "validation_failures_total": 1},
+        {"drone_id": "drone3", "agent_status": "standalone", "battery_pct": 62, "current_task": "survey", "findings_count": 1, "validation_failures_total": 0},
+    ],
+}
+
+async def handler(ws):
+    await ws.send(json.dumps(ENVELOPE))
+    try:
+        async for _ in ws: pass
+    except Exception: return
+
+async def main():
+    async with websockets.serve(handler, "127.0.0.1", PORT):
+        await asyncio.Future()
+
+asyncio.run(main())
+```
+
+### 3. Boot synth WS + Flutter static server
+
+```bash
+cd /path/to/Gemma-Guardian
+# Pre-build the dashboard (if you haven't)
+cd frontend/flutter_dashboard && flutter build web --release && cd -
+
+nohup uv run python "$DEMO_DIR/synth_ws.py" $WS > "$DEMO_DIR/synth_ws.log" 2>&1 &
+( cd frontend/flutter_dashboard/build/web && \
+  nohup python3 -m http.server $FLUTTER --bind 127.0.0.1 \
+        > "$DEMO_DIR/flutter.log" 2>&1 ) &
+sleep 2
+curl -sI "http://127.0.0.1:$FLUTTER/" | head -1   # expect 200
+```
+
+### 4. Drive Playwright MCP from a Claude session
+
+1. `mcp__playwright__browser_navigate` → `http://127.0.0.1:<FLUTTER>/?ws=ws://127.0.0.1:<WS>/`
+2. `mcp__playwright__browser_wait_for` → `time: 8` (5 s heartbeat staleness window + 1 Hz Timer slack + a generous CanvasKit boot margin)
+3. `mcp__playwright__browser_take_screenshot` → save to `docs_assets/dashboard-egs-severed.png` with `fullPage: true`
+
+### 5. Verify the screenshot shows
+
+- A red `EGS LINK SEVERED — drones operating in standalone mode` banner pinned to the top of the body, below the AppBar.
+- The Drone Status panel listing all three drones, with `drone3 — standalone` carrying the orange `STANDALONE` badge on the right side of its title row.
+- The header still reading `v<contract-version> · connected` — the WS itself is up; only the EGS heartbeat went stale.
+
+### 6. Tear down
+
+```bash
+pkill -f "synth_ws.py"
+pkill -f "http.server $FLUTTER"
+```

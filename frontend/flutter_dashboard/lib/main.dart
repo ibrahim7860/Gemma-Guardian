@@ -151,7 +151,7 @@ class _DashboardShellState extends State<_DashboardShell> {
       ),
       body: Column(
         children: const [
-          _EgsLinkSeveredBanner(),
+          EgsLinkSeveredBanner(),
           Expanded(child: _FourPanelGrid()),
         ],
       ),
@@ -159,8 +159,8 @@ class _DashboardShellState extends State<_DashboardShell> {
   }
 }
 
-class _EgsLinkSeveredBanner extends StatelessWidget {
-  const _EgsLinkSeveredBanner();
+class EgsLinkSeveredBanner extends StatelessWidget {
+  const EgsLinkSeveredBanner({super.key});
 
   @override
   Widget build(BuildContext context) {

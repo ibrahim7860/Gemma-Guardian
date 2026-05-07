@@ -9,33 +9,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dashboard/main.dart' show EgsLinkSeveredBanner;
 import 'package:flutter_dashboard/state/mission_state.dart';
 import 'package:flutter_dashboard/widgets/drone_status_panel.dart';
-
-/// Mountable banner under test. Mirrors the private _EgsLinkSeveredBanner in
-/// main.dart so tests don't need to spin up the full MaterialApp + WS layer.
-class _BannerHarness extends StatelessWidget {
-  const _BannerHarness();
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<MissionState>(
-      builder: (_, m, _) {
-        if (!m.egsLinkSevered) return const SizedBox.shrink();
-        return Semantics(
-          identifier: 'egs-link-severed-banner',
-          label: 'EGS LINK SEVERED — drones operating in standalone mode',
-          child: Container(
-            color: Colors.red,
-            padding: const EdgeInsets.all(8),
-            child: const Text(
-              "EGS LINK SEVERED — drones operating in standalone mode",
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
 
 Map<String, dynamic> _stateUpdateWith(List<Map<String, dynamic>> drones) => {
       'type': 'state_update',
@@ -127,7 +103,7 @@ void main() {
         MaterialApp(
           home: ChangeNotifierProvider<MissionState>.value(
             value: mission,
-            child: const Scaffold(body: _BannerHarness()),
+            child: const Scaffold(body: EgsLinkSeveredBanner()),
           ),
         ),
       );
@@ -153,7 +129,7 @@ void main() {
         MaterialApp(
           home: ChangeNotifierProvider<MissionState>.value(
             value: mission,
-            child: const Scaffold(body: _BannerHarness()),
+            child: const Scaffold(body: EgsLinkSeveredBanner()),
           ),
         ),
       );
