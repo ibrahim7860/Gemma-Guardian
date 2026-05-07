@@ -113,16 +113,22 @@ def test_full_graph_first_active_publishes_task_via_background():
             await asyncio.sleep(0.1)
 
         # (c) Both drone task channels were published with survey-task payloads.
-        assert fake_redis.publish.await_count >= 2
+        # Plus a loop-back on egs.replan_events for the survey-points status
+        # mutation. Total: 3 publishes (2 drone tasks + 1 loop-back).
+        assert fake_redis.publish.await_count >= 3
         published = {
             call.args[0]: json.loads(call.args[1])
             for call in fake_redis.publish.await_args_list
         }
         assert "drones.drone1.tasks" in published
         assert "drones.drone2.tasks" in published
-        for ch, payload in published.items():
+        assert "egs.replan_events" in published
+        for ch in ("drones.drone1.tasks", "drones.drone2.tasks"):
+            payload = published[ch]
             assert payload["task_type"] == "survey"
             assert payload["drone_id"] in ("drone1", "drone2")
+        loopback = published["egs.replan_events"]
+        assert loopback["type"] == "survey_assignments"
 
     asyncio.run(run())
 
@@ -165,3 +171,98 @@ def test_replan_reentrancy_guard_skips_concurrent_calls():
             assert mock_create_task.call_count == 1
 
     asyncio.run(run())
+
+
+def test_replan_reentrancy_guard_holds_across_back_to_back_calls_without_mocking_create_task():
+    """Real race-condition test: call coord.replan() twice in quick succession
+    WITHOUT patching asyncio.create_task. The flag must be set synchronously
+    inside replan() so that the second call's guard fires.
+
+    The previous test (`test_replan_reentrancy_guard_skips_concurrent_calls`)
+    patched create_task and only proved the in-flight read works under that
+    mock. This test proves the SET happens in the right place.
+    """
+    async def run():
+        coord = EGSCoordinator(EGSValidationNode(), redis_client=AsyncMock())
+        # Slow-roll the LLM so _replan_impl awaits long enough for us to
+        # fire the second replan() call before _replan_impl even starts.
+        slow_event = asyncio.Event()
+
+        async def slow_assign(*args, **kwargs):
+            await slow_event.wait()
+            return {"function": "assign_survey_points", "arguments": {"assignments": []}}
+
+        with patch("agents.egs_agent.coordinator.assign_survey_points", new=slow_assign):
+            state = _empty_state({"drones_summary": {}})
+            # First replan: should set in_flight=True synchronously and spawn task.
+            r1 = await coord.replan(state)
+            assert r1["trigger_replan"] is False
+            assert coord._replan_in_flight is True, (
+                "in_flight must be set synchronously inside replan() to gate "
+                "the next call before _replan_impl gets a chance to run"
+            )
+            # Second replan immediately: should hit the guard, NOT spawn a 2nd task.
+            r2 = await coord.replan(state)
+            assert r2["trigger_replan"] is False
+            # Release the slow assign so the background task can finish.
+            slow_event.set()
+            # Give the loop a moment to drain.
+            await asyncio.sleep(0.05)
+            assert coord._replan_in_flight is False, (
+                "in_flight must be cleared in _replan_impl's finally block"
+            )
+
+    asyncio.run(run())
+
+
+def test_replan_impl_publishes_survey_assignments_loopback():
+    """After publishing per-drone tasks, _replan_impl must also publish a
+    {type: 'survey_assignments', ...} envelope on egs.replan_events so the
+    main loop can flip survey_points[*].status from 'unassigned' to 'assigned'.
+    """
+    async def run():
+        fake_redis = AsyncMock()
+        coord = EGSCoordinator(EGSValidationNode(), redis_client=fake_redis)
+        with patch("agents.egs_agent.coordinator.assign_survey_points",
+                   new=AsyncMock(return_value={
+                       "function": "assign_survey_points",
+                       "arguments": {"assignments": [
+                           {"drone_id": "drone1", "survey_point_ids": ["sp_001", "sp_002"]},
+                           {"drone_id": "drone2", "survey_point_ids": ["sp_010"]},
+                       ]},
+                   })):
+            await coord._replan_impl({"survey_points": [], "drones_summary": {}})
+        # 2 drone task publishes + 1 loop-back publish
+        assert fake_redis.publish.await_count == 3
+        loopback_call = fake_redis.publish.await_args_list[-1]
+        assert loopback_call.args[0] == "egs.replan_events"
+        envelope = json.loads(loopback_call.args[1])
+        assert envelope["type"] == "survey_assignments"
+        assert {a["drone_id"] for a in envelope["assignments"]} == {"drone1", "drone2"}
+        assert "issued_at" in envelope
+    asyncio.run(run())
+
+
+def test_apply_survey_assignments_flips_status_and_assigned_to():
+    """The main.py-side handler mutates survey_points entries in place."""
+    from agents.egs_agent.main import _apply_survey_assignments
+    egs_state = {
+        "survey_points": [
+            {"id": "sp_001", "lat": 0, "lon": 0, "assigned_to": None, "status": "unassigned"},
+            {"id": "sp_002", "lat": 0, "lon": 0, "assigned_to": None, "status": "unassigned"},
+            {"id": "sp_010", "lat": 0, "lon": 0, "assigned_to": None, "status": "unassigned"},
+            {"id": "sp_999", "lat": 0, "lon": 0, "assigned_to": None, "status": "unassigned"},
+        ],
+    }
+    _apply_survey_assignments(egs_state, [
+        {"drone_id": "drone1", "survey_point_ids": ["sp_001", "sp_002"]},
+        {"drone_id": "drone2", "survey_point_ids": ["sp_010"]},
+    ])
+    by_id = {p["id"]: p for p in egs_state["survey_points"]}
+    assert by_id["sp_001"]["status"] == "assigned"
+    assert by_id["sp_001"]["assigned_to"] == "drone1"
+    assert by_id["sp_002"]["assigned_to"] == "drone1"
+    assert by_id["sp_010"]["assigned_to"] == "drone2"
+    # Untouched point left alone.
+    assert by_id["sp_999"]["status"] == "unassigned"
+    assert by_id["sp_999"]["assigned_to"] is None

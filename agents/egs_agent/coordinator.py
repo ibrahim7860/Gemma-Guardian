@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TypedDict, Dict, Any, List
 
 from langgraph.graph import StateGraph, START, END
@@ -169,30 +169,48 @@ class EGSCoordinator:
         """Fire-and-forget: spawn the LLM-driven replan in the background and
         return immediately so the coordinator tick doesn't block on the 5-15s
         Gemma 4 E4B call. A re-entrancy guard prevents stacking parallel replans.
+
+        The flag is set synchronously here (not inside `_replan_impl`) so that
+        a second tick firing before the spawned task gets its first await slot
+        cannot also pass the guard. `asyncio.create_task` only schedules; the
+        coroutine's first line runs on the next loop iteration, which is too
+        late to gate fast back-to-back replans.
         """
         if self._replan_in_flight:
             logger.info("egs.replan skipped (already in flight)")
             return {**state, "trigger_replan": False}
+        self._replan_in_flight = True
         snapshot = deepcopy(state["egs_state"])
         asyncio.create_task(self._replan_impl(snapshot))
         return {**state, "trigger_replan": False}
 
     async def _replan_impl(self, egs_state_snapshot: Dict[str, Any]) -> None:
         """Background task: call assign_survey_points + publish per-drone tasks
-        directly to Redis (bypassing per-tick messages_to_publish)."""
-        self._replan_in_flight = True
+        directly to Redis (bypassing per-tick messages_to_publish).
+
+        `_replan_in_flight` is set by the caller (`replan`) before this task
+        is scheduled; we only clear it here in the `finally` block.
+        """
         try:
             assignment = await assign_survey_points(egs_state_snapshot, self.validation_node)
-            if not assignment or not self.redis_client:
+            if not assignment:
+                return
+            if not self.redis_client:
+                logger.warning(
+                    "egs.replan: assignment computed but redis_client is None; "
+                    "tasks dropped (this is a wiring bug, not a runtime condition)"
+                )
                 return
             args = assignment.get("arguments", {})
-            for a in args.get("assignments", []):
+            assignments_list = args.get("assignments", [])
+            for a in assignments_list:
                 drone_id = a.get("drone_id")
                 points = a.get("survey_point_ids", [])
+                now = datetime.now(timezone.utc)
                 task_payload = {
-                    "task_id": f"task_{datetime.utcnow().timestamp()}",
+                    "task_id": f"task_{now.timestamp()}",
                     "drone_id": drone_id,
-                    "issued_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    "issued_at": now.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                     "task_type": "survey",
                     "assigned_survey_points": [{"id": p, "lat": 0.0, "lon": 0.0} for p in points],
                     "priority_override": None,
@@ -202,6 +220,28 @@ class EGSCoordinator:
                     per_drone_tasks_channel(drone_id),
                     json.dumps(task_payload),
                 )
+            # Survey-points status loop-back: tell the main loop to flip
+            # `egs_state.survey_points[*].status` from "unassigned" to
+            # "assigned" with the matching `assigned_to`. main.py subscribes
+            # to "egs.replan_events" and applies this envelope via
+            # _apply_survey_assignments. Avoids coupling this background task
+            # to main.py's state_ref dict.
+            await self.redis_client.publish(
+                "egs.replan_events",
+                json.dumps({
+                    "type": "survey_assignments",
+                    "assignments": [
+                        {
+                            "drone_id": a.get("drone_id"),
+                            "survey_point_ids": a.get("survey_point_ids", []),
+                        }
+                        for a in assignments_list
+                    ],
+                    "issued_at": datetime.now(timezone.utc).strftime(
+                        "%Y-%m-%dT%H:%M:%S.000Z"
+                    ),
+                }),
+            )
         except Exception as e:
             logger.exception("egs.replan background task failed: %s", e)
         finally:
