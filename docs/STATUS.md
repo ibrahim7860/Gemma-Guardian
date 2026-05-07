@@ -1,4 +1,4 @@
-# STATUS — Day 6 / May 6, 2026
+# STATUS — Day 7 / May 7, 2026
 
 Living snapshot of where each person stands against the plan. Updated at standup. Source of truth for "are we on track for the next gate?"
 
@@ -6,9 +6,10 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ## Where we are
 
-- **Today:** Day 6 (Tuesday May 6) — second integration session per the plan
-- **Next gate:** GATE 2 — Day 7 (Wednesday May 7) — single-drone full agentic loop
-- **Days remaining to submission:** 12 (deadline Sunday May 18 23:59 UTC)
+- **Today:** Day 7 (Wednesday May 7) — **GATE 2 evaluation day** (single-drone full agentic loop)
+- **GATE 2 status:** 5 of 7 criteria GREEN (Kaleel + Ibrahim + Hazim done); 2 owned by Qasim (EGS subscribes to real findings + reflects into `egs.state`; align `zone_polygon` to active scenario)
+- **Next gate:** GATE 3 — Day 10 (Monday May 12) — fine-tuning go/no-go (Kaleel)
+- **Days remaining to submission:** 11 (deadline Sunday May 18 23:59 UTC)
 
 ## Per-person status
 
@@ -40,11 +41,11 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ### Ibrahim — Frontend + Demo + Comms (project lead)
 
-**Done:** WS bridge (`frontend/ws_bridge/`) with typed Redis publish; Flutter dashboard (`frontend/flutter_dashboard/lib/`) with two-stage UI, a11y, map markers, multi-drone aggregation; bridge cutover hybrid mode + multi-drone Playwright e2e; writeup draft `docs/22-writeup-draft.md`; storyboard pass `docs/21-demo-storyboard.md`. GATE 2 demo-capture: stable a11y hooks on FindingTile (`Semantics(identifier: 'finding-tile-<id>')`); `?ws=` query-param override in `main.dart`; new pytest fixtures `flutter_web_build_dir` + `flutter_static_server` in `frontend/ws_bridge/tests/conftest.py`; e2e DOM-render test `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`; one-shot MCP capture at `docs_assets/dashboard-finding-rendered.png` per new runbook `docs/runbooks/mcp-dom-verification.md`. Live Gemma `report_finding` verified on real CC0 FEMA Katrina image (commit `30577e7`); see `docs/sim-live-run-notes.md` 2026-05-06 appendices. PRs: #2, #3, #5, #8, #9, #10, #15, #16, #20, #21, #22, #23, #24.
+**Done:** WS bridge (`frontend/ws_bridge/`) with typed Redis publish; Flutter dashboard (`frontend/flutter_dashboard/lib/`) with two-stage UI, a11y, map markers, multi-drone aggregation; bridge cutover hybrid mode + multi-drone Playwright e2e; writeup draft `docs/22-writeup-draft.md`; storyboard pass `docs/21-demo-storyboard.md`. GATE 2 demo-capture: stable a11y hooks on FindingTile (`Semantics(identifier: 'finding-tile-<id>')`); `?ws=` query-param override in `main.dart`; new pytest fixtures `flutter_web_build_dir` + `flutter_static_server` in `frontend/ws_bridge/tests/conftest.py`; e2e DOM-render test `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`; one-shot MCP capture at `docs_assets/dashboard-finding-rendered.png` per new runbook `docs/runbooks/mcp-dom-verification.md`. Live Gemma `report_finding` verified on real CC0 FEMA Katrina image (commit `30577e7`); see `docs/sim-live-run-notes.md` 2026-05-06 appendices. **Beat 4 dashboard pre-flight (2026-05-07):** Apache-2.0 `LICENSE` at repo root; `EgsLinkSeveredBanner` (top of `main.dart`'s body) keyed off `egs.state` heartbeat staleness >5s while WS connected; `_StandaloneBadge` per-drone in `drone_status_panel.dart` keyed off `agent_status == "standalone"`; both with stable `Semantics(identifier: ...)` hooks; 6 widget tests in `test/standalone_mode_test.dart`; Playwright e2e against synthetic-WS harness in `test_e2e_playwright_standalone_mode.py`; MCP capture at `docs_assets/dashboard-egs-severed.png` with Beat 4 capture path appended to the runbook. PRs: #2, #3, #5, #8, #9, #10, #15, #16, #20, #21, #22, #23, #24, #28, #29.
 
-**Left (storyboard-blocking, before demo capture Day 14):** `STANDALONE MODE ACTIVE` rendering in dashboard (Beat 4); `LICENSE` file at repo root (Beat 5 caveat); EGS-link-severed card; findings approval flow polish; static aerial base image for map panel (TODOS, depends on Thayyil).
+**Left (Days 14–16):** Beat 5 offline proof; demo video capture + edit; writeup final pass; README finalization; Kaggle submission form; two-machine backup with Thayyil.
 
-**Left (Days 14–16):** Demo video capture + edit; writeup final pass; README finalization; Kaggle submission form; two-machine backup with Thayyil.
+**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber); static aerial base image for map panel (depends on Thayyil's xBD frame swap).
 
 ### Thayyil — Simulation Co-Pilot (paired with Hazim)
 
@@ -56,15 +57,15 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Left (Days 15–16):** Reproduction docs cold-tested from a fresh machine; on-call for sim issues during submission.
 
-## Risk register (Day 6)
+## Risk register (Day 7)
 
 | Risk | Likelihood | Impact | Owner | Mitigation |
 |---|---|---|---|---|
-| GATE 2 slips (drone agent + EGS not wired end-to-end by EOD May 7) | Medium | High — descope to single-drone-only demo | Kaleel + Qasim | Use `manual_pilot.py` to drive Kaleel's flow; Qasim aligns `zone_polygon` today |
+| **GATE 2 slips today (Qasim's EGS not consuming real findings + reflecting into `egs.state`)** | **Medium** | High — descope to single-drone-only demo | Qasim | `manual_pilot.py` drives Kaleel's flow as fallback for the demo loop; Qasim aligns `zone_polygon` today |
 | GATE 3 NO-GO (fine-tuning fails) | Documented | Low — fall back to base Gemma 4 + heavy prompts | Kaleel | Decision Day 10 May 12 |
-| Storyboard Beat 4 unfilmable (no STANDALONE UI) | Medium | Medium — fall back to Backup Beat 4 (GPS-failure replan) | Ibrahim | Build standalone UI Days 7–13 OR use backup |
-| xBD frames not in `sim/fixtures/frames/` by Day 9 | Low | Medium — Kaleel iterates on placeholders, vision quality drops | Thayyil | Swap is one commit; filenames preserved |
+| xBD frames not in `sim/fixtures/frames/` by Day 9 (TODAY = Day 7) | Medium | Medium — Kaleel iterates on placeholders, vision quality drops before fine-tune | Thayyil | Swap is one commit; filenames preserved. Escalate at standup if not landed by Day 8 |
 | ~~Beat 3b unfilmable: live Gemma `report_finding` not verified end-to-end through dashboard~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-06.** Live `report_finding` on CC0 FEMA Katrina image verified 5× (`docs/sim-live-run-notes.md` Gap #2); DOM render verified by `test_e2e_playwright_dom_render.py` + MCP capture at `docs_assets/dashboard-finding-rendered.png`. |
+| ~~Storyboard Beat 4 unfilmable (no STANDALONE UI)~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-07.** Banner + badge shipped (#28); Playwright e2e + MCP capture verified (#29); `docs_assets/dashboard-egs-severed.png` is the reference asset. Awaits Kaleel's runtime `agent_status` flips for full live light-up (TODOS.md). |
 
 ## How to update this doc
 
