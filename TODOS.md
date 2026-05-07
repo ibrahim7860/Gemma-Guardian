@@ -59,7 +59,9 @@ Deferred work captured during planning and reviews. Each entry includes context 
 ### Wire `agent_status` flips in drone state republish (GATE 4 / Beat 4 demo)
 - **What:** Have the drone runtime flip `agent_status` to `"returning"` on `return_to_base`, `"standalone"` on lost-EGS-link, `"error"` on max-retries-exhausted. Today the republish copies whatever the sim emitted (`"active"` or `"offline"`).
 - **Why:** Storyboard Beat 4's STANDALONE MODE UI in the dashboard depends on a non-`active` `agent_status` to render the badge. Without this, the resilience demo falls back to Backup Beat 4.
-- **Owner:** Kaleel (with Ibrahim consuming on the dashboard side).
+- **Dashboard side:** Ready as of 2026-05-07. `frontend/flutter_dashboard/lib/widgets/drone_status_panel.dart` renders the badge inline in each tile when `agent_status == "standalone"`, with `Semantics(identifier: 'standalone-badge-<drone_id>')`. The matching `EGS LINK SEVERED` global banner triggers on `egs.state` heartbeat staleness (>5 s) in `lib/main.dart`. Six widget tests in `test/standalone_mode_test.dart` cover both states.
+- **Remaining:** Kaleel flips the field at runtime; on first live `agent_status: "standalone"` the badge auto-lights without further dashboard work.
+- **Owner:** Kaleel (dashboard consumer side closed by Ibrahim).
 
 ### Drone-agent Ollama startup healthcheck (delivered, monitor)
 - **What:** Plan ships an httpx `GET /api/tags` healthcheck logging a clear warning if the model isn't pulled or the daemon is down. Track whether the warning is actually surfacing in operator runs.
