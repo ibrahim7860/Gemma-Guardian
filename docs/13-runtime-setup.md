@@ -224,6 +224,7 @@ Thayyil's Unsloth fine-tuning workstream requires an NVIDIA GPU with CUDA 12+. T
 
 ## Cross-References
 
+- Cold-start full demo (fresh box → resilience scenario in one walk): [`docs/sim-reproduction.md`](sim-reproduction.md)
 - Running 2-3 drone agents simultaneously: [`docs/15-multi-drone-spawning.md`](15-multi-drone-spawning.md)
 - Redis channel naming and JSON schemas: [`docs/20-integration-contracts.md`](20-integration-contracts.md) Contract 9
 - Scenario YAML format and disaster scene layout: [`docs/14-disaster-scene-design.md`](14-disaster-scene-design.md)
