@@ -80,7 +80,6 @@ class EGSCoordinator:
             drones_summary[drone_id] = {
                 "status": new_status,
                 "battery": t.get("battery_pct"),
-                "last_seen": t.get("timestamp")
             }
 
             # If drone went offline, replan!

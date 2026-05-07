@@ -262,3 +262,36 @@ def test_coordinator_does_not_refresh_on_off_ticks(tmp_path, monkeypatch):
         )
 
     asyncio.run(run())
+
+
+def test_process_telemetry_drones_summary_passes_egs_state_schema():
+    """Regression: drones_summary entries must conform to Contract 3
+    (`{status, battery}` with `additionalProperties: false`). A pre-existing
+    bug wrote `last_seen` into the entry, breaking every `egs.state`
+    publish. Surfaced by the 2026-05-07 GATE 2 live smoke run.
+    """
+    from agents.egs_agent.scenario_state import build_initial_egs_state
+    from shared.contracts import validate
+
+    coord = EGSCoordinator(EGSValidationNode())
+    state = {
+        "egs_state": build_initial_egs_state("disaster_zone_v1"),
+        "incoming_telemetry": [
+            {
+                "drone_id": "drone1",
+                "agent_status": "active",
+                "battery_pct": 87,
+                "timestamp": "2026-05-07T16:00:00.000Z",
+            }
+        ],
+        "incoming_findings": [],
+        "incoming_commands": [],
+        "messages_to_publish": [],
+        "trigger_replan": False,
+    }
+    new_state = coord.process_telemetry(state)
+    assert "drone1" in new_state["egs_state"]["drones_summary"]
+    entry = new_state["egs_state"]["drones_summary"]["drone1"]
+    assert set(entry.keys()) == {"status", "battery"}
+    outcome = validate("egs_state", new_state["egs_state"])
+    assert outcome.valid, outcome.errors
