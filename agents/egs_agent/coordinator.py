@@ -14,6 +14,13 @@ from agents.egs_agent.command_translator import translate_operator_command
 
 logger = logging.getLogger(__name__)
 
+# How often refresh_validation_events actually re-reads the JSONL log.
+# Per eng-review Q2 (2026-05-07): every 5th graph tick keeps file I/O bounded
+# on long runs while staying well under the dashboard's 1Hz publish budget
+# (worst-case 5 ticks of staleness, typically <1s).
+VALIDATION_REFRESH_EVERY_N_TICKS = 5
+
+
 class EGSState(TypedDict):
     egs_state: Dict[str, Any]
     incoming_telemetry: List[Dict[str, Any]]
@@ -27,6 +34,7 @@ class EGSCoordinator:
         self.validation_node = validation_node
         self.redis_client = redis_client
         self._replan_in_flight = False  # re-entrancy guard for fire-and-forget replan
+        self._validation_refresh_counter = 0  # gates refresh_validation_events node
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -35,18 +43,20 @@ class EGSCoordinator:
         workflow.add_node("process_telemetry", self.process_telemetry)
         workflow.add_node("process_findings", self.process_findings)
         workflow.add_node("process_commands", self.process_commands)
+        workflow.add_node("refresh_validation_events", self.refresh_validation_events)
         workflow.add_node("replan", self.replan)
 
         workflow.add_edge(START, "process_telemetry")
         workflow.add_edge("process_telemetry", "process_findings")
         workflow.add_edge("process_findings", "process_commands")
+        workflow.add_edge("process_commands", "refresh_validation_events")
 
         def should_replan(state: EGSState):
             if state.get("trigger_replan", False):
                 return "replan"
             return END
 
-        workflow.add_conditional_edges("process_commands", should_replan)
+        workflow.add_conditional_edges("refresh_validation_events", should_replan)
         workflow.add_edge("replan", END)
 
         return workflow.compile()
@@ -139,6 +149,22 @@ class EGSCoordinator:
                     trigger_replan = True
 
         return {**state, "trigger_replan": trigger_replan, "incoming_commands": [], "messages_to_publish": msgs_to_pub}
+
+    def refresh_validation_events(self, state: EGSState) -> EGSState:
+        """Every Nth tick, refresh `egs_state.recent_validation_events` from
+        the Contract 11 JSONL log on disk. Off-ticks are pass-through so the
+        graph never reads the file on every iteration.
+        """
+        self._validation_refresh_counter += 1
+        if self._validation_refresh_counter % VALIDATION_REFRESH_EVERY_N_TICKS != 0:
+            return state
+        # Imported lazily so tests can monkeypatch
+        # `agents.egs_agent.validation_log_tail.LOG_PATH` and have it picked up
+        # without reaching into the symbol bound at coordinator-import time.
+        from agents.egs_agent import validation_log_tail
+        egs_state = state["egs_state"].copy()
+        egs_state["recent_validation_events"] = validation_log_tail.tail(n=10)
+        return {**state, "egs_state": egs_state}
 
     async def replan(self, state: EGSState) -> EGSState:
         """Fire-and-forget: spawn the LLM-driven replan in the background and
