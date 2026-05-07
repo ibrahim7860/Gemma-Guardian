@@ -483,6 +483,10 @@ class MissionState extends ChangeNotifier {
 
   void setConnectionStatus(String status) {
     connectionStatus = status;
+    // Inline-recompute so a WS drop clears the banner cache without waiting
+    // up to 1 s for the next Timer tick. Suppresses the brief overlap where
+    // both the WS-disconnected header and the EGS-severed banner would show.
+    _recomputeEgsLinkSevered();
     notifyListeners();
   }
 
