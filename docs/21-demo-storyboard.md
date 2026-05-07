@@ -115,9 +115,9 @@ Then the dramatic moment: a card appears: *"EGS LINK SEVERED."* The dashboard sh
 
 **Final visual:** the GitHub repo URL on screen.
 
-**Voiceover/text:** "3.6 billion people live in disaster-vulnerable regions. When the towers fall, the swarm keeps going. FieldAgent. Open source on GitHub."
+**Voiceover/text:** "3.6 billion people live in disaster-vulnerable regions. When the towers fall, the swarm keeps going. FieldAgent. Apache-2.0 on GitHub."
 
-> **License caveat:** the repo currently has **no `LICENSE` file**. The earlier draft of this script claimed "Apache 2.0", which would be misleading until a LICENSE is committed. Either add one (Apache-2.0 or MIT both fit the permissively-licensed-stack framing in `docs/01-vision-and-pitch.md`) before filming and restore the explicit license name to the voiceover, or keep the hedged "Open source on GitHub" wording.
+> Apache-2.0 `LICENSE` file lives at the repo root (committed 2026-05-07). The voiceover may name the license explicitly.
 
 ## Pre-Flight Checklist — what must ship before this storyboard can be filmed
 
