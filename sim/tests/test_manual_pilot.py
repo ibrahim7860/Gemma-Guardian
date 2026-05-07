@@ -21,11 +21,13 @@ from pathlib import Path
 
 import pytest
 
+from shared.contracts import RuleID
 from shared.contracts.topics import (
     per_drone_findings_channel,
     swarm_broadcast_channel,
 )
 from sim import manual_pilot as mp
+from sim.scenario import load_scenario
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +532,237 @@ class TestCli:
         assert ns.drone_id == "drone2"
         assert ns.redis_url == "redis://example:1/2"
         assert ns.frames_out_dir == "/var/tmp/pilot"
+
+    def test_parse_args_scenario_default_is_none(self):
+        ns = mp._parse_args(["--drone-id", "drone1"])
+        assert ns.scenario is None
+
+
+# ---------------------------------------------------------------------------
+# Semantic validation layer — ValidationNode reused on top of the schema floor.
+# ---------------------------------------------------------------------------
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+@pytest.fixture
+def pilot_with_scenario(tmp_path):
+    """Pilot wired to single_drone_smoke.yaml so zone_bounds is non-empty
+    and the GPS_OUTSIDE_ZONE rule is exercisable."""
+    scenario = load_scenario(_PROJECT_ROOT / "sim" / "scenarios" / "single_drone_smoke.yaml")
+    return mp.ManualPilot(
+        drone_id="drone1",
+        redis_url="redis://unused.invalid:6379/0",
+        frames_out_dir=tmp_path,
+        scenario=scenario,
+    )
+
+
+def _wire_state(pilot, *, battery_pct, remaining):
+    """Populate latest_state_json so _build_perception_bundle reflects the
+    sim's published values rather than the no-evidence-yet defaults."""
+    pilot.state.latest_state_json = {
+        "drone_id": pilot.drone_id,
+        "position": {"lat": 34.0001, "lon": -118.5001, "alt": 25.0},
+        "battery_pct": battery_pct,
+        "heading_deg": 0.0,
+        "current_task": "survey",
+        "assigned_survey_points_remaining": remaining,
+    }
+
+
+class TestSemanticValidationLayer:
+    def test_pilot_holds_validation_node(self, pilot):
+        # Reuse, not reimplement: the REPL's validator is the same class
+        # the per-drone agent runs.
+        from agents.drone_agent.validation import ValidationNode
+
+        assert isinstance(pilot.validator, ValidationNode)
+
+    def test_pilot_without_scenario_has_empty_zone_bounds(self, pilot):
+        assert pilot.zone_bounds == {}
+
+    def test_pilot_with_scenario_derives_zone_bounds(self, pilot_with_scenario):
+        bounds = pilot_with_scenario.zone_bounds
+        for key in ("lat_min", "lat_max", "lon_min", "lon_max"):
+            assert key in bounds
+
+    # --- battery floor (return_to_base) ----------------------------------
+
+    def test_rtb_low_battery_rejected_when_battery_high(self, pilot, fake_redis, capsys):
+        _wire_state(pilot, battery_pct=80, remaining=5)
+        pilot._handle(fake_redis, {"kind": "rtb", "args": {"reason": "low_battery"}})
+        out = capsys.readouterr().out
+        assert "[error]" in out
+        assert RuleID.RTB_LOW_BATTERY_INVALID.value in out
+        assert "80" in out
+
+    def test_rtb_low_battery_passes_when_battery_low(self, pilot, fake_redis, capsys):
+        _wire_state(pilot, battery_pct=15, remaining=5)
+        pilot._handle(fake_redis, {"kind": "rtb", "args": {"reason": "low_battery"}})
+        out = capsys.readouterr().out
+        assert "[ok] return_to_base validated" in out
+
+    # --- mission_complete (return_to_base) -------------------------------
+
+    def test_rtb_mission_complete_rejected_when_points_pending(self, pilot, fake_redis, capsys):
+        _wire_state(pilot, battery_pct=80, remaining=3)
+        pilot._handle(fake_redis, {"kind": "rtb", "args": {"reason": "mission_complete"}})
+        out = capsys.readouterr().out
+        assert "[error]" in out
+        assert RuleID.RTB_MISSION_COMPLETE_INVALID.value in out
+
+    # --- severity↔confidence (report_finding) ----------------------------
+
+    def test_finding_severity_confidence_mismatch_rejected(self, pilot, fake_redis, capsys):
+        sub = fake_redis.pubsub()
+        sub.subscribe(per_drone_findings_channel("drone1"))
+        sub.get_message(timeout=0.1)
+        pilot._handle(
+            fake_redis,
+            {
+                "kind": "finding",
+                "args": {
+                    "type": "victim",
+                    "severity": 5,
+                    "gps_lat": 34.0001,
+                    "gps_lon": -118.5001,
+                    "confidence": 0.4,
+                    "visual_description": "Person prone, partial cover by debris.",
+                },
+            },
+        )
+        out = capsys.readouterr().out
+        assert "[error]" in out
+        assert RuleID.SEVERITY_CONFIDENCE_MISMATCH.value in out
+        # No publish, counter rolled back.
+        assert pilot.state.finding_counter == 0
+        assert sub.get_message(timeout=0.05) is None
+
+    # --- duplicate-finding (report_finding) ------------------------------
+
+    def test_duplicate_finding_within_window_rejected(self, pilot, fake_redis, capsys):
+        sub = fake_redis.pubsub()
+        sub.subscribe(per_drone_findings_channel("drone1"))
+        sub.get_message(timeout=0.1)
+        args = {
+            "type": "victim",
+            "severity": 3,
+            "gps_lat": 34.0001,
+            "gps_lon": -118.5001,
+            "confidence": 0.7,
+            "visual_description": "Person prone, partial cover by debris.",
+        }
+        # First publish succeeds and is recorded in ValidationNode state.
+        pilot._handle(fake_redis, {"kind": "finding", "args": args})
+        first = sub.get_message(timeout=0.5)
+        assert first is not None and first["type"] == "message"
+        capsys.readouterr()  # drain the success line
+
+        # Second identical call lands within the 30s/10m window.
+        pilot._handle(fake_redis, {"kind": "finding", "args": dict(args)})
+        out = capsys.readouterr().out
+        assert "[error]" in out
+        assert RuleID.DUPLICATE_FINDING.value in out
+        # Roll back: counter stays at 1 (the published one) — the rejected
+        # attempt does not consume an id.
+        assert pilot.state.finding_counter == 1
+        # No second publish.
+        assert sub.get_message(timeout=0.05) is None
+
+    # --- coverage-monotonic (mark_explored) ------------------------------
+
+    def test_mark_explored_decreasing_coverage_rejected(self, pilot, fake_redis, capsys):
+        pilot._handle(
+            fake_redis,
+            {"kind": "explored", "args": {"zone_id": "z1", "coverage_pct": 60.0}},
+        )
+        capsys.readouterr()
+        pilot._handle(
+            fake_redis,
+            {"kind": "explored", "args": {"zone_id": "z1", "coverage_pct": 40.0}},
+        )
+        out = capsys.readouterr().out
+        assert "[error]" in out
+        assert RuleID.COVERAGE_DECREASED.value in out
+
+    # --- GPS_OUTSIDE_ZONE (requires scenario for zone_bounds) ------------
+
+    def test_finding_outside_zone_rejected_when_scenario_loaded(
+        self, pilot_with_scenario, fake_redis, capsys
+    ):
+        sub = fake_redis.pubsub()
+        sub.subscribe(per_drone_findings_channel("drone1"))
+        sub.get_message(timeout=0.1)
+        # GPS halfway around the world from the scenario's bounding box.
+        pilot_with_scenario._handle(
+            fake_redis,
+            {
+                "kind": "finding",
+                "args": {
+                    "type": "fire",
+                    "severity": 3,
+                    "gps_lat": 50.0,
+                    "gps_lon": 50.0,
+                    "confidence": 0.7,
+                    "visual_description": "Visible flames at rooftop edge.",
+                },
+            },
+        )
+        out = capsys.readouterr().out
+        assert "[error]" in out
+        assert RuleID.GPS_OUTSIDE_ZONE.value in out
+        assert pilot_with_scenario.state.finding_counter == 0
+        assert sub.get_message(timeout=0.05) is None
+
+    # --- success path: schema + semantic both pass -----------------------
+
+    def test_finding_publishes_when_all_layers_pass(self, pilot, fake_redis, capsys):
+        sub = fake_redis.pubsub()
+        sub.subscribe(per_drone_findings_channel("drone1"))
+        sub.get_message(timeout=0.1)
+        pilot._handle(
+            fake_redis,
+            {
+                "kind": "finding",
+                "args": {
+                    "type": "victim",
+                    "severity": 4,
+                    "gps_lat": 34.0001,
+                    "gps_lon": -118.5001,
+                    "confidence": 0.85,
+                    "visual_description": "Person prone, partial cover by debris.",
+                },
+            },
+        )
+        out = capsys.readouterr().out
+        assert "[ok] published f_drone1_001" in out
+        msg = sub.get_message(timeout=0.5)
+        assert msg is not None and msg["type"] == "message"
+        decoded = json.loads(msg["data"])
+        assert decoded["type"] == "victim"
+        # ValidationNode recorded the success — second identical call would
+        # now trip the duplicate-finding rule.
+        assert len(pilot.validator.recent_findings) == 1
+
+
+# ---------------------------------------------------------------------------
+# _resolve_scenario_path
+# ---------------------------------------------------------------------------
+
+
+class TestResolveScenarioPath:
+    def test_resolves_known_scenario_id(self):
+        path = mp._resolve_scenario_path("single_drone_smoke")
+        assert path.name == "single_drone_smoke.yaml"
+        assert path.exists()
+
+    def test_resolves_explicit_path(self):
+        target = _PROJECT_ROOT / "sim" / "scenarios" / "single_drone_smoke.yaml"
+        path = mp._resolve_scenario_path(str(target))
+        assert path == target
+
+    def test_unknown_scenario_id_raises(self):
+        with pytest.raises(FileNotFoundError):
+            mp._resolve_scenario_path("does_not_exist_xyz")

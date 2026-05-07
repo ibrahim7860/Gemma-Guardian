@@ -6,13 +6,22 @@ on a real Redis (the contract path — fakeredis is for tests). Inputs map to
 the same five drone function calls the real agent emits, plus utilities for
 inspecting state, frames, and peer broadcasts.
 
-Schema-only validation floor: payloads validate against
-``shared/schemas/<name>.json`` via the same loader the real validator will
-use. Semantic checks (battery actually low, GPS-in-zone, duplicate-finding,
-severity↔confidence) are intentionally NOT implemented here — they are
-Kaleel's territory in ``agents/drone_agent/validation.py`` per
-docs/10-validation-and-retry-loop.md. Mirroring them would fork the source
-of truth. See the TODO on :class:`SchemaValidationError`.
+Two-layer validation, matching the real drone agent's retry loop:
+
+  1. Schema floor — payloads validate against ``shared/schemas/<name>.json``
+     via :func:`shared.contracts.schemas.validate`. Mirrors the
+     ``STRUCTURAL_VALIDATION_FAILED`` corrective text.
+  2. Semantic rules — once the schema passes, the parsed function call is
+     handed to :class:`agents.drone_agent.validation.ValidationNode` (the
+     same instance the per-drone agent uses) for battery floor, GPS-in-zone,
+     duplicate-finding, severity↔confidence, and coverage-monotonicity. The
+     REPL prints the same corrective prompt the real agent would re-prompt
+     Gemma with, so the human pilot sees the contract from the agent's
+     point of view.
+
+The semantic layer reuses ValidationNode rather than reimplementing the
+rules — the contracts in ``agents/drone_agent/validation.py`` are the
+single source of truth.
 
 Why this exists: when Kaleel is iterating on the drone agent and Hazim
 is iterating on scenarios, having a fast loop where a human can type one
@@ -22,6 +31,8 @@ the WebSocket bridge mirrors ``drones.<id>.findings`` correctly.
 
 Usage:
     uv run python sim/manual_pilot.py --drone-id drone1
+    # GPS-in-zone semantics require a scenario for zone_bounds:
+    uv run python sim/manual_pilot.py --drone-id drone1 --scenario disaster_zone_v1
     # in another pane: scripts/launch_swarm.sh resilience_v1 --drones=drone2,drone3
 """
 from __future__ import annotations
@@ -45,6 +56,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 import redis
 import redis.asyncio as redis_async
 
+from agents.drone_agent.perception import DroneState, PerceptionBundle
+from agents.drone_agent.validation import ValidationNode, ValidationResult
+from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
 from shared.contracts.config import CONFIG
 from shared.contracts.schemas import StructuralError, validate
 from shared.contracts.topics import (
@@ -54,6 +68,7 @@ from shared.contracts.topics import (
     swarm_broadcast_channel,
     swarm_visible_to_channel,
 )
+from sim.scenario import Scenario, load_scenario
 
 
 HELP_TEXT = """\
@@ -78,8 +93,9 @@ Commands:
   help                                           This text.
   quit | Ctrl-D                                  Clean exit.
 
-Validation floor is JSON-Schema. Semantic checks (battery, GPS-in-zone, etc.)
-land in agents/drone_agent/validation.py — Kaleel owns them.
+Validation runs in two layers: JSON-Schema floor first, then the same
+semantic rules the per-drone agent uses (battery, GPS-in-zone, duplicate-
+finding, severity↔confidence, coverage-monotonic) via ValidationNode.
 """
 
 
@@ -275,11 +291,15 @@ class SchemaValidationError(Exception):
     template from shared/contracts/rules.py so REPL users see the same
     "field X: message" feedback the real drone agent surfaces in its retry
     loop.
+    """
 
-    TODO(person-2): when ``agents/drone_agent/validation.py`` ships, this
-    should additionally surface the semantic-rule failures (battery, GPS,
-    duplicate-finding, severity↔confidence). Schema-only is the floor;
-    forking semantic logic here would create two sources of truth.
+
+class SemanticValidationError(Exception):
+    """Raised when a parsed function call passes the schema floor but fails
+    a semantic rule from :class:`agents.drone_agent.validation.ValidationNode`
+    (battery, GPS-in-zone, duplicate-finding, severity↔confidence,
+    coverage-monotonic). The message is the same corrective prompt the
+    real drone agent re-feeds Gemma during its retry loop.
     """
 
 
@@ -289,6 +309,12 @@ def format_validation_errors(schema_name: str, errors: list[StructuralError]) ->
         lines.append(f"  - field '{e.field_path}': {e.message}")
     lines.append("Re-emit the call with the correct shape; see shared/schemas/.")
     return "\n".join(lines)
+
+
+def format_semantic_error(result: ValidationResult) -> str:
+    rule_id = result.failure_reason.value if result.failure_reason else "UNKNOWN"
+    prompt = result.corrective_prompt or "(no corrective prompt provided)"
+    return f"semantic validation failed ({rule_id}):\n  {prompt}"
 
 
 def validate_or_raise(schema_name: str, payload: dict) -> None:
@@ -336,11 +362,24 @@ class ManualPilot:
         drone_id: str,
         redis_url: str,
         frames_out_dir: Path,
+        scenario: Optional[Scenario] = None,
     ) -> None:
         self.drone_id = drone_id
         self.redis_url = redis_url
         self.frames_out_dir = Path(frames_out_dir)
         self.state = _LiveState()
+        # Single ValidationNode instance per pilot — its recent_findings and
+        # last_coverage_by_zone state must persist across REPL commands so
+        # duplicate-finding and coverage-monotonic checks behave like the
+        # real drone agent.
+        self.validator = ValidationNode()
+        # Without a scenario, zone_bounds is empty and the GPS_OUTSIDE_ZONE
+        # check short-circuits to valid — the rest of the semantic layer
+        # still runs.
+        if scenario is not None:
+            self.zone_bounds = derive_zone_bounds_from_scenario(scenario, drone_id)
+        else:
+            self.zone_bounds = {}
 
     # --- Subscription bookkeeping ---------------------------------------------
 
@@ -510,7 +549,12 @@ class ManualPilot:
         try:
             payload = build_function_call(kind, args)
             validate_or_raise("drone_function_calls", payload)
-        except SchemaValidationError as e:
+            bundle = self._build_perception_bundle()
+            result = self.validator.validate(payload, bundle)
+            if not result.valid:
+                raise SemanticValidationError(format_semantic_error(result))
+            self.validator.record_success(payload, bundle)
+        except (SchemaValidationError, SemanticValidationError) as e:
             print(f"[error] {e}", flush=True)
             return
         except (KeyError, ValueError) as e:
@@ -531,18 +575,37 @@ class ManualPilot:
             args=args,
             altitude=altitude,
         )
+        # Sibling function-call shape so ValidationNode's semantic rules
+        # (severity↔confidence, GPS-in-zone, duplicate-finding) see the
+        # same arguments the real agent would have emitted.
+        function_call = {
+            "function": "report_finding",
+            "arguments": {
+                "type": args["type"],
+                "severity": args["severity"],
+                "gps_lat": args["gps_lat"],
+                "gps_lon": args["gps_lon"],
+                "confidence": args["confidence"],
+                "visual_description": args["visual_description"],
+            },
+        }
+        bundle = self._build_perception_bundle()
         try:
-            publish_validated(
-                redis_client=sync_client,
-                channel=per_drone_findings_channel(self.drone_id),
-                schema_name="finding",
-                payload=payload,
+            # Schema floor on the wire envelope.
+            validate_or_raise("finding", payload)
+            # Semantic floor on the function-call shape.
+            result = self.validator.validate(function_call, bundle)
+            if not result.valid:
+                raise SemanticValidationError(format_semantic_error(result))
+            sync_client.publish(
+                per_drone_findings_channel(self.drone_id), json.dumps(payload)
             )
-        except SchemaValidationError as e:
+        except (SchemaValidationError, SemanticValidationError) as e:
             # Roll back so the next attempt isn't off by one.
             self.state.finding_counter -= 1
             print(f"[error] {e}", flush=True)
             return
+        self.validator.record_success(function_call, bundle)
         print(
             f"[ok] published {payload['finding_id']} on "
             f"{per_drone_findings_channel(self.drone_id)}",
@@ -575,6 +638,34 @@ class ManualPilot:
         )
 
     # --- Helpers ----------------------------------------------------------
+
+    def _build_perception_bundle(self) -> PerceptionBundle:
+        """Synthesize a PerceptionBundle from the latest drone_state JSON
+        plus the (possibly empty) zone_bounds derived from the scenario.
+
+        Defaults when fields are missing from the wire payload:
+          - battery_pct=100.0 → RTB(low_battery) is correctly rejected
+            until the sim publishes a real battery reading.
+          - assigned_survey_points_remaining=1 → RTB(mission_complete) is
+            correctly rejected until the sim signals zero remaining.
+        These match the real drone agent's "no evidence yet" stance.
+        """
+        payload = self.state.latest_state_json or {}
+        pos = payload.get("position") or {}
+        drone_state = DroneState(
+            drone_id=self.drone_id,
+            lat=float(pos.get("lat", 0.0)),
+            lon=float(pos.get("lon", 0.0)),
+            alt=float(pos.get("alt", 0.0)),
+            battery_pct=float(payload.get("battery_pct", 100.0)),
+            heading_deg=float(payload.get("heading_deg", 0.0)),
+            current_task=payload.get("current_task") or "survey",
+            assigned_survey_points_remaining=int(
+                payload.get("assigned_survey_points_remaining", 1)
+            ),
+            zone_bounds=self.zone_bounds,
+        )
+        return PerceptionBundle(frame_jpeg=b"", state=drone_state)
 
     def _latest_position(self) -> Optional[tuple[float, float, float]]:
         s = self.state.latest_state_json
@@ -612,7 +703,26 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default="/tmp",
         help="Directory where 'frame' command writes the latest JPEG. Created on first save.",
     )
+    parser.add_argument(
+        "--scenario",
+        default=None,
+        help=(
+            "Scenario YAML path or scenario_id under sim/scenarios/. "
+            "Required for the GPS_OUTSIDE_ZONE semantic check; without it the "
+            "GPS check short-circuits to valid (other semantic checks still run)."
+        ),
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
+
+
+def _resolve_scenario_path(arg: str) -> Path:
+    p = Path(arg)
+    if p.exists():
+        return p
+    candidate = _PROJECT_ROOT / "sim" / "scenarios" / f"{arg}.yaml"
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(f"scenario not found: {arg!r} (also looked at {candidate})")
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -623,10 +733,18 @@ def main(argv: Optional[list[str]] = None) -> int:
             file=sys.stderr,
         )
         return 2
+    scenario: Optional[Scenario] = None
+    if args.scenario is not None:
+        try:
+            scenario = load_scenario(_resolve_scenario_path(args.scenario))
+        except (FileNotFoundError, KeyError) as e:
+            print(f"[error] could not load scenario: {e}", file=sys.stderr)
+            return 2
     pilot = ManualPilot(
         drone_id=args.drone_id,
         redis_url=args.redis_url,
         frames_out_dir=Path(args.frames_out_dir),
+        scenario=scenario,
     )
     try:
         return asyncio.run(pilot.run())

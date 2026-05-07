@@ -92,7 +92,13 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 All initial polish-queue items shipped on `feature/sim-polish`. Add new
 items here as they surface during integration sessions or live-run fallout.
 
-- _Empty — refill as needed._
+- ~~`sim/manual_pilot.py` schema-only validation floor — layer Kaleel's
+  `agents/drone_agent/validation.py` semantic rules (battery, GPS,
+  duplicate-finding, severity↔confidence, coverage-monotonic) on top so the
+  REPL surfaces the same retry-loop feedback the real drone agent does.~~
+  Shipped on `sim/manual-pilot-semantic-validation`. ValidationNode is
+  reused in-place — no second source of truth — and the REPL takes an
+  optional `--scenario` to enable the GPS_OUTSIDE_ZONE check.
 
 ### Follow-ups surfaced by the live run (low priority, out of Hazim scope)
 
