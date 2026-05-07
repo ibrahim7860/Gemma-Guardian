@@ -77,4 +77,4 @@ In active development for the May 18, 2026 submission. Per-stream live status:
 
 ## License
 
-Apache-2.0. See [`LICENSE`](LICENSE) (TBD prior to submission).
+Apache-2.0. See [`LICENSE`](LICENSE).

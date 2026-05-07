@@ -115,9 +115,9 @@ Then the dramatic moment: a card appears: *"EGS LINK SEVERED."* The dashboard sh
 
 **Final visual:** the GitHub repo URL on screen.
 
-**Voiceover/text:** "3.6 billion people live in disaster-vulnerable regions. When the towers fall, the swarm keeps going. FieldAgent. Open source on GitHub."
+**Voiceover/text:** "3.6 billion people live in disaster-vulnerable regions. When the towers fall, the swarm keeps going. FieldAgent. Apache-2.0 on GitHub."
 
-> **License caveat:** the repo currently has **no `LICENSE` file**. The earlier draft of this script claimed "Apache 2.0", which would be misleading until a LICENSE is committed. Either add one (Apache-2.0 or MIT both fit the permissively-licensed-stack framing in `docs/01-vision-and-pitch.md`) before filming and restore the explicit license name to the voiceover, or keep the hedged "Open source on GitHub" wording.
+> Apache-2.0 `LICENSE` file lives at the repo root (committed 2026-05-07). The voiceover may name the license explicitly.
 
 ## Pre-Flight Checklist — what must ship before this storyboard can be filmed
 
@@ -128,7 +128,7 @@ The storyboard above assumes a fully integrated stack. As of today, several beat
 | 3b drone-eye reasoning trace + `report_finding` overlay | `agents/drone_agent/main.py` publishing real findings on `drones.<id>.findings` | Kaleel | ✅ Done. Live Gemma fires `report_finding` on CC0 FEMA Katrina image; 5× verified 2026-05-06 (`docs/sim-live-run-notes.md` Gap #2). DOM render verified end-to-end by `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py` and MCP capture per `docs/runbooks/mcp-dom-verification.md`; reference asset `docs_assets/dashboard-finding-rendered.png`. |
 | 3c "EGS hallucinates 27 of 25 points → caught → corrected" | `agents/egs_agent/main.py` running `assign_survey_points` with the validation loop wired | Qasim | Not yet shipped |
 | 4 `command_translation` showing Spanish input → structured task | EGS Gemma 4 E4B path producing real `preview_text_in_operator_language` (TODOS.md tracks this as a Phase 5+ stub) | Qasim | Bridge accepts ops commands; translation echoes English |
-| 4 `EGS LINK SEVERED` card + "STANDALONE MODE ACTIVE" panel state | Dashboard rendering EGS-offline state (no `STANDALONE` string anywhere in `frontend/flutter_dashboard/lib/` today) | Person 4 (Ibrahim) | Not implemented |
+| 4 `EGS LINK SEVERED` card + "STANDALONE MODE ACTIVE" panel state | Dashboard rendering EGS-offline state | Person 4 (Ibrahim) | ✅ Dashboard side ready 2026-05-07 — banner triggers on egs.state heartbeat staleness >5s, badge keys off `agent_status == "standalone"`. Both have stable `Semantics(identifier: ...)` hooks for Playwright/MCP capture. Awaits Kaleel's runtime `agent_status` flips (TODOS.md "Wire `agent_status` flips") to fully light up under live sim. |
 | 4 `egs_link_drop` event firing in sim | `sim/scenarios/resilience_v1.yaml` — already ships `egs_link_drop` at t=120s and `egs_link_restore` at t=180s | Hazim | ✅ Done |
 | 5 offline proof terminal + `ollama list` showing two models | Demo box has both Gemma 4 tags pulled per `docs/20-integration-contracts.md` | Person 4 (demo box owner) | Verify on Day 14 |
 

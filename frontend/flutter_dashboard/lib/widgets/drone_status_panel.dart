@@ -20,8 +20,10 @@ class DroneStatusPanel extends StatelessWidget {
           itemBuilder: (_, i) {
             final d = mission.activeDrones[i] as Map<String, dynamic>;
             final droneId = d["drone_id"] as String? ?? "drone?";
+            final agentStatus = d["agent_status"] as String? ?? "?";
             final perDrone = events[droneId] ?? const <Map<String, dynamic>>[];
             final isSelected = mission.selectedDroneId == droneId;
+            final isStandalone = agentStatus == "standalone";
             return Container(
               key: isSelected
                   ? ValueKey('drone-row-highlight-$droneId')
@@ -29,7 +31,12 @@ class DroneStatusPanel extends StatelessWidget {
               color: isSelected ? Colors.blue.withValues(alpha: 0.08) : null,
               child: ListTile(
                 isThreeLine: true,
-                title: Text("$droneId — ${d["agent_status"]}"),
+                title: Row(
+                  children: [
+                    Expanded(child: Text("$droneId — $agentStatus")),
+                    if (isStandalone) _StandaloneBadge(droneId: droneId),
+                  ],
+                ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -80,6 +87,35 @@ class DroneStatusPanel extends StatelessWidget {
     final shortTs = ts.length >= 19 ? ts.substring(11, 19) : ts;
     final issue = last["issue"] ?? "?";
     return "Validation: ${events.length} fails (last: $shortTs — $issue)";
+  }
+}
+
+class _StandaloneBadge extends StatelessWidget {
+  final String droneId;
+  const _StandaloneBadge({required this.droneId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      identifier: 'standalone-badge-$droneId',
+      label: 'STANDALONE MODE ACTIVE',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade800,
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: const Text(
+          "STANDALONE",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 10,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
   }
 }
 
