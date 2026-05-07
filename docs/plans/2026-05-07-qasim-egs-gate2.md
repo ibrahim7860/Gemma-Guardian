@@ -770,6 +770,61 @@ Inline-fixed during review (no question, obvious):
 - `_M_PER_DEG_LON` calibration comment in scenario_state.py.
 - 60s→30s dedup-window doc fix in `docs/06-edge-ground-station.md` Task 6, folded into Task 9.
 
+### Hygiene H4 — pre-existing pytest cross-suite collision (ws_bridge)
+
+**Status:** pre-existing on `main` (commit `2b67496`); identical pattern on this feature branch. **Not introduced by this PR. Not a blocker for Gate 2.** Filed as a follow-up TODO; do **not** fix in this PR.
+
+**Reproduction.**
+
+```
+# main worktree (commit 2b67496)
+uv run pytest frontend/ws_bridge/tests/ --timeout=30 \
+  --ignore=frontend/ws_bridge/tests/test_e2e_playwright.py \
+  --ignore=frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py \
+  --ignore=frontend/ws_bridge/tests/test_e2e_playwright_multi_drone.py \
+  --ignore=frontend/ws_bridge/tests/test_e2e_playwright_real_drone_findings.py \
+  --ignore=frontend/ws_bridge/tests/test_e2e_playwright_standalone_mode.py
+# => 23 failed, 44 passed, 1 skipped, 35 warnings, 13 errors in 37.05s
+```
+
+```
+# feature/qasim-egs-gate2-scenario-aligned (this branch), same invocation
+# (also --ignore=frontend/ws_bridge/tests/test_e2e_playwright_egs_findings.py)
+# => 23 failed, 45 passed, 5 skipped, 60 warnings, 13 errors in 1.58s
+```
+
+**Diff vs main:** identical 23 failures, identical 13 errors, identical test names. Branch's +1 pass and +4 skips trace to branch-only test files (extra Playwright e2e suites collected and skipped without their environment). Every individual failing test **passes when run standalone** — confirmed for `test_main_finding_id_allowlist.py` (`2 passed in 0.88s` when invoked alone).
+
+**Root cause (pytest-asyncio cross-test loop bleed).** Failures and errors all surface variants of the same two messages:
+
+```
+RuntimeError: Runner.run() cannot be called from a running event loop
+RuntimeError: Cannot run the event loop while another loop is running
+RuntimeWarning: coroutine '_wrap_asyncgen_fixture.<locals>._asyncgen_fixture_wrapper.<locals>.setup' was never awaited
+```
+
+The `pytest_asyncio.plugin._scoped_runner` teardown is calling `loop.run_until_complete(loop.shutdown_asyncgens())` after another loop has already taken over — i.e. an async-generator fixture (the `fake_client` / `app_and_redis` chain in `frontend/ws_bridge/tests/conftest.py`) is being torn down on a different loop than the one it was set up on. With `asyncio_default_fixture_loop_scope = function` (see `pytest.ini`) this should be safe, but pytest-asyncio's split setup/teardown for async-generator fixtures still leaves a window where the prior test's loop has been retired before the asyncgen's `aclose` runs. Once one test in the suite triggers it, every subsequent fixture-using test in the same process inherits an unawaited `setup` coroutine and errors at collection/setup.
+
+The Python-version pattern is also informative: under 3.14 the same suite hung indefinitely on a `os.waitpid` thread for >15 minutes (no progress past test 25); under 3.12 it failed fast in 1.58s. This is consistent with a pytest-asyncio + Python 3.14 interaction layered on top of the underlying loop-scope leak, but the loop-scope leak itself reproduces on 3.12.
+
+**Failing tests (identical on main and branch).**
+
+- `test_helpers.py::test_drain_until_returns_first_matching_frame`
+- `test_helpers.py::test_drain_until_raises_when_predicate_never_matches`
+- `test_main_lifespan_teardown.py::test_lifespan_signals_stop_before_closing_pubsub`
+- `test_outbound_publish.py::test_valid_finding_approval_publishes_and_acks`
+- `test_redis_publisher.py::*` (all 8)
+- `test_subscriber.py::*` (all 11)
+- ERROR (collection-time fixture setup): `test_main_command_translation_forward.py::*` (2), `test_main_error_paths.py::*` (6), `test_main_finding_id_allowlist.py::*` (2), `test_main_operator_command_dispatch.py::*` (1), `test_main_operator_command_publish.py::*` (2)
+
+**Recommended follow-up (separate PR, owned by ws_bridge maintainer — not Qasim, not this PR).**
+
+1. Quickest unblock for CI: run ws_bridge unit tests with `pytest --forked` (or `pytest-xdist --dist=loadfile`) so each test file gets a fresh interpreter and a fresh asyncio runner. Cost: a few seconds of extra startup per file.
+2. Proper fix: refactor `frontend/ws_bridge/tests/conftest.py` so `fake_client` is **not** an `async`-generator fixture — return the FakeRedis instance from a sync fixture and let each test `await client.aclose()` itself in a try/finally. This eliminates the asyncgen teardown that pytest-asyncio is mishandling. (`app_and_redis` already uses `app.router.lifespan_context` correctly; it's `fake_client` upstream that triggers the leak.)
+3. While we're there: pin a `[tool.pytest.ini_options] asyncio_mode = "auto"` redundancy check and consider raising `asyncio_default_fixture_loop_scope` to `module` only after (2) lands.
+
+**Why not fix in this PR.** The plan's scope is EGS scenario-aligned coordination (Tasks 1–9). Touching the bridge test fixtures is a different review surface (Person 4's domain), would risk landing a fixture-shape change without that owner's eyes, and the failures pre-date this branch. Surfacing it here so the next ws_bridge PR can pick it up clean.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
