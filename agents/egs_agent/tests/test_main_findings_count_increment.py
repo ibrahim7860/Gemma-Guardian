@@ -33,6 +33,7 @@ from agents.egs_agent.coordinator import EGSCoordinator
 from agents.egs_agent.scenario_state import build_initial_egs_state
 from agents.egs_agent.validation import EGSValidationNode
 from shared.contracts import VERSION, validate
+from shared.contracts.logging import ValidationEventLogger
 
 
 def _finding(
@@ -229,5 +230,140 @@ def test_egs_state_remains_schema_valid_after_validation_event_refresh(
         # entirely; checking via `.get("attempt")` returns None for every
         # entry, which is correct — the poison value cannot leak through.
         assert all(e.get("attempt") != 99 for e in rve), rve
+
+    asyncio.run(run())
+
+
+def test_real_logger_writes_flow_through_tail_into_egs_state(
+    tmp_path, monkeypatch,
+):
+    """End-to-end pin of the real production write path:
+    ``ValidationEventLogger.log(...)`` -> JSONL file -> ``tail()`` ->
+    Contract-3 projection -> ``egs_state.recent_validation_events``.
+
+    The existing coverage in this module hand-rolls JSONL lines via
+    ``_validation_event``. That insulates the consumer-side tests from
+    fixture drift but leaves a real gap: nothing asserts that the canonical
+    writer (used by both the drone agent and the ws_bridge) actually
+    produces lines that survive `tail()`'s schema gate and reach
+    `egs_state` in Contract 3 shape.
+
+    This test closes that gap without Redis or Ollama: it uses the real
+    `ValidationEventLogger` (pointed at a `tmp_path` file via its `path`
+    constructor arg), runs the EGS graph for 5 ticks to fire the every-5th-
+    tick refresh, and asserts the events landed in egs_state with the
+    Contract 3 nested shape. Schema validity of the full envelope is the
+    load-bearing assertion.
+    """
+    log = tmp_path / "validation_events.jsonl"
+    real_logger = ValidationEventLogger(path=log)
+
+    # Drive the canonical write API exactly as the drone agent and the
+    # ws_bridge do. Three events from two drones, mix of outcomes that all
+    # project cleanly to Contract 3 (no `in_progress`).
+    real_logger.log(
+        agent_id="drone1",
+        layer="drone",
+        function_or_command="report_finding",
+        attempt=1,
+        valid=True,
+        rule_id=None,
+        outcome="success_first_try",
+        raw_call=None,
+    )
+    real_logger.log(
+        agent_id="drone2",
+        layer="drone",
+        function_or_command="report_finding",
+        attempt=2,
+        valid=True,
+        rule_id="DUPLICATE_FINDING",
+        outcome="corrected_after_retry",
+        raw_call={"finding_id": "f_drone2_001"},
+    )
+    real_logger.log(
+        agent_id="drone1",
+        layer="drone",
+        function_or_command="report_finding",
+        attempt=3,
+        valid=False,
+        rule_id="GPS_OUT_OF_ZONE",
+        outcome="failed_after_retries",
+        raw_call=None,
+    )
+
+    # Sanity: writer actually populated the file with three lines.
+    raw = log.read_text().splitlines()
+    assert len(raw) == 3, raw
+
+    # Defensive: each written line is itself Contract 11 valid. If this
+    # ever fails, the writer drifted from the schema and the bug is in
+    # `ValidationEventLogger.log`, not the consumer chain.
+    for line in raw:
+        evt = json.loads(line)
+        outcome_check = validate("validation_event", evt)
+        assert outcome_check.valid, (
+            f"ValidationEventLogger produced a Contract-11-invalid line: "
+            f"{outcome_check.errors}; line={evt}"
+        )
+
+    monkeypatch.setattr(validation_log_tail, "LOG_PATH", log)
+
+    async def run():
+        coord = EGSCoordinator(EGSValidationNode())
+
+        def empty_state(egs_state):
+            return {
+                "egs_state": egs_state,
+                "incoming_telemetry": [],
+                "incoming_findings": [],
+                "incoming_commands": [],
+                "messages_to_publish": [],
+                "trigger_replan": False,
+            }
+
+        last_state = empty_state(build_initial_egs_state("disaster_zone_v1"))
+        # 5 ticks: counter 1..5, refresh fires on the 5th.
+        for _ in range(5):
+            last_state = await coord.graph.ainvoke(
+                empty_state(last_state["egs_state"]),
+            )
+
+        rve = last_state["egs_state"]["recent_validation_events"]
+        # All three events written via the real logger should appear,
+        # projected to Contract 3 shape (timestamp, agent, task, outcome,
+        # issue) — no Contract 11 fields like `attempt` or `layer` leak in.
+        assert len(rve) == 3, (
+            f"expected 3 events from real logger to reach egs_state, "
+            f"got {len(rve)}: {rve}"
+        )
+        for entry in rve:
+            assert set(entry.keys()) == {
+                "timestamp", "agent", "task", "outcome", "issue",
+            }, (
+                f"projected entry has wrong keys (Contract 3 shape "
+                f"violation): {entry}"
+            )
+
+        # Spot-check field-level projection: `agent_id` -> `agent`,
+        # `function_or_command` -> `task`, `rule_id` -> `issue`.
+        agents_present = [e["agent"] for e in rve]
+        assert agents_present == ["drone1", "drone2", "drone1"], agents_present
+        tasks_present = [e["task"] for e in rve]
+        assert tasks_present == ["report_finding"] * 3, tasks_present
+        issues_present = [e["issue"] for e in rve]
+        assert issues_present == [
+            None, "DUPLICATE_FINDING", "GPS_OUT_OF_ZONE",
+        ], issues_present
+
+        # Load-bearing assertion: full envelope passes Contract 3 schema
+        # validation. This is what the ws_bridge publishes to Flutter, so a
+        # break here would break the dashboard render path documented in
+        # docs/runbooks/mcp-dom-verification.md.
+        outcome = validate("egs_state", last_state["egs_state"])
+        assert outcome.valid, (
+            f"egs_state failed Contract 3 schema validation after "
+            f"ValidationEventLogger -> tail() refresh: {outcome.errors}"
+        )
 
     asyncio.run(run())
