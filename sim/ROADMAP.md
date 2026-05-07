@@ -68,7 +68,8 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 - Stable, jitter-free sim runs for video capture. Fix any flakiness Ibrahim surfaces during recording.
 
 ### Phase G — Lock + reproduction docs
-- Co-write `docs/sim-reproduction.md` (or extend `docs/13-runtime-setup.md`) with Thayyil. Have an outside tester run cold from scratch on a fresh box; fix everything that breaks the cold run.
+- v1 draft of [`docs/sim-reproduction.md`](../docs/sim-reproduction.md) shipped on `sim/phase-g-reproduction-docs` (cross-platform prereqs, uv install, `pytest sim/ agents/mesh_simulator/ scripts/tests/`, the three escalating one-command demos, per-layer health checks, common-failures section drawn from `sim-live-run-notes.md` + `scripts/tests/`). Linked from `docs/13-runtime-setup.md`.
+- Remaining: co-write follow-ups with Thayyil, then have an outside tester run cold from scratch on a fresh box and fix everything that breaks the cold run.
 
 ### Phase H — Submission
 - Final repro-doc fixes from cold-tester feedback. Backup of the demo box. On-call for any submission-time sim issue.
