@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -136,7 +136,19 @@ def test_replan_reentrancy_guard_skips_concurrent_calls():
         # Pretend a replan is already running.
         coord._replan_in_flight = True
 
-        with patch("agents.egs_agent.coordinator.asyncio.create_task") as mock_create_task:
+        # When patching `asyncio.create_task`, any coroutine handed to the
+        # mock would otherwise be GC'd unawaited and trigger
+        # `RuntimeWarning: coroutine '_replan_impl' was never awaited`. The
+        # side_effect closes the coroutine so the mock observes the call but
+        # the coroutine resource is released cleanly.
+        def _close_coro(coro, *args, **kwargs):
+            coro.close()
+            return MagicMock()
+
+        with patch(
+            "agents.egs_agent.coordinator.asyncio.create_task",
+            side_effect=_close_coro,
+        ) as mock_create_task:
             await coord.replan(state)
             await coord.replan(state)
             assert mock_create_task.call_count == 0, (
@@ -145,7 +157,10 @@ def test_replan_reentrancy_guard_skips_concurrent_calls():
 
         # Now release the guard and confirm a single call would spawn one task.
         coord._replan_in_flight = False
-        with patch("agents.egs_agent.coordinator.asyncio.create_task") as mock_create_task:
+        with patch(
+            "agents.egs_agent.coordinator.asyncio.create_task",
+            side_effect=_close_coro,
+        ) as mock_create_task:
             await coord.replan(state)
             assert mock_create_task.call_count == 1
 
