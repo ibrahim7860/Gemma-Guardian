@@ -67,7 +67,7 @@ class FindingsPanel extends StatelessWidget {
 /// stable AND the Playwright e2e test can find the same Semantics
 /// identifiers from a cold start. Each chip carries:
 ///
-///   Semantics(identifier: 'findings-count-<type>', label: '<type>: <n>')
+///   `Semantics(identifier: 'findings-count-<type>', label: '<type>: <n>')`
 ///
 /// matching the precedent in [`drone_status_panel.dart`]'s
 /// `_StandaloneBadge`. The identifiers are load-bearing for both the
