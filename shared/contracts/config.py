@@ -2,9 +2,22 @@
 
 Aborts startup with a clear error if contract_version drifts from
 shared/VERSION. Exposes a CONFIG singleton.
+
+Environment overrides:
+    REDIS_URL   If set, overrides transport.redis_url at load time. Goes
+                through the same pattern validation as the YAML value
+                (must match ^redis(s)?://). Useful for ephemeral test
+                stacks (pytest fixtures, parallel CI lanes, demo runbooks
+                that boot a private redis-server on a free port).
+
+The CONFIG singleton is cached via lru_cache, so the override is read
+ONCE at first import. Set the env var before any agent module imports
+shared.contracts.config (e.g., as a prefix on the launch command:
+``REDIS_URL=redis://127.0.0.1:9999/0 uv run python -m agents.egs_agent.main``).
 """
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -76,8 +89,16 @@ class FieldAgentConfig(BaseModel):
     logging: _LoggingCfg
 
 
+_REDIS_URL_ENV = "REDIS_URL"
+
+
 def load_config(path: Path = CONFIG_PATH) -> FieldAgentConfig:
     raw = yaml.safe_load(path.read_text())
+    # REDIS_URL env override: routed through Pydantic so the same
+    # ^redis(s)?:// pattern guard fires on bad overrides as on bad YAML.
+    redis_override = os.environ.get(_REDIS_URL_ENV)
+    if redis_override:
+        raw.setdefault("transport", {})["redis_url"] = redis_override
     cfg = FieldAgentConfig(**raw)
     if cfg.contract_version != VERSION:
         raise RuntimeError(
