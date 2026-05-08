@@ -103,7 +103,7 @@ class _MapPanelState extends State<MapPanel> {
                     opacity: _imageLoaded ? _imageOpacityLoaded : 0.0,
                     duration: _imageFadeDuration,
                     child: Image.asset(
-                      path,
+                      _resolveAssetPath(path),
                       fit: BoxFit.fill,
                       gaplessPlayback: true,
                       errorBuilder: (ctx, _, _) {
@@ -392,6 +392,38 @@ class _Bbox {
 /// Adapter: BaseImageExtents (public) → _Bbox (private to map_panel).
 _Bbox _bboxFromExtents(BaseImageExtents e) =>
     _Bbox(e.latMin, e.latMax, e.lonMin, e.lonMax);
+
+/// Map a scenario-side path (`sim/fixtures/base_images/X.jpg`, the wire
+/// format on `egs.state.base_image_path`) onto the Flutter asset bundle
+/// path (`assets/base_images/X.jpg`, the path Image.asset expects).
+///
+/// Why the indirection exists: Flutter's asset bundler can't reach files
+/// outside `frontend/flutter_dashboard/`, so the static aerial lives in
+/// two places — `sim/fixtures/base_images/` (source of truth, where the
+/// fetch script writes and the LICENSES.md lives) and the bundled copy
+/// under `frontend/flutter_dashboard/assets/base_images/`. The two are
+/// kept byte-identical by `scripts/sync_flutter_base_images.py` +
+/// `scripts/tests/test_flutter_asset_sync.py`. The wire format stays
+/// repo-rooted (so debug logs / scenario YAMLs are self-describing); the
+/// dashboard maps to its bundle namespace at the rendering boundary.
+///
+/// Pass-through for paths that don't match the prefix — defensive against
+/// scenarios that publish a Flutter-relative path directly (allows test
+/// fixtures and future scenarios to opt out of the indirection cleanly).
+@visibleForTesting
+String resolveBaseImageAssetPath(String wirePath) =>
+    _resolveAssetPath(wirePath);
+
+const _simBaseImagesPrefix = "sim/fixtures/base_images/";
+const _flutterBaseImagesPrefix = "assets/base_images/";
+
+String _resolveAssetPath(String wirePath) {
+  if (wirePath.startsWith(_simBaseImagesPrefix)) {
+    return _flutterBaseImagesPrefix +
+        wirePath.substring(_simBaseImagesPrefix.length);
+  }
+  return wirePath;
+}
 
 /// Returns false if any drone or finding has finite coords outside [bbox].
 /// Used to auto-refit when the locked bbox doesn't represent current state

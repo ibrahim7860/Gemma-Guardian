@@ -243,6 +243,54 @@ void main() {
     });
   });
 
+  group('Asset path resolution (sim wire format → Flutter bundle)', () {
+    test('strips sim/fixtures/base_images/ prefix to assets/base_images/', () {
+      // Wire format published on egs.state by agents/egs_agent/scenario_state.py
+      // is repo-rooted — the dashboard maps it to its asset bundle namespace.
+      // Without this translation, Image.asset(wirePath) fails in production
+      // and only the test bundle (which uses the Flutter path directly)
+      // ever rendered the aerial. Caught in /review pre-landing.
+      expect(
+        resolveBaseImageAssetPath(
+          "sim/fixtures/base_images/disaster_zone_v1_base.jpg",
+        ),
+        "assets/base_images/disaster_zone_v1_base.jpg",
+      );
+    });
+
+    test('passes through paths that do not match the sim prefix', () {
+      // Defensive: scenario authors can opt out by publishing the Flutter
+      // path directly. Test fixtures rely on this.
+      expect(
+        resolveBaseImageAssetPath("assets/base_images/foo.jpg"),
+        "assets/base_images/foo.jpg",
+      );
+      expect(resolveBaseImageAssetPath("custom.jpg"), "custom.jpg");
+    });
+
+    testWidgets('end-to-end: sim wire path renders bundled asset',
+        (tester) async {
+      // Regression: the actual production path on egs.state is the sim
+      // path. The aerial must still render.
+      final s = MissionState();
+      s.applyStateUpdate(_baseStateUpdate(
+        path: "sim/fixtures/base_images/disaster_zone_v1_base.jpg",
+        extents: Map<String, dynamic>.from(_validExtents),
+      ));
+      await tester.pumpWidget(_wrap(s));
+      // Pump enough to let the Image decode (test bundle is synchronous).
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // The "Aerial overlay unavailable" toast must NOT appear — that
+      // would mean errorBuilder fired, which means the path didn't resolve.
+      expect(find.text("Aerial overlay unavailable"), findsNothing);
+      // AnimatedOpacity layer present, opacity reaches the loaded value.
+      final ao = tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity));
+      expect(ao.opacity, 0.80,
+          reason: 'aerial did not finish loading; check asset path resolution');
+    });
+  });
+
   group('Fallback path', () {
     testWidgets('no overlay → no AnimatedOpacity, grid is the background',
         (tester) async {
