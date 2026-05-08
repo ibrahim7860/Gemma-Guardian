@@ -66,6 +66,30 @@
         }
       }
     },
-    "active_zone_ids": {"type": "array", "items": {"type": "string", "minLength": 1}}
+    "active_zone_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "base_image_path": {
+      "description": "Optional. Repository-relative path to the static aerial image the Flutter map_panel renders as a background overlay. Set together with base_image_extents (or both omitted). Sourced from the active scenario YAML (see sim/scenarios/disaster_zone_v1.yaml).",
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"type": "null"}
+      ]
+    },
+    "base_image_extents": {
+      "description": "Optional. Lat/lon bbox the static aerial projects onto. Set together with base_image_path. Field validation rules: lat in [-90,90], lon in [-180,180], lat_min<lat_max, lon_min<lon_max. Enforced upstream in sim/scenario.py:BaseImageExtents.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lat_min", "lat_max", "lon_min", "lon_max"],
+          "properties": {
+            "lat_min": {"type": "number", "minimum": -90, "maximum": 90},
+            "lat_max": {"type": "number", "minimum": -90, "maximum": 90},
+            "lon_min": {"type": "number", "minimum": -180, "maximum": 180},
+            "lon_max": {"type": "number", "minimum": -180, "maximum": 180}
+          }
+        },
+        {"type": "null"}
+      ]
+    }
   }
 }

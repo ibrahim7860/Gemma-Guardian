@@ -7,6 +7,56 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../generated/contract_version.dart' as gen;
 
+/// Lat/lon bbox the static aerial overlay projects onto. Mirrors
+/// `sim/scenario.py:BaseImageExtents` and the matching JSON Schema block in
+/// `shared/schemas/egs_state.json`. Kept as a public type so the map panel
+/// can read it from MissionState without poking at raw Map shape.
+@immutable
+class BaseImageExtents {
+  final double latMin;
+  final double latMax;
+  final double lonMin;
+  final double lonMax;
+
+  const BaseImageExtents({
+    required this.latMin,
+    required this.latMax,
+    required this.lonMin,
+    required this.lonMax,
+  });
+
+  /// Parse a Contract-3 `base_image_extents` block. Returns null if any
+  /// required key is missing, non-finite, or violates min<max — the map
+  /// panel falls back to its procedural grid in that case (D2 fallback).
+  static BaseImageExtents? tryParse(Map<String, dynamic>? raw) {
+    if (raw == null) return null;
+    final latMin = (raw["lat_min"] as num?)?.toDouble();
+    final latMax = (raw["lat_max"] as num?)?.toDouble();
+    final lonMin = (raw["lon_min"] as num?)?.toDouble();
+    final lonMax = (raw["lon_max"] as num?)?.toDouble();
+    if (latMin == null || latMax == null || lonMin == null || lonMax == null) {
+      return null;
+    }
+    if (![latMin, latMax, lonMin, lonMax].every((v) => v.isFinite)) return null;
+    if (latMax <= latMin || lonMax <= lonMin) return null;
+    return BaseImageExtents(
+      latMin: latMin, latMax: latMax, lonMin: lonMin, lonMax: lonMax,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BaseImageExtents &&
+          other.latMin == latMin &&
+          other.latMax == latMax &&
+          other.lonMin == lonMin &&
+          other.lonMax == lonMax);
+
+  @override
+  int get hashCode => Object.hash(latMin, latMax, lonMin, lonMax);
+}
+
 /// Per-finding state machine for operator approve/dismiss interactions.
 ///
 /// "Idle" is represented by the finding_id being absent from
@@ -73,6 +123,26 @@ class MissionState extends ChangeNotifier {
   }
 
   bool get egsLinkSevered => _egsLinkSeveredCached;
+
+  /// Repository-relative path to the static aerial Flutter renders as a
+  /// map_panel background overlay. Sourced from `egs_state.base_image_path`
+  /// (Contract 3, optional). Null when the active scenario doesn't ship a
+  /// static aerial — map_panel falls back to its procedural grid.
+  String? get baseImagePath {
+    final v = egsState?["base_image_path"];
+    return (v is String && v.isNotEmpty) ? v : null;
+  }
+
+  /// Lat/lon bbox the static aerial projects onto. Set together with
+  /// [baseImagePath] (both come from the same scenario YAML pair, validated
+  /// upstream by `sim/scenario.py:Scenario._base_image_path_and_extents_paired`).
+  /// Returns null if the EGS hasn't published the field yet OR if it
+  /// arrived malformed; the map panel treats null as "no overlay, use grid."
+  BaseImageExtents? get baseImageExtents {
+    final raw = egsState?["base_image_extents"];
+    if (raw is! Map) return null;
+    return BaseImageExtents.tryParse(raw.cast<String, dynamic>());
+  }
 
   bool _computeEgsLinkSevered() {
     if (_egsLastSeenAt == null) return false;

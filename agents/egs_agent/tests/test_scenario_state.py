@@ -87,6 +87,41 @@ def test_build_initial_state_single_drone_smoke_degenerate_bbox():
     assert lon_max - lon_min > 0
 
 
+class TestBaseImagePassThrough:
+    """Task 8 of fixtures-swap plan: scenario YAML carries an optional
+    `base_image_path` + `base_image_extents` pair. When set, the EGS surfaces
+    them on egs.state so the Flutter map_panel can lock its bbox to the
+    aerial overlay (LOCKED DESIGN DECISION D1)."""
+
+    def test_disaster_zone_v1_includes_base_image_fields(self):
+        """disaster_zone_v1 ships a static aerial after PR #35; egs.state
+        must expose it so MissionState can plumb it to MapPanel."""
+        state = build_initial_egs_state("disaster_zone_v1")
+        assert "base_image_path" in state
+        assert state["base_image_path"] == (
+            "sim/fixtures/base_images/disaster_zone_v1_base.jpg"
+        )
+        assert state["base_image_extents"] == {
+            "lat_min": 33.9990,
+            "lat_max": 34.0010,
+            "lon_min": -118.5010,
+            "lon_max": -118.4990,
+        }
+        # Schema-validity check: the new fields don't violate Contract 3.
+        outcome = validate("egs_state", state)
+        assert outcome.valid is True, outcome.errors
+
+    def test_single_drone_smoke_omits_base_image_fields(self):
+        """single_drone_smoke has no static aerial — the fields stay omitted
+        (NOT set to null), so the Flutter side falls back to the procedural
+        grid (D2 universal fallback path)."""
+        state = build_initial_egs_state("single_drone_smoke")
+        assert "base_image_path" not in state
+        assert "base_image_extents" not in state
+        outcome = validate("egs_state", state)
+        assert outcome.valid is True, outcome.errors
+
+
 def test_malformed_scenario_yaml_raises_clean_error(tmp_path, monkeypatch):
     """T-GAP-3: a YAML missing a required Scenario field must raise
     pydantic.ValidationError, not silently produce a half-built state."""

@@ -213,3 +213,114 @@ class TestLoadGroundTruth:
         p.write_text(json.dumps(bad))
         with pytest.raises(ValidationError):
             load_groundtruth(p)
+
+
+# ---- base_image fields (Task 8 of fixtures-swap plan) -----------------------
+# When `base_image_path` is set on a scenario, the Flutter map panel locks its
+# bbox to `base_image_extents` (LOCKED DESIGN DECISION D1). The two fields go
+# together — neither makes sense alone — so the loader enforces both-or-neither
+# and rejects inverted bbox bounds. Existing scenarios without these fields
+# still load (backward compat for single_drone_smoke + resilience_v1, which
+# don't ship a static aerial today).
+
+_BASE_IMAGE_BLOCK = """\
+base_image_path: sim/fixtures/base_images/disaster_zone_v1_base.jpg
+base_image_extents:
+  lat_min: 33.9990
+  lat_max: 34.0010
+  lon_min: -118.5010
+  lon_max: -118.4990
+"""
+
+
+class TestScenarioBaseImage:
+    def test_loads_with_base_image_fields(self, tmp_path: Path):
+        p = tmp_path / "scenario.yaml"
+        p.write_text(_VALID_YAML + _BASE_IMAGE_BLOCK)
+        s = load_scenario(p)
+        assert s.base_image_path == "sim/fixtures/base_images/disaster_zone_v1_base.jpg"
+        assert s.base_image_extents is not None
+        assert s.base_image_extents.lat_min == 33.9990
+        assert s.base_image_extents.lon_max == -118.4990
+
+    def test_loads_without_base_image_fields(self, valid_yaml_path: Path):
+        """Backward compat: scenarios without base_image_* still load.
+        single_drone_smoke + resilience_v1 don't ship a static aerial."""
+        s = load_scenario(valid_yaml_path)
+        assert s.base_image_path is None
+        assert s.base_image_extents is None
+
+    def test_rejects_path_without_extents(self, tmp_path: Path):
+        """Path-only is meaningless: Flutter can't project the image without
+        a bbox. Catch the typo at load time, not as a silent grid fallback."""
+        body = _VALID_YAML + "base_image_path: foo.jpg\n"
+        p = tmp_path / "scenario.yaml"
+        p.write_text(body)
+        with pytest.raises(ValidationError, match="base_image_extents"):
+            load_scenario(p)
+
+    def test_rejects_extents_without_path(self, tmp_path: Path):
+        """Extents-only is also meaningless: nothing to project."""
+        body = _VALID_YAML + (
+            "base_image_extents:\n"
+            "  lat_min: 33.9990\n"
+            "  lat_max: 34.0010\n"
+            "  lon_min: -118.5010\n"
+            "  lon_max: -118.4990\n"
+        )
+        p = tmp_path / "scenario.yaml"
+        p.write_text(body)
+        with pytest.raises(ValidationError, match="base_image_path"):
+            load_scenario(p)
+
+    def test_rejects_inverted_lat_bounds(self, tmp_path: Path):
+        body = _VALID_YAML + (
+            "base_image_path: foo.jpg\n"
+            "base_image_extents:\n"
+            "  lat_min: 34.0010\n"   # max < min
+            "  lat_max: 33.9990\n"
+            "  lon_min: -118.5010\n"
+            "  lon_max: -118.4990\n"
+        )
+        p = tmp_path / "scenario.yaml"
+        p.write_text(body)
+        with pytest.raises(ValidationError, match="lat_min"):
+            load_scenario(p)
+
+    def test_rejects_inverted_lon_bounds(self, tmp_path: Path):
+        body = _VALID_YAML + (
+            "base_image_path: foo.jpg\n"
+            "base_image_extents:\n"
+            "  lat_min: 33.9990\n"
+            "  lat_max: 34.0010\n"
+            "  lon_min: -118.4990\n"  # max < min
+            "  lon_max: -118.5010\n"
+        )
+        p = tmp_path / "scenario.yaml"
+        p.write_text(body)
+        with pytest.raises(ValidationError, match="lon_min"):
+            load_scenario(p)
+
+    def test_rejects_extra_unknown_top_level_key(self, tmp_path: Path):
+        """Sanity: extra=forbid still bites for typos, even after we add
+        the two new fields. Catches `base_image_pat` (missing 'h')."""
+        body = _VALID_YAML + "base_image_pat: foo.jpg\n"
+        p = tmp_path / "scenario.yaml"
+        p.write_text(body)
+        with pytest.raises(ValidationError):
+            load_scenario(p)
+
+    def test_loads_real_disaster_zone_v1(self):
+        """Lockdown: the actual checked-in disaster_zone_v1.yaml carries
+        the locked extents that match its groundtruth + the static aerial.
+        Catches accidental drift from anyone editing the YAML."""
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        s = load_scenario(repo_root / "sim" / "scenarios" / "disaster_zone_v1.yaml")
+        assert s.base_image_path == "sim/fixtures/base_images/disaster_zone_v1_base.jpg"
+        assert s.base_image_extents is not None
+        # Locked to disaster_zone_v1 groundtruth.json extents (see
+        # sim/scenarios/disaster_zone_v1_groundtruth.json).
+        assert s.base_image_extents.lat_min == 33.9990
+        assert s.base_image_extents.lat_max == 34.0010
+        assert s.base_image_extents.lon_min == -118.5010
+        assert s.base_image_extents.lon_max == -118.4990

@@ -7,6 +7,18 @@ scenario_id: disaster_zone_v1
 origin: {lat: 34.0000, lon: -118.5000}
 area_m: 200
 
+# Static aerial overlay rendered as the Flutter map_panel background. Both
+# fields go together (see sim/scenario.py BaseImageExtents validator). The
+# asset is fetched into sim/fixtures/base_images/ via
+# scripts/fetch_disaster_fixtures.py and synced byte-for-byte into the
+# Flutter assets dir by scripts/sync_flutter_base_images.py (verified in CI).
+base_image_path: sim/fixtures/base_images/disaster_zone_v1_base.jpg
+base_image_extents:
+  lat_min: 33.9990
+  lat_max: 34.0010
+  lon_min: -118.5010
+  lon_max: -118.4990
+
 drones:
   - drone_id: drone1
     home: {lat: 34.0001, lon: -118.5001, alt: 0}
