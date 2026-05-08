@@ -1,5 +1,6 @@
 {
   "scenario_id": "resilience_v1",
+  "schema_version": "1.0.0",
   "extents": {
     "lat_min": 33.9850,
     "lat_max": 34.0150,
@@ -7,18 +8,60 @@
     "lon_max": -118.4850
   },
   "victims": [
-    {"id": "v01", "lat": 34.0017, "lon": -118.5000, "frame_file": "placeholder_victim_01.jpg", "in_or_near": "block_a_north"}
+    {
+      "id": "v01", "lat": 34.0017, "lon": -118.5000,
+      "frame_file": "placeholder_victim_01.jpg",
+      "in_or_near": "block_a_north",
+      "expected_finding_type": "victim",
+      "expected_severity": 5,
+      "min_confidence": 0.55
+    }
   ],
   "fires": [
-    {"id": "f01", "lat": 33.9986, "lon": -118.5000, "frame_file": "placeholder_fire_01.jpg", "intensity": "medium"},
-    {"id": "f02", "lat": 33.9959, "lon": -118.5000, "frame_file": "placeholder_smoke_01.jpg", "intensity": "low"}
+    {
+      "id": "f01", "lat": 33.9986, "lon": -118.5000,
+      "frame_file": "placeholder_fire_01.jpg",
+      "intensity": "medium",
+      "expected_finding_type": "fire",
+      "expected_severity": 4,
+      "min_confidence": 0.6
+    },
+    {
+      "id": "f02", "lat": 33.9959, "lon": -118.5000,
+      "frame_file": "placeholder_smoke_01.jpg",
+      "intensity": "low",
+      "expected_finding_type": "smoke",
+      "expected_severity": 3,
+      "min_confidence": 0.5
+    }
   ],
   "damaged_structures": [
-    {"id": "ds_a2", "lat": 34.0055, "lon": -118.5000, "frame_file": "placeholder_block_a_02.jpg", "damage_level": "major_damage"},
-    {"id": "ds_b1", "lat": 34.0000, "lon": -118.4995, "frame_file": "placeholder_block_b_01.jpg", "damage_level": "minor_damage"}
+    {
+      "id": "ds_a2", "lat": 34.0055, "lon": -118.5000,
+      "frame_file": "placeholder_block_a_02.jpg",
+      "damage_level": "major_damage",
+      "expected_finding_type": "damaged_structure",
+      "expected_severity": 4,
+      "min_confidence": 0.55
+    },
+    {
+      "id": "ds_b1", "lat": 34.0000, "lon": -118.4995,
+      "frame_file": "placeholder_block_b_01.jpg",
+      "damage_level": "minor_damage",
+      "expected_finding_type": "damaged_structure",
+      "expected_severity": 2,
+      "min_confidence": 0.4
+    }
   ],
   "blocked_routes": [
-    {"id": "br01", "lat": 33.9931, "lon": -118.5000, "frame_file": "placeholder_debris_01.jpg", "blockage_type": "debris"}
+    {
+      "id": "br01", "lat": 33.9931, "lon": -118.5000,
+      "frame_file": "placeholder_debris_01.jpg",
+      "blockage_type": "debris",
+      "expected_finding_type": "blocked_route",
+      "expected_severity": 4,
+      "min_confidence": 0.5
+    }
   ],
   "scripted_events": [
     {"t": 30,  "type": "drone_failure",    "drone_id": "drone2"},

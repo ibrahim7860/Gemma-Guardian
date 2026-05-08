@@ -74,16 +74,23 @@ time advances in wall-clock real-time at 1× speed by default (configurable).
 
 **Notional area:** 200m × 200m (matches the ground-truth coordinate space used in the paper).
 
-**Frame library targets — what's in `sim/fixtures/frames/`:**
-- 6 frames of intact or lightly-damaged structures (xBD "no-damage" / "minor-damage" crops)
-- 4 frames with clearly damaged or destroyed structures ("major-damage" / "destroyed" crops)
-- 3-4 frames with visible victims or bright victim markers
-- 2-3 frames with fire / smoke (xBD "fire" class, or public wildfire aerials)
-- 2-3 frames with blocked roads or debris
+**Frame library — what's in `sim/fixtures/frames/`** (as of 2026-05-08, see
+`docs/plans/2026-05-08-thayyil-fixtures-swap.md` for the swap PR):
+- 7 placeholder slots (filenames preserved across the swap so scenario YAMLs
+  don't change): block_a_01/02, block_b_01, intact_01, fire_01, smoke_01,
+  debris_01. Plus the prior `placeholder_victim_01.jpg` (FEMA Katrina, swap
+  precedent). All 8 are real public-domain aerials (FEMA Photo Library +
+  USFWS), every one with full LICENSES.md provenance and a `source_sha256`
+  drift lockdown in `scripts/fixtures_manifest.json`.
+- A separate `sim/fixtures/base_images/disaster_zone_v1_base.jpg` (Mississippi
+  post-Katrina blue-tarp aerial) used as the Flutter map-panel background.
 
-**Visual strategy:** xBD post-disaster satellite/aerial imagery is more visually compelling than
-synthetic 3D rendering, and is the same data the vision fine-tuning pipeline trains on. This
-eliminates sim-to-real gap entirely for the vision task.
+**Visual strategy:** real public-domain disaster aerials are more visually
+compelling than synthetic 3D rendering and credible for the writeup. They are
+NOT the xBD dataset itself — xBD-proper (xView2 credentials-gated) is the ML
+fine-tune corpus and remains a separate concern under `ml/data_prep/`. For the
+sim's vision-iteration purpose, public-domain aerials are functionally
+equivalent.
 
 ## Victim Representation
 
