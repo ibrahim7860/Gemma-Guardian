@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/fixtures_manifest.json",
+  "title": "Fixtures Manifest (v1, added 2026-05-08)",
+  "description": "Audit-trail manifest for sim/fixtures/frames/ image fetches. Each entry pins a public-domain source URL, sha256 of the upstream bytes (drift detector), license, and resize spec. Consumed by scripts/fetch_disaster_fixtures.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "fixtures"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filename",
+          "source_url",
+          "source_sha256",
+          "title",
+          "author",
+          "license",
+          "license_url",
+          "retrieved",
+          "target_size",
+          "jpeg_quality",
+          "semantic_role",
+          "scenario_use"
+        ],
+        "properties": {
+          "filename": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+\\.(jpg|jpeg|png)$"
+          },
+          "source_url": {"type": "string", "format": "uri", "minLength": 1},
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "lowercase hex sha256 of the upstream bytes; verified pre-Pillow on every fetch"
+          },
+          "title": {"type": "string", "minLength": 1},
+          "author": {"type": "string", "minLength": 1},
+          "license": {"type": "string", "minLength": 1},
+          "license_url": {"type": "string", "format": "uri", "minLength": 1},
+          "retrieved": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "ISO-8601 calendar date (YYYY-MM-DD)"
+          },
+          "crop_box": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 0},
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "[left, top, right, bottom] in source-image pixels"
+              }
+            ]
+          },
+          "target_size": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1, "maximum": 4096},
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "[max_width, max_height]; aspect ratio preserved via Image.thumbnail"
+          },
+          "jpeg_quality": {"type": "integer", "minimum": 1, "maximum": 100},
+          "semantic_role": {"type": "string", "minLength": 1},
+          "scenario_use": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
