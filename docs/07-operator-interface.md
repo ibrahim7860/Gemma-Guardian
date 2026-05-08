@@ -60,6 +60,8 @@ Renders the simulated environment in top-down view.
 
 **Implementation note:** Don't try to make this look like Google Maps. It's a static aerial screenshot with overlays driven by Redis state. Functional > pretty.
 
+**As-shipped 2026-05-08 (Task 8 of fixtures-swap plan, PR #36):** the static aerial is the FEMA Mississippi post-Katrina blue-tarp scene at `sim/fixtures/base_images/disaster_zone_v1_base.jpg`, rendered by `frontend/flutter_dashboard/lib/widgets/map_panel.dart` as a 0.80-opacity overlay above a procedural-grid fallback (LOCKED DESIGN DECISION D2). The bbox locks to `scenario.base_image_extents` when present (D1); drones outside those extents render as edge chevrons with tap-toast distance/cardinal. Drone-id labels render in white pills, finding markers carry a 7px white halo, and touch targets meet the iOS 44px minimum (D3). Scenarios that don't ship an aerial (e.g. `single_drone_smoke`, `resilience_v1`) fall back to the grid automatically.
+
 ## Panel 2: Drone Status
 
 For each drone, show:
