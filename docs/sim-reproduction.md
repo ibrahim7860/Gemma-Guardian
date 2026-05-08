@@ -368,7 +368,41 @@ to inspect. Regression coverage:
 `test_launch_swarm_duration_propagates_to_runners` and
 `test_launch_swarm_default_no_duration_flag_anywhere`.
 
-## 7. Cross-references
+## 7. Reproducing fixture images
+
+The 8 JPEGs under `sim/fixtures/frames/` and the static aerial under
+`sim/fixtures/base_images/` are real public-domain disaster aerials
+(FEMA Photo Library + USFWS), not synthetic. The full source manifest
+lives at `scripts/fixtures_manifest.json` and the fetch is fully
+reproducible:
+
+```bash
+uv run python -m scripts.fetch_disaster_fixtures --dry-run     # preview URLs
+uv run python -m scripts.fetch_disaster_fixtures               # fetch + write
+```
+
+Re-running is byte-stable so long as the upstream Wikimedia/FEMA bytes
+haven't been re-encoded — every entry in the manifest pins a
+`source_sha256` and the script verifies the upstream payload hash BEFORE
+Pillow processes it. If a future re-fetch fails with `source sha256
+mismatch`, that's the lockdown working as designed: the upstream changed,
+so the manifest must be reviewed manually before refreshing.
+
+Every file has a full provenance entry in
+`sim/fixtures/frames/LICENSES.md` (or
+`sim/fixtures/base_images/LICENSES.md` for the scene aerial). The
+provenance lockdown test at `sim/tests/test_fixture_provenance.py` blocks
+any swap that drops attribution or violates the ≤640×480 / ≤200KB
+constraint, and the scenario-load regression test at
+`sim/tests/test_scenario_loads_with_real_fixtures.py` walks all three
+scenarios through `FrameServer(tick_index=0)` to catch corrupt or
+mis-encoded JPEGs that pass magic-byte checks but fail Pillow decode.
+
+xBD-proper (xView2 credentials-gated) is unaffected by this — that's the
+ML fine-tune pipeline at `ml/data_prep/download_xbd.py` and remains a
+separate concern.
+
+## 8. Cross-references
 
 - Per-platform install (Python, Redis, Ollama):
   [`13-runtime-setup.md`](13-runtime-setup.md)

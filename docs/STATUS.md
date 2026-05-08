@@ -43,17 +43,17 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Left (Days 14–16):** Beat 5 offline proof; demo video capture + edit; writeup final pass; README finalization; Kaggle submission form; two-machine backup with Thayyil.
 
-**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber); static aerial base image for map panel (depends on Thayyil's xBD frame swap).
+**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber). Static aerial base image for map panel (Mississippi post-Katrina blue-roof FEMA aerial) now lives at `sim/fixtures/base_images/disaster_zone_v1_base.jpg` after the 2026-05-08 fixtures swap; Flutter map-panel wiring is in flight on `feature/thayyil-fixtures-swap` (Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`).
 
 ### Thayyil — Simulation Co-Pilot (paired with Hazim)
 
-**Done:** Co-author on sim PRs #11, #13, #14, #17, #18. Placeholder frames in `sim/fixtures/frames/`.
-
-**Left (Kaleel-blocking, Days 6–9):** Swap placeholder JPEGs for real xBD post-disaster crops (filenames preserved); ground-truth manifest expansion.
+**Done:** Co-author on sim PRs #11, #13, #14, #17, #18. Placeholder frames in `sim/fixtures/frames/` swapped for real public-domain disaster aerials via `scripts/fetch_disaster_fixtures.py` (FEMA Photo Library + USFWS, 7 placeholders + 1 base aerial; reproducible from `scripts/fixtures_manifest.json` with `source_sha256` drift detection). Ground-truth manifest expanded with `expected_finding_type` / `expected_severity` / `min_confidence` on both `disaster_zone_v1_groundtruth.json` and `resilience_v1_groundtruth.json` for automated perception eval scoring. Provenance + groundtruth + scenario-load lockdown tests green (76 tests across `sim/tests/` and `scripts/tests/`).
 
 **Left (Days 10–13):** Resilience scenario polish; integration testing prep harness for Hazim.
 
 **Left (Days 15–16):** Reproduction docs cold-tested from a fresh machine; on-call for sim issues during submission.
+
+**Note:** xBD-proper (xView2 credentials gated) is unaffected by this swap and remains Kaleel's GATE 3 fine-tune path. The swapped sim fixtures are functionally equivalent for vision-iteration and demo-footage purposes.
 
 ## Risk register (Day 7)
 
@@ -61,7 +61,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 |---|---|---|---|---|
 | ~~GATE 2 slips today (Qasim's EGS not consuming real findings + reflecting into `egs.state`)~~ | ~~closed~~ | — | Qasim | **CLOSED 2026-05-07.** Scenario-derived `zone_polygon` + real findings consumption + Contract-11 validation-events tail shipped on `feature/qasim-egs-gate2-scenario-aligned`; 37 EGS tests + Playwright e2e green. |
 | GATE 3 NO-GO (fine-tuning fails) | Documented | Low — fall back to base Gemma 4 + heavy prompts | Kaleel | Decision Day 10 May 12 |
-| xBD frames not in `sim/fixtures/frames/` by Day 9 (TODAY = Day 7) | Medium | Medium — Kaleel iterates on placeholders, vision quality drops before fine-tune | Thayyil | Swap is one commit; filenames preserved. Escalate at standup if not landed by Day 8 |
+| ~~xBD frames not in `sim/fixtures/frames/` by Day 9~~ | ~~closed~~ | — | Thayyil | **CLOSED 2026-05-08.** Real public-domain FEMA / USFWS aerials swapped in via `scripts/fetch_disaster_fixtures.py` on `feature/thayyil-fixtures-swap`. xBD-proper (xView2 credentials gated) untouched; sim fixtures use functionally-equivalent PD aerials with full LICENSES.md provenance. |
 | ~~Beat 3b unfilmable: live Gemma `report_finding` not verified end-to-end through dashboard~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-06.** Live `report_finding` on CC0 FEMA Katrina image verified 5× (`docs/sim-live-run-notes.md` Gap #2); DOM render verified by `test_e2e_playwright_dom_render.py` + MCP capture at `docs_assets/dashboard-finding-rendered.png`. |
 | ~~Storyboard Beat 4 unfilmable (no STANDALONE UI)~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-07.** Banner + badge shipped (#28); Playwright e2e + MCP capture verified (#29); `docs_assets/dashboard-egs-severed.png` is the reference asset. Awaits Kaleel's runtime `agent_status` flips for full live light-up (TODOS.md). |
 
