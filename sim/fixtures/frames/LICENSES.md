@@ -15,3 +15,87 @@ non-placeholder images and require attribution:
 - **Why this image:** Frame designated for drone1 ticks 61–90 in
   `sim/scenarios/disaster_zone_v1.yaml`. Used in live-Gemma verification
   to drive a real `report_finding` tool call on real disaster imagery.
+
+## placeholder_block_a_01.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/e/ef/FEMA_-_38379_-_Aerial_of_a_Texas_waterfront_community.jpg
+- **Source sha256:** `1969d43d26691e1b1db38538ef6725577a41a80eb3d46af940bbd94dd938ff00`
+- **Title:** FEMA - 38379 - Aerial of a Texas waterfront community
+- **Author / Credit:** Jocelyn Augustino / FEMA
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** INTACT urban block aerial — pre-disaster control showing a coastal Texas waterfront community with homes and roofs largely intact after Hurricane Ike.
+- **Scenario use:** disaster_zone_v1 drone1 ticks 0-30 (intact baseline)
+
+## placeholder_block_a_02.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/4/44/FEMA_Aerial_view_of_May_20%2C_2013_Moore%2C_Oklahoma_tornado_damage.jpg
+- **Source sha256:** `545e53eceaabffac3c20252081abcc7751d7950bd161c135f0397762b993af03`
+- **Title:** FEMA Aerial view of May 20, 2013 Moore, Oklahoma tornado damage
+- **Author / Credit:** Jocelyn Augustino / FEMA
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** DAMAGED structure (major_damage) — overhead aerial of post-EF5 tornado destruction in Moore, OK showing leveled residential blocks and slab-only foundations.
+- **Scenario use:** disaster_zone_v1 drone1 tick ~31+ (damaged target finding)
+
+## placeholder_block_b_01.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/4/4d/FEMA_-_18203_-_Photograph_by_Mark_Wolfe_taken_on_10-30-2005_in_Mississippi.jpg
+- **Source sha256:** `ff9d4b8552f075888aa3b2d2ab45916e70593f59d057ad67e0401637e8f0b6ff`
+- **Title:** FEMA - 18203 - Photograph by Mark Wolfe taken on 10-30-2005 in Mississippi (FEMA temporary apartment complex, Long Beach, MS)
+- **Author / Credit:** Mark Wolfe / FEMA
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** INTACT urban block aerial — overhead view of a FEMA temporary apartment complex in Long Beach, MS showing organized rows of intact buildings (post-Katrina recovery housing).
+- **Scenario use:** disaster_zone_v1 drone2 ticks 0-60 (intact baseline)
+
+## placeholder_intact_01.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/2/2b/FEMA_-_18205_-_Photograph_by_Mark_Wolfe_taken_on_10-30-2005_in_Mississippi.jpg
+- **Source sha256:** `1f4f9338c7302eb7d097e507d4abfa35d0ce4d4a021e18657e6061423ebe9494`
+- **Title:** FEMA - 18205 - Photograph by Mark Wolfe taken on 10-30-2005 in Mississippi (FEMA travel trailers at McLeod Park, Hancock County)
+- **Author / Credit:** Mark Wolfe / FEMA
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** INTACT building/suburb aerial (negative example) — overhead of FEMA travel-trailer staging area at McLeod Park, Hancock County, MS with surrounding intact tree cover and structures.
+- **Scenario use:** disaster_zone_v1 drone3 ticks 91-240 (negative-example intact frame)
+
+## placeholder_fire_01.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/3/3b/Big_forest_fire_from_plane.jpg
+- **Source sha256:** `d5aa3c82fb4ad8538b04e303cae32e7050bba8a0befbfbb4b0528679497f3583`
+- **Title:** Big forest fire from plane
+- **Author / Credit:** U.S. Fish and Wildlife Service
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FWS)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** ACTIVE FIRE with visible orange flames and dense smoke column, captured aerially from a fixed-wing aircraft window above a boreal forest fire (medium intensity).
+- **Scenario use:** disaster_zone_v1 active-fire detection scenarios
+
+## placeholder_smoke_01.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/6/67/Aerial_photography_of_forest_fire_and_smoke.jpg
+- **Source sha256:** `4c72a401bee750d5bc0c3376919c794965df5219a5c5a13d8c164707158f1ef9`
+- **Title:** Aerial photography of forest fire and smoke
+- **Author / Credit:** Reid Laura / U.S. Fish and Wildlife Service
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FWS)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** SMOKE PLUME aerial — wide overhead view of multiple smoke plumes drifting across forested terrain with no clearly visible open flame (low-intensity smoke-only scene).
+- **Scenario use:** disaster_zone_v1 smoke-detection scenarios (low-confidence fire signal)
+
+## placeholder_debris_01.jpg
+
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/e/ee/FEMA_-_38377_-_Aerial_of_storm_surge_debris_deposit_in_Texas.jpg
+- **Source sha256:** `c14533ca11fd952580aae1752dc690c74a03b28d0b45505bcf7e182a13ecaeac`
+- **Title:** FEMA - 38377 - Aerial of storm surge debris deposit in Texas
+- **Author / Credit:** Jocelyn Augustino / FEMA
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** DEBRIS FIELD aerial — overhead of a storm-surge debris deposit (timber, building remnants) piled along a road corridor in Galveston, TX after Hurricane Ike.
+- **Scenario use:** disaster_zone_v1 debris/blocked-road detection scenarios
