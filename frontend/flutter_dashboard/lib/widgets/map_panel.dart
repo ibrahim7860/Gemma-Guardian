@@ -19,6 +19,19 @@ Map<String, Color> palettePreview(List<String> droneIds) {
   return {for (var i = 0; i < sorted.length; i++) sorted[i]: _palette[i % _palette.length]};
 }
 
+/// Toast duration for the missing-asset and chevron-tap SnackBars. Locked
+/// at 4s per LOCKED DESIGN DECISION D2 ("4-second auto-dismissed toast").
+const _toastDuration = Duration(seconds: 4);
+
+/// Image fade-in duration when the static aerial decodes (D2).
+const _imageFadeDuration = Duration(milliseconds: 150);
+
+/// Aerial overlay opacity when fully loaded. Tuned for marker contrast on
+/// photographic backgrounds (D3) — 0.80 lets the underlying grid show
+/// through enough that satellite-blue rooftops don't steal attention from
+/// the colored drone markers.
+const _imageOpacityLoaded = 0.80;
+
 class MapPanel extends StatefulWidget {
   const MapPanel({super.key});
 
@@ -28,6 +41,9 @@ class MapPanel extends StatefulWidget {
 
 class _MapPanelState extends State<MapPanel> {
   _Bbox? _bbox;
+  bool _imageLoaded = false;
+  String? _imageLoadedFor; // path the loaded flag corresponds to
+  bool _toastScheduled = false;
 
   @override
   Widget build(BuildContext context) {
@@ -35,22 +51,33 @@ class _MapPanelState extends State<MapPanel> {
       builder: (_, mission, _) {
         final drones = mission.activeDrones.whereType<Map<String, dynamic>>().toList();
         final findings = mission.activeFindings.whereType<Map<String, dynamic>>().toList();
-        final hasData = drones.isNotEmpty || findings.isNotEmpty;
 
-        if (!hasData) {
-          return const Center(child: Text("Waiting for state…"));
+        // Reset image-loaded latch if the path changed (mission switch /
+        // EGS replan). Without this, a swap to a missing asset would never
+        // re-fire the errorBuilder.
+        final path = mission.baseImagePath;
+        if (_imageLoadedFor != path) {
+          _imageLoaded = false;
+          _imageLoadedFor = path;
+          _toastScheduled = false;
         }
 
-        // Lock bbox on first non-empty frame.
-        _bbox ??= _computeBbox(drones, findings);
-
-        // Self-heal if the locked bbox no longer covers any current point.
-        // Defends against the (0,0) "no-GPS-yet" sentinel: if the first
-        // frame contained only sentinel coords and now real coords arrive
-        // outside the original ±1° box, we recompute instead of silently
-        // showing an empty map.
-        if (!_bboxStillCovers(_bbox!, drones, findings)) {
-          _bbox = _computeBbox(drones, findings);
+        // D1: lock bbox to base_image_extents when present.
+        final baseExtents = mission.baseImageExtents;
+        final hasOverlay = path != null && baseExtents != null;
+        if (hasOverlay) {
+          _bbox = _bboxFromExtents(baseExtents);
+        } else {
+          // Pre-existing data-driven path: lock on first non-empty frame,
+          // self-heal if the locked bbox no longer covers any current point.
+          final hasData = drones.isNotEmpty || findings.isNotEmpty;
+          if (!hasData) {
+            return const Center(child: Text("Waiting for state…"));
+          }
+          _bbox ??= _computeBbox(drones, findings);
+          if (!_bboxStillCovers(_bbox!, drones, findings)) {
+            _bbox = _computeBbox(drones, findings);
+          }
         }
         final bbox = _bbox!;
         final colors = palettePreview([
@@ -59,8 +86,47 @@ class _MapPanelState extends State<MapPanel> {
 
         return LayoutBuilder(builder: (context, constraints) {
           final size = Size(constraints.maxWidth, constraints.maxHeight);
+          // Layer order (bottom → top):
+          //   1. _GridBackgroundPainter — synchronous, always paints
+          //   2. AnimatedOpacity(Image.asset) — fades in at 0.80 over 150ms
+          //   3. _ProjectionPainter — markers only (drones, finding dots)
+          //   4. Finding GestureDetectors (tap targets, beneath drones)
+          //   5. Drone GestureDetectors + label pills
+          //   6. Off-extents drone chevrons (only when overlay locked)
+          //   7. Refit IconButton (hidden when overlay locked, D1)
           return Stack(
             children: [
+              CustomPaint(size: Size.infinite, painter: _GridBackgroundPainter()),
+              if (hasOverlay)
+                Positioned.fill(
+                  child: AnimatedOpacity(
+                    opacity: _imageLoaded ? _imageOpacityLoaded : 0.0,
+                    duration: _imageFadeDuration,
+                    child: Image.asset(
+                      _resolveAssetPath(path),
+                      fit: BoxFit.fill,
+                      gaplessPlayback: true,
+                      errorBuilder: (ctx, _, _) {
+                        _scheduleToast(
+                          ctx,
+                          "Aerial overlay unavailable",
+                          key: "asset_error_$path",
+                        );
+                        return const SizedBox.shrink();
+                      },
+                      frameBuilder: (_, child, frame, wasSynchronouslyLoaded) {
+                        if (frame != null && !_imageLoaded) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && !_imageLoaded) {
+                              setState(() => _imageLoaded = true);
+                            }
+                          });
+                        }
+                        return child;
+                      },
+                    ),
+                  ),
+                ),
               CustomPaint(
                 size: Size.infinite,
                 painter: _ProjectionPainter(
@@ -70,20 +136,26 @@ class _MapPanelState extends State<MapPanel> {
                   colors: colors,
                 ),
               ),
-              // Eng-review issue 2A: paint order is findings UNDER
-              // drones (see _ProjectionPainter.paint). Tap order must
-              // match: findings FIRST in the Stack so drones sit on
-              // top of finding hit-boxes when co-located.
+              // Tap order: findings UNDER drones, so drones win when
+              // co-located (matches paint order in _ProjectionPainter).
               ..._buildFindingMarkers(findings, bbox, size, mission),
-              ..._buildDroneMarkers(drones, bbox, size, mission),
-              Positioned(
-                top: 4, right: 4,
-                child: IconButton(
-                  tooltip: "Refit",
-                  icon: const Icon(Icons.center_focus_strong),
-                  onPressed: () => setState(() => _bbox = null),
-                ),
+              ..._buildDroneMarkers(
+                drones: drones,
+                bbox: bbox,
+                size: size,
+                mission: mission,
+                colors: colors,
+                hasOverlay: hasOverlay,
               ),
+              if (!hasOverlay)
+                Positioned(
+                  top: 4, right: 4,
+                  child: IconButton(
+                    tooltip: "Refit",
+                    icon: const Icon(Icons.center_focus_strong),
+                    onPressed: () => setState(() => _bbox = null),
+                  ),
+                ),
             ],
           );
         });
@@ -91,21 +163,52 @@ class _MapPanelState extends State<MapPanel> {
     );
   }
 
-  static const double _droneHitRadius = 18;
-  static const double _findingHitRadius = 14;
+  // D3: touch targets bumped from 18/14 to 24/24 (48px hit area). The
+  // 36px / 28px diameters of the prior values were below the iOS 44px
+  // minimum and the WCAG 24x24 minimum — fixed here while we're in the
+  // file (pre-existing a11y gap, called out in LOCKED DESIGN DECISION D3).
+  static const double _droneHitRadius = 24;
+  static const double _findingHitRadius = 24;
 
-  List<Widget> _buildDroneMarkers(
-    List<Map<String, dynamic>> drones,
-    _Bbox bbox,
-    Size size,
-    MissionState mission,
-  ) {
+  /// 16px filled triangle for off-extents chevrons. Kept tight so a fully
+  /// out-of-extent swarm doesn't crowd the canvas edges.
+  static const double _chevronSize = 16;
+
+  List<Widget> _buildDroneMarkers({
+    required List<Map<String, dynamic>> drones,
+    required _Bbox bbox,
+    required Size size,
+    required MissionState mission,
+    required Map<String, Color> colors,
+    required bool hasOverlay,
+  }) {
     final out = <Widget>[];
     for (final d in drones) {
       final id = (d["drone_id"] as String?) ?? "?";
       final pos = d["position"] as Map<String, dynamic>?;
-      final p = _project(pos?["lat"] as num?, pos?["lon"] as num?, bbox, size);
+      final lat = (pos?["lat"] as num?)?.toDouble();
+      final lon = (pos?["lon"] as num?)?.toDouble();
+      final p = _project(lat, lon, bbox, size);
       if (p == null) continue;
+
+      final inCanvas = p.dx >= 0 && p.dx <= size.width &&
+                       p.dy >= 0 && p.dy <= size.height;
+
+      // D1 follow-on: drones outside the locked extents render as edge
+      // chevrons instead of clipped markers. Only triggers when the
+      // overlay is locked — without an overlay, we'd just refit the bbox.
+      if (hasOverlay && !inCanvas && lat != null && lon != null) {
+        out.add(_buildOffExtentsChevron(
+          id: id,
+          droneLat: lat,
+          droneLon: lon,
+          bbox: bbox,
+          size: size,
+          color: colors[id] ?? Colors.indigo,
+        ));
+        continue;
+      }
+
       out.add(
         Positioned(
           key: ValueKey("map-drone-$id"),
@@ -120,8 +223,91 @@ class _MapPanelState extends State<MapPanel> {
           ),
         ),
       );
+      // D3: drone-id label as a real widget (white pill), not painter
+      // text. Painter text doesn't antialias against a JPEG photographic
+      // background and isn't a11y-discoverable. The pill sits to the
+      // right of the marker's hit box, vertically centered.
+      out.add(
+        Positioned(
+          key: ValueKey("map-drone-label-$id"),
+          left: p.dx + 10,
+          top: p.dy - 10,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Text(
+                id,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
     }
     return out;
+  }
+
+  Widget _buildOffExtentsChevron({
+    required String id,
+    required double droneLat,
+    required double droneLon,
+    required _Bbox bbox,
+    required Size size,
+    required Color color,
+  }) {
+    // Place the chevron at the canvas edge nearest the drone's projected
+    // position, then rotate it to point toward the actual (off-canvas)
+    // position. We use the *un-clamped* projection to drive the rotation
+    // angle so the tip continues to track the drone.
+    final unclamped = _project(droneLat, droneLon, bbox, size)!;
+    final cx = unclamped.dx.clamp(_chevronSize, size.width - _chevronSize);
+    final cy = unclamped.dy.clamp(_chevronSize, size.height - _chevronSize);
+    final dx = unclamped.dx - cx;
+    final dy = unclamped.dy - cy;
+    final angle = math.atan2(dy, dx);
+    final dist = _haversineMeters(
+      _bboxNearestLat(droneLat, bbox), _bboxNearestLon(droneLon, bbox),
+      droneLat, droneLon,
+    );
+    final cardinal = _cardinalFromBbox(droneLat, droneLon, bbox);
+    final message = "$id is ${dist.round()}m $cardinal";
+
+    return Positioned(
+      key: ValueKey("map-drone-chevron-$id"),
+      left: cx - _chevronSize,
+      top: cy - _chevronSize,
+      width: _chevronSize * 2,
+      height: _chevronSize * 2,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), duration: _toastDuration),
+          );
+        },
+        child: Transform.rotate(
+          angle: angle,
+          child: CustomPaint(
+            painter: _ChevronPainter(color: color),
+          ),
+        ),
+      ),
+    );
   }
 
   List<Widget> _buildFindingMarkers(
@@ -151,6 +337,22 @@ class _MapPanelState extends State<MapPanel> {
       ));
     }
     return out;
+  }
+
+  /// Schedule a SnackBar without re-firing during build. errorBuilder is
+  /// called on every rebuild while the asset stays missing; without the
+  /// `_toastScheduled` latch the user would see a stuck toast loop.
+  void _scheduleToast(BuildContext ctx, String text, {required String key}) {
+    if (_toastScheduled) return;
+    _toastScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final messenger = ScaffoldMessenger.maybeOf(ctx);
+      if (messenger == null) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(text),
+        duration: _toastDuration,
+      ));
+    });
   }
 }
 
@@ -185,6 +387,42 @@ class _Bbox {
 
   bool covers(double lat, double lon) =>
       lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
+}
+
+/// Adapter: BaseImageExtents (public) → _Bbox (private to map_panel).
+_Bbox _bboxFromExtents(BaseImageExtents e) =>
+    _Bbox(e.latMin, e.latMax, e.lonMin, e.lonMax);
+
+/// Map a scenario-side path (`sim/fixtures/base_images/X.jpg`, the wire
+/// format on `egs.state.base_image_path`) onto the Flutter asset bundle
+/// path (`assets/base_images/X.jpg`, the path Image.asset expects).
+///
+/// Why the indirection exists: Flutter's asset bundler can't reach files
+/// outside `frontend/flutter_dashboard/`, so the static aerial lives in
+/// two places — `sim/fixtures/base_images/` (source of truth, where the
+/// fetch script writes and the LICENSES.md lives) and the bundled copy
+/// under `frontend/flutter_dashboard/assets/base_images/`. The two are
+/// kept byte-identical by `scripts/sync_flutter_base_images.py` +
+/// `scripts/tests/test_flutter_asset_sync.py`. The wire format stays
+/// repo-rooted (so debug logs / scenario YAMLs are self-describing); the
+/// dashboard maps to its bundle namespace at the rendering boundary.
+///
+/// Pass-through for paths that don't match the prefix — defensive against
+/// scenarios that publish a Flutter-relative path directly (allows test
+/// fixtures and future scenarios to opt out of the indirection cleanly).
+@visibleForTesting
+String resolveBaseImageAssetPath(String wirePath) =>
+    _resolveAssetPath(wirePath);
+
+const _simBaseImagesPrefix = "sim/fixtures/base_images/";
+const _flutterBaseImagesPrefix = "assets/base_images/";
+
+String _resolveAssetPath(String wirePath) {
+  if (wirePath.startsWith(_simBaseImagesPrefix)) {
+    return _flutterBaseImagesPrefix +
+        wirePath.substring(_simBaseImagesPrefix.length);
+  }
+  return wirePath;
 }
 
 /// Returns false if any drone or finding has finite coords outside [bbox].
@@ -248,6 +486,81 @@ _Bbox _computeBbox(
   );
 }
 
+// Off-extents helpers (D1 follow-on). Behavior is tested through the
+// chevron-tap SnackBar widget test (toast text round-trips the math).
+
+/// Latitude on the bbox edge nearest [droneLat]. If the drone is N of the
+/// bbox returns lat_max; S returns lat_min; otherwise the drone's own lat.
+double _bboxNearestLat(double droneLat, _Bbox bbox) {
+  if (droneLat > bbox.maxLat) return bbox.maxLat;
+  if (droneLat < bbox.minLat) return bbox.minLat;
+  return droneLat;
+}
+
+/// Longitude on the bbox edge nearest [droneLon].
+double _bboxNearestLon(double droneLon, _Bbox bbox) {
+  if (droneLon > bbox.maxLon) return bbox.maxLon;
+  if (droneLon < bbox.minLon) return bbox.minLon;
+  return droneLon;
+}
+
+/// Haversine great-circle distance in meters. Used only for the chevron
+/// distance toast — accuracy is fine to the nearest meter at sub-km
+/// distances, well within "drone1 is 247m east" precision.
+double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+  const earthRadiusM = 6_371_000.0;
+  double toRad(double deg) => deg * math.pi / 180.0;
+  final dLat = toRad(lat2 - lat1);
+  final dLon = toRad(lon2 - lon1);
+  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+            math.cos(toRad(lat1)) * math.cos(toRad(lat2)) *
+            math.sin(dLon / 2) * math.sin(dLon / 2);
+  final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  return earthRadiusM * c;
+}
+
+/// Returns "north" / "south" / "east" / "west" — the dominant cardinal
+/// of the drone relative to [bbox]. Diagonals snap to whichever axis has
+/// the larger off-extent overshoot in degrees.
+String _cardinalFromBbox(double droneLat, double droneLon, _Bbox bbox) {
+  final dLat = droneLat > bbox.maxLat
+      ? droneLat - bbox.maxLat
+      : (droneLat < bbox.minLat ? bbox.minLat - droneLat : 0.0);
+  final dLon = droneLon > bbox.maxLon
+      ? droneLon - bbox.maxLon
+      : (droneLon < bbox.minLon ? bbox.minLon - droneLon : 0.0);
+  // Compare degrees-of-arc directly. cos(midLat) compression is small for
+  // chevron purposes (we just want the dominant axis); skip it.
+  if (dLat == 0 && dLon == 0) return "here";
+  if (dLat >= dLon) {
+    return droneLat > bbox.maxLat ? "north" : "south";
+  }
+  return droneLon > bbox.maxLon ? "east" : "west";
+}
+
+/// Background grid painter — extracted from _ProjectionPainter so the
+/// procedural grid can render synchronously on first paint while the
+/// aerial overlay (if any) fades in on top (LOCKED DESIGN DECISION D2).
+class _GridBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFFF5F5F5);
+    canvas.drawRect(Offset.zero & size, bg);
+    final grid = Paint()
+      ..color = Colors.grey.withValues(alpha: 0.10)
+      ..strokeWidth = 1;
+    for (var x = 0.0; x < size.width; x += 50) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    }
+    for (var y = 0.0; y < size.height; y += 50) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GridBackgroundPainter old) => false;
+}
+
 class _ProjectionPainter extends CustomPainter {
   final List<Map<String, dynamic>> drones;
   final List<Map<String, dynamic>> findings;
@@ -263,21 +576,9 @@ class _ProjectionPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Background grid.
-    final bg = Paint()..color = const Color(0xFFF5F5F5);
-    canvas.drawRect(Offset.zero & size, bg);
-    final grid = Paint()
-      ..color = Colors.grey.withValues(alpha: 0.10)
-      ..strokeWidth = 1;
-    for (var x = 0.0; x < size.width; x += 50) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
-    for (var y = 0.0; y < size.height; y += 50) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
+    // No background — _GridBackgroundPainter renders the grid one layer
+    // below this one (D2). This painter is foreground-only.
 
-    // Delegate to top-level _project — single source of truth for the
-    // projection math shared with the widget hit-box layer.
     Offset? project(num? la, num? lo) => _project(la, lo, bbox, size);
 
     // Findings under drones.
@@ -286,24 +587,29 @@ class _ProjectionPainter extends CustomPainter {
       final p = project(loc?["lat"] as num?, loc?["lon"] as num?);
       if (p == null) continue;
       final color = _findingColor((f["type"] as String?) ?? "");
-      final rect = Paint()..color = color;
-      canvas.drawCircle(p, 6, rect);
+      // D3: 7px white halo before the 6px colored disk so finding markers
+      // stay legible on a JPEG photographic background.
+      canvas.drawCircle(p, 7, Paint()..color = Colors.white);
+      canvas.drawCircle(p, 6, Paint()..color = color);
     }
 
-    // Drones on top.
-    final paintLabel = TextPainter(textDirection: TextDirection.ltr);
+    // Drones on top. Drone-id labels are NOT painted here — they're real
+    // widgets (white pills) rendered by _MapPanelState._buildDroneMarkers
+    // (D3) so they antialias correctly over photographic backgrounds and
+    // are a11y-discoverable.
     for (final d in drones) {
       final id = (d["drone_id"] as String?) ?? "?";
       final pos = d["position"] as Map<String, dynamic>?;
       final p = project(pos?["lat"] as num?, pos?["lon"] as num?);
       if (p == null) continue;
       final color = colors[id] ?? Colors.indigo;
+      // Skip drones rendered as off-extent chevrons — those have their
+      // own widget. Painter checks the same bounds the widget uses.
+      if (p.dx < 0 || p.dx > size.width || p.dy < 0 || p.dy > size.height) {
+        continue;
+      }
       canvas.drawCircle(p, 9, Paint()..color = Colors.white);
       canvas.drawCircle(p, 8, Paint()..color = color);
-      paintLabel
-        ..text = TextSpan(text: id, style: const TextStyle(fontSize: 10, color: Colors.black))
-        ..layout(maxWidth: 80);
-      paintLabel.paint(canvas, p + const Offset(10, -6));
     }
   }
 
@@ -322,4 +628,37 @@ class _ProjectionPainter extends CustomPainter {
   bool shouldRepaint(covariant _ProjectionPainter old) {
     return drones != old.drones || findings != old.findings || bbox != old.bbox;
   }
+}
+
+/// Filled equilateral-ish triangle for off-extent chevrons (D1 follow-on).
+/// The triangle's tip points "right" in its local frame; rotation is
+/// applied by the parent Transform.rotate so it points toward the
+/// off-canvas drone position.
+class _ChevronPainter extends CustomPainter {
+  final Color color;
+  _ChevronPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = math.min(size.width, size.height) / 2;
+    final path = Path()
+      ..moveTo(cx + r, cy)        // tip
+      ..lineTo(cx - r * 0.7, cy - r * 0.7)
+      ..lineTo(cx - r * 0.7, cy + r * 0.7)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+    // White outline for marker contrast on photographic backgrounds (D3).
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChevronPainter old) => old.color != color;
 }

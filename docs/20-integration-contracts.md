@@ -121,9 +121,22 @@ Validation code in Python imports these schemas. Frontend imports them too.
       "issue": "DUPLICATE_FINDING"
     }
   ],
-  "active_zone_ids": ["zone_a", "zone_b"]
+  "active_zone_ids": ["zone_a", "zone_b"],
+  "base_image_path": "sim/fixtures/base_images/disaster_zone_v1_base.jpg",
+  "base_image_extents": {
+    "lat_min": 33.9990,
+    "lat_max": 34.0010,
+    "lon_min": -118.5010,
+    "lon_max": -118.4990
+  }
 }
 ```
+
+**Optional fields (added 2026-05-08, Task 8 of fixtures-swap plan):**
+
+`base_image_path` and `base_image_extents` are optional. They flow `disaster_zone_v1.yaml` → `agents/egs_agent/scenario_state.build_initial_egs_state` → `egs.state` → bridge → Flutter `MissionState`, where the dashboard's `map_panel.dart` renders the aerial as a 0.80-opacity overlay above its procedural-grid fallback (locked design decisions D1/D2/D3 in the plan). Either both fields are present, or both are omitted (both-or-neither validator on the Pydantic side at `sim/scenario.py:Scenario._base_image_path_and_extents_paired`). Scenarios without an aerial (currently `single_drone_smoke`, `resilience_v1`) omit both and the dashboard falls back to the grid.
+
+**Wire-path semantics:** `base_image_path` is repo-rooted (e.g. `sim/fixtures/base_images/...`). The dashboard maps this to its Flutter asset bundle namespace (`assets/base_images/...`) at the rendering boundary via `frontend/flutter_dashboard/lib/widgets/map_panel.dart:_resolveAssetPath`. The two on-disk copies are kept byte-identical by `scripts/sync_flutter_base_images.py` and locked down in CI by `scripts/tests/test_flutter_asset_sync.py`. Don't change the wire format to the Flutter-relative path — the repo-rooted form is what's self-documenting in scenario YAMLs and debug logs.
 
 ## Contract 4: Findings Schema
 

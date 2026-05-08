@@ -43,7 +43,9 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Left (Days 14–16):** Beat 5 offline proof; demo video capture + edit; writeup final pass; README finalization; Kaggle submission form; two-machine backup with Thayyil.
 
-**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber). Static aerial base image for map panel (Mississippi post-Katrina blue-roof FEMA aerial) now lives at `sim/fixtures/base_images/disaster_zone_v1_base.jpg` after the 2026-05-08 fixtures swap (PR #35, merged at `9ea20f9`); Flutter map-panel wiring is the queued follow-up PR (Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`, decisions D1/D2/D3 already locked).
+**Done (Task 8 of fixtures-swap plan, 2026-05-08, PR #36):** Static aerial wired into `frontend/flutter_dashboard/lib/widgets/map_panel.dart` per locked design decisions D1/D2/D3. 3-layer Stack (procedural grid fallback ← `AnimatedOpacity` aerial overlay at 0.80 ← markers); bbox locks to `scenario.base_image_extents`; off-extents drones render as edge chevrons with tap-toast distance/cardinal; drone-id labels moved into white pills (a11y-discoverable); touch targets bumped to 48px (iOS minimum). Plumbing: `Scenario.base_image_path` + `BaseImageExtents` Pydantic types, `egs_state` schema gains optional `base_image_path` + `base_image_extents`, `MissionState.baseImagePath`/`baseImageExtents` getters, `_resolveAssetPath` translates the wire-format sim path to the Flutter asset bundle path at the rendering boundary, `scripts/sync_flutter_base_images.py` + lockdown tests for both `sim/fixtures/base_images/` provenance and sim↔Flutter byte equality. 32 new tests across Python (sim/agents/scripts) + Flutter widget layer; full suite 683 Python + 100 Flutter green, `flutter analyze` clean. `TODOS.md` "Static aerial base image for map panel" CLOSED.
+
+**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber).
 
 ### Thayyil — Simulation Co-Pilot (paired with Hazim)
 

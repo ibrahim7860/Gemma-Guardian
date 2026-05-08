@@ -76,6 +76,30 @@ class ScriptedEvent(BaseModel):
     detail: Optional[str] = None
 
 
+class BaseImageExtents(BaseModel):
+    """Lat/lon bbox the static aerial image projects onto. Set together with
+    `Scenario.base_image_path`; the Flutter map panel locks its bbox to these
+    extents (LOCKED DESIGN DECISION D1, docs/plans/2026-05-08-thayyil-fixtures-swap.md).
+    """
+    model_config = ConfigDict(extra="forbid")
+    lat_min: float = Field(ge=-90, le=90)
+    lat_max: float = Field(ge=-90, le=90)
+    lon_min: float = Field(ge=-180, le=180)
+    lon_max: float = Field(ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _ordered_bounds(self) -> "BaseImageExtents":
+        if self.lat_max <= self.lat_min:
+            raise ValueError(
+                f"base_image_extents.lat_min ({self.lat_min}) must be < lat_max ({self.lat_max})"
+            )
+        if self.lon_max <= self.lon_min:
+            raise ValueError(
+                f"base_image_extents.lon_min ({self.lon_min}) must be < lon_max ({self.lon_max})"
+            )
+        return self
+
+
 class Scenario(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_id: str = Field(min_length=1)
@@ -84,6 +108,14 @@ class Scenario(BaseModel):
     drones: List[Drone] = Field(min_length=1)
     frame_mappings: Dict[str, List[FrameMapping]] = Field(default_factory=dict)
     scripted_events: List[ScriptedEvent] = Field(default_factory=list)
+    # Optional static aerial overlay. Both fields are populated together or
+    # neither is. Validated by `_base_image_path_and_extents_paired`. The
+    # actual asset existence is NOT checked here — Flutter's `errorBuilder`
+    # handles missing assets at render time, and the byte-equality CI check
+    # in `scripts/tests/test_flutter_asset_sync.py` catches drift between
+    # the sim copy and the Flutter assets copy.
+    base_image_path: Optional[str] = Field(default=None, min_length=1)
+    base_image_extents: Optional[BaseImageExtents] = None
 
     @model_validator(mode="after")
     def _check_drone_ids_unique(self) -> "Scenario":
@@ -111,6 +143,22 @@ class Scenario(BaseModel):
             raise ValueError(
                 f"scripted_events references unknown drone_id(s): {unknown}; "
                 f"known drones: {sorted(known)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _base_image_path_and_extents_paired(self) -> "Scenario":
+        path_set = self.base_image_path is not None
+        extents_set = self.base_image_extents is not None
+        if path_set and not extents_set:
+            raise ValueError(
+                "base_image_path was set but base_image_extents was not; both go together "
+                "(Flutter cannot project the aerial without a bbox)."
+            )
+        if extents_set and not path_set:
+            raise ValueError(
+                "base_image_extents was set but base_image_path was not; both go together "
+                "(extents alone don't render anything)."
             )
         return self
 

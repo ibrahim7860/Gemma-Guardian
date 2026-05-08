@@ -31,7 +31,7 @@ the active scenario.
 
 ### Real Satellite Imagery
 - **What the paper does:** Continuous satellite feeds drive zone updates
-- **What we do:** A single static aerial image (one of the xBD base frames or a public-domain satellite photograph) used as the EGS's "satellite view"
+- **What we do:** A single static aerial rendered as the Flutter map_panel's 0.80-opacity overlay above a procedural-grid fallback. As of 2026-05-08, the active scene is the FEMA Mississippi post-Katrina blue-tarp aerial (FEMA Photo Library #18258, public domain) at `sim/fixtures/base_images/disaster_zone_v1_base.jpg` with provenance in `sim/fixtures/base_images/LICENSES.md`. Scenario YAML emits `base_image_path` + `base_image_extents` (Contract 3 optional fields) so the dashboard locks its bbox to the aerial. See [`docs/plans/2026-05-08-thayyil-fixtures-swap.md`](plans/2026-05-08-thayyil-fixtures-swap.md) Task 8 for the wiring (locked decisions D1/D2/D3).
 - **Why it's fine:** Same reasoning as segmentation. We're not pretending to have satellite access; we're showing the architecture works.
 
 ### Real Fire Spread Physics

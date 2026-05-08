@@ -25,14 +25,11 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Depends on:** Phase 3 merge.
 - **Owner:** Person 3 (EGS).
 
-### Static aerial base image for map panel
-- **What:** Replace procedural grid background in `frontend/flutter_dashboard/lib/widgets/map_panel.dart` with a static aerial JPEG/PNG, projected onto the locked bbox.
-- **Why:** Demo polish. Procedural grid is functional but lower-fidelity than the docs/07-operator-interface.md hero shot. Judges respond to recognizable geography.
-- **Pros:** Demo storytelling improvement. No new dependencies (just an asset and a `Image.asset` call).
-- **Cons:** Coupling between scenario YAML and Flutter assets. Need `base_image_path` field in `disaster_zone_v1.yaml` plus a bbox so projection aligns.
-- **Context:** Scenario YAML lives in `sim/scenarios/`. Frame library curated by Person 5. Map projection in Phase 3 uses equirectangular with cos(midLat) longitude correction.
-- **Depends on:** Person 5's scenario fixture work (xBD or public aerial source).
-- **Owner:** Person 5 with handoff to Person 4 for asset wiring.
+### CLOSED — Static aerial base image for map panel
+- **Resolution:** Shipped Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`. Mississippi post-Katrina FEMA blue-roof aerial wired into `frontend/flutter_dashboard/lib/widgets/map_panel.dart` via `Image.asset` over a 3-layer Stack (procedural grid fallback ← `AnimatedOpacity` aerial overlay at 0.80 ← markers). Bbox locks to `scenario.base_image_extents` (LOCKED DESIGN DECISION D1); off-extents drones render as edge chevrons with tap-to-show distance/cardinal toast. Drone-id labels moved out of the painter into white-pill `Positioned` widgets for legibility against photographic backgrounds (D3); finding circles got a 7px white halo; touch targets bumped 18→24 / 14→24 (48px hit area, meets iOS 44px minimum).
+- **Plumbing:** `Scenario.base_image_path` + `Scenario.base_image_extents` (Pydantic, both-or-neither validator) flow through `agents/egs_agent/scenario_state.py` onto `egs.state` (Contract 3, optional fields), the bridge passes them through, `MissionState` exposes `baseImagePath` / `baseImageExtents` getters. Asset bytes live in `sim/fixtures/base_images/` (source of truth + LICENSES.md provenance) and `frontend/flutter_dashboard/assets/base_images/` (Flutter bundle); drift between the two is locked down by `scripts/tests/test_flutter_asset_sync.py` and re-synced via `uv run python -m scripts.sync_flutter_base_images`.
+- **Tests:** 11 new Flutter widget tests in `test/map_panel_base_image_test.dart` covering D1 (bbox lock, Refit hidden, off-extents chevron, tap-toast), D2 (grid synchronous, image fade, missing-asset fallback), D3 (white-pill labels, ≥44px touch targets); 9 new MissionState tests in `test/mission_state_base_image_test.dart`; 8 new scenario-loader tests in `sim/tests/test_scenario_loader.py`; 2 new EGS tests in `agents/egs_agent/tests/test_scenario_state.py`; 3 new asset-sync tests in `scripts/tests/test_flutter_asset_sync.py`.
+- **Owner:** Person 4 (closed by this PR).
 
 ### Translate `preview_text_in_operator_language` properly (Phase 5+)
 - **What:** The Phase 4 stub EGS emits identical English text in both `preview_text` and `preview_text_in_operator_language`. Person 3's real Gemma 4 E4B EGS will produce a localized translation in the operator's response language (per §11 of `docs/11-prompt-templates.md`).

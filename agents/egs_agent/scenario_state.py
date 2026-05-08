@@ -58,7 +58,7 @@ def build_initial_egs_state(scenario_id: str) -> Dict[str, Any]:
         for w in d.waypoints
     ]
 
-    return {
+    state: Dict[str, Any] = {
         "mission_id": scenario.scenario_id,
         "mission_status": "active",
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
@@ -75,3 +75,12 @@ def build_initial_egs_state(scenario_id: str) -> Dict[str, Any]:
         "recent_validation_events": [],
         "active_zone_ids": [],
     }
+    # Pass through scenario.base_image_path / base_image_extents to the
+    # Flutter dashboard via egs.state. The Pydantic Scenario validator
+    # already enforces both-or-neither (sim/scenario.py); we trust that
+    # here. When unset, the dashboard falls back to its procedural grid
+    # background (LOCKED DESIGN DECISION D2).
+    if scenario.base_image_path is not None and scenario.base_image_extents is not None:
+        state["base_image_path"] = scenario.base_image_path
+        state["base_image_extents"] = scenario.base_image_extents.model_dump()
+    return state

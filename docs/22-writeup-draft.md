@@ -385,10 +385,16 @@ within a 20-day hackathon window. Full rationale per item lives in
   swarm. Scaling to 12 drones is a hardware question (one Jetson per drone),
   not an architectural one.
 
-- **xBD imagery, not live aerial.** Fixtures under `sim/fixtures/frames/`
-  are post-disaster crops from the xBD dataset and curated public satellite
-  imagery. The aesthetic differs from a Skydio X10's downward camera. We
-  flag this in §10 reproducibility notes.
+- **Public-domain disaster aerials, not live drone footage.** Fixtures
+  under `sim/fixtures/frames/` are real post-disaster aerials curated from
+  the FEMA Photo Library and USFWS (8 frames + 1 scene aerial under
+  `sim/fixtures/base_images/`, all with full LICENSES.md provenance and
+  upstream `source_sha256` drift lockdown in `scripts/fixtures_manifest.json`).
+  The aesthetic differs from a Skydio X10's downward camera but is
+  functionally equivalent for sim-vision iteration. xBD-proper (xView2
+  credentials-gated) remains the fine-tune training corpus under
+  `ml/data_prep/`, not the sim playback set. We flag the distinction in
+  §10 reproducibility notes.
 
 - **~1 Hz perception sampling.** Gemma 4 E2B inference latency on commodity
   GPUs is the bottleneck. Sampling more frequently than 1 Hz starves the
