@@ -1,4 +1,4 @@
-# STATUS — Day 7 / May 7, 2026
+# STATUS — Day 8 / May 8, 2026
 
 Living snapshot of where each person stands against the plan. Updated at standup. Source of truth for "are we on track for the next gate?"
 
@@ -6,10 +6,10 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ## Where we are
 
-- **Today:** Day 7 (Wednesday May 7) — **GATE 2 evaluation day** (single-drone full agentic loop)
+- **Today:** Day 8 (Thursday May 8) — GATE 2 closed; fixture swap (PR #35) landed; Flutter map-panel (Task 8 of fixtures-swap plan) is next
 - **GATE 2 status:** 7 of 7 criteria GREEN; GATE 2 closed by Qasim's branch
 - **Next gate:** GATE 3 — Day 10 (Monday May 12) — fine-tuning go/no-go (Kaleel)
-- **Days remaining to submission:** 11 (deadline Sunday May 18 23:59 UTC)
+- **Days remaining to submission:** 10 (deadline Sunday May 18 23:59 UTC)
 
 ## Per-person status
 
@@ -43,7 +43,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Left (Days 14–16):** Beat 5 offline proof; demo video capture + edit; writeup final pass; README finalization; Kaggle submission form; two-machine backup with Thayyil.
 
-**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber). Static aerial base image for map panel (Mississippi post-Katrina blue-roof FEMA aerial) now lives at `sim/fixtures/base_images/disaster_zone_v1_base.jpg` after the 2026-05-08 fixtures swap; Flutter map-panel wiring is in flight on `feature/thayyil-fixtures-swap` (Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`).
+**Blocked:** findings approval flow polish (depends on Qasim's `egs.operator_actions` subscriber). Static aerial base image for map panel (Mississippi post-Katrina blue-roof FEMA aerial) now lives at `sim/fixtures/base_images/disaster_zone_v1_base.jpg` after the 2026-05-08 fixtures swap (PR #35, merged at `9ea20f9`); Flutter map-panel wiring is the queued follow-up PR (Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`, decisions D1/D2/D3 already locked).
 
 ### Thayyil — Simulation Co-Pilot (paired with Hazim)
 
