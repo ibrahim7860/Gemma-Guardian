@@ -6,7 +6,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ## Where we are
 
-- **Today:** Day 8 (Thursday May 8) — GATE 2 closed; fixture swap (PR #35) landed; Flutter map-panel (Task 8 of fixtures-swap plan) is next
+- **Today:** Day 8 (Thursday May 8) — GATE 2 closed; fixture swap (PR #35) + Flutter map-panel aerial overlay (PR #36, Task 8) both landed; next focus is GATE 3 prep with Kaleel
 - **GATE 2 status:** 7 of 7 criteria GREEN; GATE 2 closed by Qasim's branch
 - **Next gate:** GATE 3 — Day 10 (Monday May 12) — fine-tuning go/no-go (Kaleel)
 - **Days remaining to submission:** 10 (deadline Sunday May 18 23:59 UTC)
@@ -19,7 +19,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Left:** Phase B integration with Kaleel (sim publishing stable while Kaleel iterates on Gemma 4 perception); Phase D mesh-dropout tuning live on the swarm; Phase F demo capture stability; Phase G outside-tester cold run of `docs/sim-reproduction.md` (with Thayyil) and follow-up fixes; Phase H submission on-call.
 
-**Blocked on:** Kaleel publishing real findings on `drones.<id>.findings`; Qasim consuming them; Thayyil swapping real xBD JPEGs into `sim/fixtures/frames/`.
+**Blocked on:** Kaleel publishing real findings on `drones.<id>.findings`; Qasim consuming them. (Thayyil's frame-swap closed 2026-05-08 PR #35.)
 
 ### Kaleel — Per-Drone Agent + ML
 
