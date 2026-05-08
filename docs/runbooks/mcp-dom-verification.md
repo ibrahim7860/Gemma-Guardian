@@ -55,10 +55,31 @@ curl -s "http://127.0.0.1:$OLLAMA/api/tags"  # expect {"models":[...]}
 
 For LIVE path instead: keep your real Ollama daemon on 11434, set `OLLAMA=11434` in `$DEMO_DIR/ports.env`.
 
-### 4. Start sim + drone agent + bridge + flutter http server
+### 4. Start EGS + sim + drone agent + bridge + flutter http server
+
+The EGS is what publishes `egs.state` (Contract 3), including the
+optional `base_image_path` + `base_image_extents` that the post-PR-#36
+`map_panel.dart` needs in order to render the FEMA aerial overlay
+(`docs/plans/2026-05-08-thayyil-fixtures-swap.md` Task 8). Without
+EGS in this stack the map renders grid-only via the `errorBuilder`
+fallback — visually indistinguishable from the aerial-loaded state in a
+thumbnail, but a wrong demo capture. Always start EGS first so its
+1 Hz publisher is live before the dashboard connects.
+
+The EGS reads `transport.redis_url` from `shared/config.yaml`, but
+honors the `REDIS_URL` env override (added 2026-05-08, see
+`shared/tests/test_config.py::test_redis_url_env_override`). Pass the
+override on the EGS launch line — without it the EGS lands on
+`localhost:6379` regardless of `$REDIS`, splitting the bus from the
+producers/bridge below.
 
 ```bash
 cd /path/to/Gemma-Guardian
+
+# EGS — publishes egs.state at 1Hz; required for the aerial overlay.
+REDIS_URL="redis://127.0.0.1:$REDIS/0" nohup uv run python -m agents.egs_agent.main \
+      > "$DEMO_DIR/egs.log" 2>&1 &
+sleep 3  # let EGS attach to redis + start the 1Hz publisher
 
 # Sim (waypoint + frame)
 nohup uv run python -m sim.waypoint_runner --scenario disaster_zone_v1 \
@@ -84,6 +105,24 @@ REDIS_URL="redis://127.0.0.1:$REDIS/0" nohup uv run python -m uvicorn \
         > "$DEMO_DIR/flutter.log" 2>&1 ) &
 
 sleep 5  # let everything boot
+```
+
+**Sanity probe before driving Playwright:** confirm the bridge sees
+the EGS-published aerial path so the map_panel will actually request
+the asset:
+
+```bash
+uv run python -c "
+import asyncio, websockets, json
+async def probe():
+    async with websockets.connect('ws://127.0.0.1:$BRIDGE/') as ws:
+        d = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+        egs = d.get('egs_state', {})
+        assert egs.get('base_image_path'), \\
+            f'EGS not publishing base_image_path; map will render grid-only. got={egs!r}'
+        print('OK: base_image_path =', egs['base_image_path'])
+asyncio.run(probe())
+"
 ```
 
 ### 5. Drive Playwright MCP from a Claude Code session
@@ -113,6 +152,7 @@ for pidline in $(cat "$DEMO_DIR/pids.txt" 2>/dev/null); do
   kill -TERM "${pidline##*=}" 2>/dev/null
 done
 # Or by name (if pids.txt wasn't tracked)
+pkill -f "agents.egs_agent"
 pkill -f "agents.drone_agent"
 pkill -f "sim.waypoint_runner"
 pkill -f "sim.frame_server"
@@ -131,6 +171,9 @@ redis-cli -p $REDIS SHUTDOWN NOSAVE
 - **Dashboard shows a connection-status `reconnecting in Ns` instead of `connected`:** the dashboard is hitting the wrong WS URL. Verify the `?ws=ws://127.0.0.1:<BRIDGE>/` query parameter matches the running bridge port.
 - **Screenshot shows blank canvas:** Flutter is rendering, but the page is in a degenerate state. Run `mcp__playwright__browser_console_messages` to inspect the JS console — most often a WS connection error.
 - **Findings panel shows the tile but APPROVE/DISMISS aren't visible:** browser viewport too narrow. Default Playwright MCP viewport is around 1440×673 in current builds; widen via `mcp__playwright__browser_resize` if your local default is narrower.
+- **Map panel renders grid-only, no aerial visible (post-PR-#36):** the bridge is forwarding `egs_state.base_image_path = null`, which fires `map_panel.dart`'s `errorBuilder` fallback. Two known causes:
+  1. **No EGS in the stack:** Procedure §4 above lists EGS first for a reason. Without it, no process publishes `egs.state`, so the field is null. Confirm the §4 sanity probe passed.
+  2. **EGS connected to the wrong redis:** the EGS reads `transport.redis_url` from `shared/config.yaml` (defaults to `localhost:6379`). For ephemeral-redis paths, you MUST set `REDIS_URL=redis://127.0.0.1:$REDIS/0` on the EGS launch line. Without the env override the EGS publishes on `localhost:6379` while the bridge listens on `$REDIS` — split bus, no aerial. (Fix added 2026-05-08; see `shared/contracts/config.py` env-override docstring.)
 
 ## Beat 4 capture path — `EGS LINK SEVERED` + `STANDALONE MODE ACTIVE`
 
