@@ -1155,9 +1155,22 @@ def test_ui_translate_button_fires_operator_command_with_language(
             # — its ``addListener(setState)`` never fires on a synthetic
             # value-set, so ``translateEnabled`` stays false and the
             # button stays ``aria-disabled="true"``. Click the input to
-            # focus, then send real keystrokes via ``keyboard.type``.
+            # focus, then dispatch real keystrokes via ``press_sequentially``.
+            #
+            # Flake fix #3 (2026-05-08, run 25556303789): the previous
+            # version used ``page.keyboard.type(...)`` immediately after
+            # ``text_input.click()``. On a slow CI runner the click→focus
+            # dispatch races the first keystroke — the global ``keyboard``
+            # fires before the <input> is the active element, so the
+            # leading ``r`` lands on the document and is silently dropped
+            # (observed: raw_text='ecall drone1 to base'). ``press_
+            # sequentially`` is bound to the locator: Playwright auto-waits
+            # for the element to be actionable (focused, attached, stable)
+            # before each key event, eliminating the race. ``delay=20`` is
+            # belt-and-braces — gives Flutter's KeyboardListener a frame
+            # to consume each event before the next arrives.
             text_input.click()
-            page.keyboard.type("recall drone1 to base")
+            text_input.press_sequentially("recall drone1 to base", delay=20)
             # TRANSLATE button must now be enabled (text is non-empty).
             # Filter the locator to the enabled node — Flutter's a11y
             # bridge takes a beat to flip ``aria-disabled``.
