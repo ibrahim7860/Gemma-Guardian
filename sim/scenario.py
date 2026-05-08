@@ -117,7 +117,22 @@ class Scenario(BaseModel):
 
 # Ground-truth manifest models.
 
-class Victim(BaseModel):
+# Eval-field types shared across all detection models. The 3 eval fields
+# (expected_finding_type / expected_severity / min_confidence) are optional at
+# the Pydantic layer — older groundtruth manifests that predate the
+# 2026-05-08 expansion still load. Presence on current manifests is enforced
+# by sim/tests/test_groundtruth_schema.py.
+ExpectedFindingType = Literal["victim", "fire", "smoke", "damaged_structure", "blocked_route"]
+ExpectedSeverity = Literal["low", "medium", "high", "critical"]
+
+
+class _EvalFieldsMixin(BaseModel):
+    expected_finding_type: Optional[ExpectedFindingType] = None
+    expected_severity: Optional[ExpectedSeverity] = None
+    min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class Victim(_EvalFieldsMixin):
     model_config = ConfigDict(extra="forbid")
     id: str
     lat: float = Field(ge=-90, le=90)
@@ -126,7 +141,7 @@ class Victim(BaseModel):
     in_or_near: str
 
 
-class Fire(BaseModel):
+class Fire(_EvalFieldsMixin):
     model_config = ConfigDict(extra="forbid")
     id: str
     lat: float = Field(ge=-90, le=90)
@@ -135,7 +150,7 @@ class Fire(BaseModel):
     intensity: Literal["low", "medium", "high"]
 
 
-class DamagedStructure(BaseModel):
+class DamagedStructure(_EvalFieldsMixin):
     model_config = ConfigDict(extra="forbid")
     id: str
     lat: float = Field(ge=-90, le=90)
@@ -144,7 +159,7 @@ class DamagedStructure(BaseModel):
     damage_level: Literal["minor_damage", "major_damage", "destroyed"]
 
 
-class BlockedRoute(BaseModel):
+class BlockedRoute(_EvalFieldsMixin):
     model_config = ConfigDict(extra="forbid")
     id: str
     lat: float = Field(ge=-90, le=90)
@@ -170,6 +185,10 @@ class GroundTruthScriptedEvent(BaseModel):
 class GroundTruth(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_id: str
+    # Optional schema_version is the marker that this manifest was authored
+    # post-2026-05-08-fixtures-swap (i.e., expects expected_finding_type /
+    # expected_severity / min_confidence on every detection entry).
+    schema_version: Optional[str] = None
     extents: GroundTruthExtents
     victims: List[Victim] = Field(default_factory=list)
     fires: List[Fire] = Field(default_factory=list)
