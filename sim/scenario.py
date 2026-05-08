@@ -122,13 +122,17 @@ class Scenario(BaseModel):
 # the Pydantic layer — older groundtruth manifests that predate the
 # 2026-05-08 expansion still load. Presence on current manifests is enforced
 # by sim/tests/test_groundtruth_schema.py.
+#
+# `expected_severity` is an integer 1-5 to match Contract 4 finding.severity
+# (`shared/schemas/_common.json`). Adversarial-review fix: the original plan
+# specified strings but those don't compare against the integer Contract 4
+# field — Kaleel's GATE 3 perception eval would silently score 0%.
 ExpectedFindingType = Literal["victim", "fire", "smoke", "damaged_structure", "blocked_route"]
-ExpectedSeverity = Literal["low", "medium", "high", "critical"]
 
 
 class _EvalFieldsMixin(BaseModel):
     expected_finding_type: Optional[ExpectedFindingType] = None
-    expected_severity: Optional[ExpectedSeverity] = None
+    expected_severity: Optional[int] = Field(default=None, ge=1, le=5)
     min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 

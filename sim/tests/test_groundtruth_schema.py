@@ -15,10 +15,12 @@ import pytest
 GT_DIR = Path(__file__).resolve().parent.parent / "scenarios"
 FRAMES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "frames"
 
-# Matches Contract 4 finding `type` enum + Contract 4 severity enum (locked
-# in shared/schemas/_common.json). Keep in sync if those change.
+# Matches Contract 4 finding `type` enum + Contract 4 `severity` integer
+# range (locked in shared/schemas/_common.json: severity is integer 1-5).
+# Adversarial-review fix: original plan used string severities which don't
+# compare against the integer Contract 4 field — silent eval failure.
 FINDING_TYPES = {"victim", "fire", "smoke", "damaged_structure", "blocked_route"}
-SEVERITIES = {"low", "medium", "high", "critical"}
+SEVERITY_MIN, SEVERITY_MAX = 1, 5
 DETECTION_KEYS = ("victims", "fires", "damaged_structures", "blocked_routes")
 GROUNDTRUTH_FILES = (
     "disaster_zone_v1_groundtruth.json",
@@ -42,8 +44,12 @@ def test_each_entry_has_eval_fields(groundtruth, key: str):
             f"{ctx} bad type: {entry['expected_finding_type']!r} not in {FINDING_TYPES}"
         )
         assert "expected_severity" in entry, f"{ctx} missing expected_severity"
-        assert entry["expected_severity"] in SEVERITIES, (
-            f"{ctx} bad severity: {entry['expected_severity']!r} not in {SEVERITIES}"
+        sev = entry["expected_severity"]
+        assert isinstance(sev, int) and not isinstance(sev, bool), (
+            f"{ctx} expected_severity must be int (Contract 4 alignment), got {type(sev).__name__}"
+        )
+        assert SEVERITY_MIN <= sev <= SEVERITY_MAX, (
+            f"{ctx} expected_severity {sev} outside Contract 4 range [{SEVERITY_MIN}, {SEVERITY_MAX}]"
         )
         assert "min_confidence" in entry, f"{ctx} missing min_confidence"
         assert isinstance(entry["min_confidence"], (int, float)), (

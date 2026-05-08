@@ -323,3 +323,86 @@ def test_is_base_image_routes_correctly():
     assert _spec(filename="placeholder_block_a_01.jpg").is_base_image is False
     assert _spec(filename="placeholder_victim_01.jpg").is_base_image is False
     assert _spec(filename="disaster_zone_v1_base.jpg").is_base_image is True
+
+
+# ---------------------------------------------------------------------------
+# _fetch_bytes hard caps (review fix #3)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_bytes_aborts_on_oversized_payload():
+    """A multi-GB malicious payload would OOM resp.read() with no cap.
+    We read FETCH_MAX_BYTES+1 — if the +1 byte appears, abort."""
+    from scripts.fetch_disaster_fixtures import _fetch_bytes, FETCH_MAX_BYTES
+
+    class _FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, n=None):
+            # Simulate upstream returning more than the cap.
+            return b"X" * (FETCH_MAX_BYTES + 100)
+
+    with patch("scripts.fetch_disaster_fixtures.urlopen", return_value=_FakeResp()):
+        with pytest.raises(ValueError, match="exceeds .* byte cap"):
+            _fetch_bytes("https://example.test/huge.jpg")
+
+
+def test_fetch_bytes_under_cap_returns_normally():
+    from scripts.fetch_disaster_fixtures import _fetch_bytes
+
+    class _FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, n=None):
+            return b"OK" * 10
+
+    with patch("scripts.fetch_disaster_fixtures.urlopen", return_value=_FakeResp()):
+        out = _fetch_bytes("https://example.test/small.jpg")
+        assert out == b"OK" * 10
+
+
+def test_fetch_bytes_passes_timeout_to_urlopen():
+    from scripts.fetch_disaster_fixtures import _fetch_bytes, FETCH_TIMEOUT_S
+
+    class _FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, n=None):
+            return b"OK"
+
+    with patch("scripts.fetch_disaster_fixtures.urlopen") as mock_urlopen:
+        mock_urlopen.return_value = _FakeResp()
+        _fetch_bytes("https://example.test/x.jpg")
+        # The second positional arg or `timeout` kwarg must equal FETCH_TIMEOUT_S.
+        call = mock_urlopen.call_args
+        timeout = call.kwargs.get("timeout") if call.kwargs else None
+        if timeout is None and len(call.args) >= 2:
+            timeout = call.args[1]
+        assert timeout == FETCH_TIMEOUT_S, (
+            f"expected timeout={FETCH_TIMEOUT_S}, got {timeout}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# License-block regex anchoring (review fix #4)
+# ---------------------------------------------------------------------------
+
+
+def test_existing_license_block_ignores_mid_line_double_hash():
+    """A `## ` substring appearing mid-line inside a license body shouldn't
+    truncate the block. With re.MULTILINE + ^ anchor, only line-leading
+    `## ` headings act as terminators."""
+    text = (
+        "# Fixture image provenance\n\n"
+        "## placeholder_a.jpg\n\n"
+        "- **Note:** This image was rated `## 5 stars` by reviewers (literal markdown).\n"
+        "- **Source URL:** https://example.test/x.jpg\n\n"
+        "## placeholder_b.jpg\n\n"
+        "- **Source URL:** https://example.test/y.jpg\n"
+    )
+    block_a = _existing_license_block(text, "placeholder_a.jpg")
+    assert block_a is not None
+    assert "rated `## 5 stars`" in block_a, (
+        "block was truncated at mid-line `## ` — regex isn't anchored to ^"
+    )
+    assert "placeholder_b.jpg" not in block_a

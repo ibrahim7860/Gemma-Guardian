@@ -2,6 +2,21 @@
   "schema_version": "1.0.0",
   "fixtures": [
     {
+      "filename": "placeholder_victim_01.jpg",
+      "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/bd/FEMA_-_37529_-_Gulfview_Elementary%2C_destroyed_by_Hurricane_Katrina_in_Mississippi.jpg",
+      "source_sha256": "783b22b6b010a8f26633e0b6c5da20768b22cac2f1c2e36e13a8510d9d1336ea",
+      "title": "FEMA - 37529 - Gulfview Elementary, destroyed by Hurricane Katrina in Mississippi",
+      "author": "Jennifer Smits / FEMA",
+      "license": "Public Domain (US federal work)",
+      "license_url": "https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA",
+      "retrieved": "2026-05-08",
+      "crop_box": null,
+      "target_size": [640, 480],
+      "jpeg_quality": 85,
+      "semantic_role": "DESTROYED structure aerial — Gulfview Elementary in Bay St. Louis, MS damaged beyond repair by Hurricane Katrina; visible roof loss, structural collapse, and debris scatter from the schoolyard. Originally added 2026-05-06 (commit 30577e7) for live-Gemma report_finding verification on real disaster imagery.",
+      "scenario_use": "disaster_zone_v1 drone1 ticks 61-90 (victim/casualty-target detection)"
+    },
+    {
       "filename": "placeholder_block_a_01.jpg",
       "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/FEMA_-_38379_-_Aerial_of_a_Texas_waterfront_community.jpg",
       "source_sha256": "1969d43d26691e1b1db38538ef6725577a41a80eb3d46af940bbd94dd938ff00",

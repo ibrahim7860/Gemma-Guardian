@@ -13,7 +13,7 @@
       "frame_file": "placeholder_victim_01.jpg",
       "in_or_near": "block_a",
       "expected_finding_type": "victim",
-      "expected_severity": "high",
+      "expected_severity": 4,
       "min_confidence": 0.55
     }
   ],
@@ -23,7 +23,7 @@
       "frame_file": "placeholder_fire_01.jpg",
       "intensity": "medium",
       "expected_finding_type": "fire",
-      "expected_severity": "high",
+      "expected_severity": 4,
       "min_confidence": 0.6
     },
     {
@@ -31,7 +31,7 @@
       "frame_file": "placeholder_smoke_01.jpg",
       "intensity": "low",
       "expected_finding_type": "smoke",
-      "expected_severity": "medium",
+      "expected_severity": 3,
       "min_confidence": 0.5
     }
   ],
@@ -41,7 +41,7 @@
       "frame_file": "placeholder_block_a_02.jpg",
       "damage_level": "major_damage",
       "expected_finding_type": "damaged_structure",
-      "expected_severity": "high",
+      "expected_severity": 4,
       "min_confidence": 0.55
     }
   ],
@@ -51,7 +51,7 @@
       "frame_file": "placeholder_debris_01.jpg",
       "blockage_type": "debris",
       "expected_finding_type": "blocked_route",
-      "expected_severity": "medium",
+      "expected_severity": 3,
       "min_confidence": 0.5
     }
   ],

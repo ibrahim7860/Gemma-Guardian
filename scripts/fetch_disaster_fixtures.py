@@ -52,6 +52,12 @@ USER_AGENT = (
     "(https://github.com/ibrahim7860/Gemma-Guardian; "
     "contact: darkmatter8789@gmail.com)"
 )
+# Hard caps for `_fetch_bytes` (review fix #3): a hung Wikimedia mirror
+# blocks CI; a malicious or compromised mirror could OOM the process via
+# `resp.read()` with no size limit. The downstream sha256 check protects
+# integrity but not availability — these caps protect availability.
+FETCH_TIMEOUT_S = 30
+FETCH_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 @dataclass(frozen=True)
@@ -120,9 +126,22 @@ def _validate_crop_box(crop_box, src_w, src_h, filename):
 
 
 def _fetch_bytes(url: str) -> bytes:
+    """Fetch URL with timeout + size cap. Raises ValueError on overrun.
+
+    Adversarial-review fix: bare urlopen has no timeout (default is global
+    socket timeout, often None) and no size cap. Either failure mode hangs
+    or kills CI. We read up to FETCH_MAX_BYTES + 1 — if the +1 byte appears,
+    the upstream exceeds our cap and we abort before allocating more memory.
+    """
     req = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(req) as resp:
-        return resp.read()
+    with urlopen(req, timeout=FETCH_TIMEOUT_S) as resp:
+        raw = resp.read(FETCH_MAX_BYTES + 1)
+    if len(raw) > FETCH_MAX_BYTES:
+        raise ValueError(
+            f"{url}: upstream payload exceeds {FETCH_MAX_BYTES} byte cap "
+            f"(read {len(raw)} bytes before stopping)"
+        )
+    return raw
 
 
 def process_one(spec: FixtureSpec, *, out_dir: Path) -> Path:
@@ -157,9 +176,14 @@ def process_one(spec: FixtureSpec, *, out_dir: Path) -> Path:
 
 def _existing_license_block(text: str, filename: str) -> Optional[str]:
     """Extract an existing block for `filename` from LICENSES.md, or None.
-    A block runs from `## filename` up to the next `## ` heading or EOF."""
-    pattern = rf"## {re.escape(filename)}\n.*?(?=\n## |\Z)"
-    m = re.search(pattern, text, flags=re.DOTALL)
+    A block runs from `## filename` up to the next `## ` heading at the
+    start of a line, or EOF.
+
+    Adversarial-review fix: anchor the heading match to start-of-line via
+    re.MULTILINE so a `## ` substring appearing mid-line in license body
+    text doesn't truncate the block."""
+    pattern = rf"^## {re.escape(filename)}\n.*?(?=\n^## |\Z)"
+    m = re.search(pattern, text, flags=re.DOTALL | re.MULTILINE)
     return m.group(0) if m else None
 
 

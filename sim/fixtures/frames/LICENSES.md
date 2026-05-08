@@ -6,16 +6,15 @@ non-placeholder images and require attribution:
 
 ## placeholder_victim_01.jpg
 
-- **Source URL:** https://commons.wikimedia.org/wiki/File:FEMA_-_37529_-_Gulfview_Elementary,_destroyed_by_Hurricane_Katrina_in_Mississippi.jpg
-- **Title:** FEMA - 37529 - Gulfview Elementary, destroyed by Hurricane Katrina in Mississippi ("Bay St. Louis, MS, August 18, 2008 -- Gulfview Elementary was damaged beyond repair, although the oldest building on the school campus still stands.")
-- **Author / Credit:** Jennifer Smits, Federal Emergency Management Agency (FEMA) Photo Library
-- **License:** Public Domain (US federal work). Per the source page: "This image is a work of a Federal Emergency Management Agency employee, taken or made as part of that person's official duties. As works of the U.S. federal government, all FEMA images are in the public domain in the United States."
-- **Date retrieved:** 2026-05-06
-- **Modifications:** Resized to ≤640×480 (final 640×428), JPEG quality 85.
-- **Why this image:** Frame designated for drone1 ticks 61–90 in
-  `sim/scenarios/disaster_zone_v1.yaml`. Used in live-Gemma verification
-  to drive a real `report_finding` tool call on real disaster imagery.
-
+- **Source URL:** https://upload.wikimedia.org/wikipedia/commons/b/bd/FEMA_-_37529_-_Gulfview_Elementary%2C_destroyed_by_Hurricane_Katrina_in_Mississippi.jpg
+- **Source sha256:** `783b22b6b010a8f26633e0b6c5da20768b22cac2f1c2e36e13a8510d9d1336ea`
+- **Title:** FEMA - 37529 - Gulfview Elementary, destroyed by Hurricane Katrina in Mississippi
+- **Author / Credit:** Jennifer Smits / FEMA
+- **License:** Public Domain (US federal work) (https://commons.wikimedia.org/wiki/Template:PD-USGov-FEMA)
+- **Date retrieved:** 2026-05-08
+- **Modifications:** resized to ≤640×480, JPEG quality 85.
+- **Semantic role:** DESTROYED structure aerial — Gulfview Elementary in Bay St. Louis, MS damaged beyond repair by Hurricane Katrina; visible roof loss, structural collapse, and debris scatter from the schoolyard. Originally added 2026-05-06 (commit 30577e7) for live-Gemma report_finding verification on real disaster imagery.
+- **Scenario use:** disaster_zone_v1 drone1 ticks 61-90 (victim/casualty-target detection)
 ## placeholder_block_a_01.jpg
 
 - **Source URL:** https://upload.wikimedia.org/wikipedia/commons/e/ef/FEMA_-_38379_-_Aerial_of_a_Texas_waterfront_community.jpg

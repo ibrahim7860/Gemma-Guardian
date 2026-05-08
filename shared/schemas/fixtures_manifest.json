@@ -53,10 +53,10 @@
               {"type": "null"},
               {
                 "type": "array",
-                "items": {"type": "integer", "minimum": 0},
+                "items": {"type": "integer", "minimum": 0, "maximum": 65535},
                 "minItems": 4,
                 "maxItems": 4,
-                "description": "[left, top, right, bottom] in source-image pixels"
+                "description": "[left, top, right, bottom] in source-image pixels. Schema cannot enforce left<right<=src_w cross-field; that's checked at runtime in scripts.fetch_disaster_fixtures._validate_crop_box."
               }
             ]
           },
