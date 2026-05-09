@@ -35,7 +35,9 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Done:** EGS process scaffolded. Phase 4 command-translation path with finding allowlist + CI gate. **GATE 2 closure (2026-05-07):** scenario-derived initial state (`agents/egs_agent/scenario_state.py`) replaces hardcoded LA bbox; `findings_count_by_type` increments on real `drones.<id>.findings`; `recent_validation_events` consumes Contract 11 log via `validation_log_tail.py` with Contract-11→Contract-3 projection; initial-replan trigger fires on first `agent_status="active"`; replan runs as a fire-and-forget background task so the coordinator tick never blocks on the LLM. 42 EGS unit/integration tests + 1 Playwright e2e + 3 Flutter widget tests. PRs: #4, #5, #34 (merged 2026-05-07, commit `60b7f15`).
 
-**Left (GATE 4 critical, Day 13 / May 15):** Replanning logic triggered by drone failure; multilingual command path producing real `preview_text_in_operator_language` via Gemma 4 E4B; standalone-mode tolerance when EGS goes offline; EGS-side subscriber for `egs.operator_actions`. The "wow moment" demo trigger (hallucination catch in survey-point assignment).
+**Done (Command Pipeline, 2026-05-09):** Multilingual command path producing real `preview_text_in_operator_language` via Gemma 4 E4B. Fully integrated EGS agent command translation with strict validation schemas and Flutter dashboard timeout fix.
+
+**Left (GATE 4 critical, Day 13 / May 15):** Replanning logic triggered by drone failure; standalone-mode tolerance when EGS goes offline; EGS-side subscriber for `egs.operator_actions`. The "wow moment" demo trigger (hallucination catch in survey-point assignment).
 
 ### Ibrahim — Frontend + Demo + Comms (project lead)
 
