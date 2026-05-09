@@ -316,6 +316,7 @@ class RedisSubscriber:
             # the WS contract. Then enqueue for the broadcaster task. We do
             # NOT call ``registry.broadcast`` here — see the constructor
             # docstring on ``_translation_queue`` for the rationale.
+            print(f"[ws_bridge] redis_subscriber: received translation cmd_id={payload.get('command_id')} valid={payload.get('valid')}", flush=True)
             if self._translation_queue is not None:
                 ws_frame: Dict[str, Any] = {
                     "type": "command_translation",
@@ -328,6 +329,7 @@ class RedisSubscriber:
                     ],
                     "contract_version": payload["contract_version"],
                 }
+                print(f"[ws_bridge] redis_subscriber: enqueuing WS frame: {ws_frame}", flush=True)
                 try:
                     self._translation_queue.put_nowait(ws_frame)
                 except asyncio.QueueFull:

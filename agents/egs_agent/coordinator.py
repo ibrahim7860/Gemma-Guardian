@@ -145,9 +145,26 @@ class EGSCoordinator:
             translation["contract_version"] = "1.0.0"
             translation["egs_published_at_iso_ms"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
+            # Sanitize structured.args to only keep schema-allowed fields.
+            # The LLM sometimes adds extra keys (e.g., "reason" on exclude_zone)
+            # that pass EGS validation but fail the bridge's strict re-validation.
+            _ALLOWED_ARGS = {
+                "restrict_zone": {"zone_id"},
+                "exclude_zone": {"zone_id"},
+                "recall_drone": {"drone_id", "reason"},
+                "set_priority": {"finding_type", "priority_level"},
+                "set_language": {"lang_code"},
+                "unknown_command": {"operator_text", "suggestion"},
+            }
+            structured = translation.get("structured", {})
+            cmd_name = structured.get("command", "")
+            allowed = _ALLOWED_ARGS.get(cmd_name)
+            if allowed and isinstance(structured.get("args"), dict):
+                structured["args"] = {k: v for k, v in structured["args"].items() if k in allowed}
+
             logger.info("process_commands: translation result valid=%s kind=%s cmd=%s",
-                        translation.get("valid"), translation.get("kind"),
-                        translation.get("structured", {}).get("command"))
+                        translation.get("valid"), translation.get("kind"), cmd_name)
+            logger.info("process_commands: FULL PAYLOAD: %s", json.dumps(translation))
 
             # Output translation back to WebSocket bridge (or just log it)
             msgs_to_pub.append({
