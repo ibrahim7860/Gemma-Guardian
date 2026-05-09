@@ -13,7 +13,7 @@ inference:
   egs_model: "gemma4:e4b"
   drone_sampling_hz: 1.0
   ollama_drone_endpoint: "http://localhost:11434"
-  ollama_egs_endpoint: "http://localhost:11435"
+  ollama_egs_endpoint: "http://localhost:11434"
   function_call_path:
     egs: "native_tools"
     drone: "structured_output"
