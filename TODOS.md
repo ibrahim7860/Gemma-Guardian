@@ -31,13 +31,9 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Tests:** 11 new Flutter widget tests in `test/map_panel_base_image_test.dart` covering D1 (bbox lock, Refit hidden, off-extents chevron, tap-toast), D2 (grid synchronous, image fade, missing-asset fallback), D3 (white-pill labels, ≥44px touch targets); 9 new MissionState tests in `test/mission_state_base_image_test.dart`; 8 new scenario-loader tests in `sim/tests/test_scenario_loader.py`; 2 new EGS tests in `agents/egs_agent/tests/test_scenario_state.py`; 3 new asset-sync tests in `scripts/tests/test_flutter_asset_sync.py`.
 - **Owner:** Person 4 (closed by this PR).
 
-### Translate `preview_text_in_operator_language` properly (Phase 5+)
-- **What:** The Phase 4 stub EGS emits identical English text in both `preview_text` and `preview_text_in_operator_language`. Person 3's real Gemma 4 E4B EGS will produce a localized translation in the operator's response language (per §11 of `docs/11-prompt-templates.md`).
-- **Why:** The "Reply in:" dropdown in the dashboard becomes meaningful only when the EGS actually translates. Today the dropdown is wired and validated end-to-end but the local preview rendering shows the same English string twice.
-- **Pros:** Headline demo moment ("Gemma 4 speaks Spanish natively") becomes legible to the judge.
-- **Cons:** Couples to Person 3's prompt engineering and language detection.
-- **Context:** Schema and wire path already permit distinct strings. The Flutter `_Preview` widget already renders both lines (collapses to one if equal). Stub at `scripts/dev_command_translator.py` documents this gap.
-- **Owner:** Person 3.
+### CLOSED — Translate `preview_text_in_operator_language` properly (Phase 5+)
+- **Resolution:** Shipped 2026-05-09. EGS pipeline fully wired with Gemma 4 E4B translation capability. `preview_text_in_operator_language` is properly populated and the translation accuracy works end to end. Dashboard correctly handles translations that take longer than 15 seconds (timeout extended to 120s).
+- **Owner:** Person 3 (Qasim).
 
 ## Phase 3 in-scope work tracked here for breadcrumbs
 
