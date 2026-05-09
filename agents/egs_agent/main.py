@@ -44,8 +44,10 @@ async def publish_egs_state(redis_client, state_ref):
         try:
             state = state_ref.get("egs_state")
             if state:
-                state["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-                await redis_client.publish(EGS_STATE, json.dumps(state))
+                # Deep copy to avoid mutating the coordinator's in-memory state
+                pub_state = {k: v for k, v in state.items() if k != "pending_commands"}
+                pub_state["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                await redis_client.publish(EGS_STATE, json.dumps(pub_state))
         except Exception as e:
             logger.error(f"Error publishing EGS state: {e}")
         await asyncio.sleep(1.0)

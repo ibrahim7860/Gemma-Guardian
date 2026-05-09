@@ -110,11 +110,13 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
                         retries += 1
                         continue
 
-                # Everything valid!
+                # Everything structurally valid!
+                # Per schema contract: unknown_command must always be valid=false
+                is_valid = cmd_name != "unknown_command"
                 return {
                     "kind": "command_translation",
                     "structured": canonical,
-                    "valid": True,
+                    "valid": is_valid,
                     "preview_text": preview_text,
                     "preview_text_in_operator_language": preview_text_in_op,
                 }

@@ -130,21 +130,31 @@ class EGSCoordinator:
         msgs_to_pub = state.get("messages_to_publish", []).copy()
         trigger_replan = state.get("trigger_replan", False)
 
-        for c in state.get("incoming_commands", []):
+        incoming = state.get("incoming_commands", [])
+        if incoming:
+            logger.info("process_commands: received %d command(s)", len(incoming))
+
+        for c in incoming:
             op_txt = c.get("raw_text", "")
             lang = c.get("language", "en")
             cmd_id = c.get("command_id", "")
+            logger.info("process_commands: translating cmd_id=%s lang=%s text=%r", cmd_id, lang, op_txt)
 
             translation = await translate_operator_command(op_txt, lang, state["egs_state"], self.validation_node)
             translation["command_id"] = cmd_id
             translation["contract_version"] = "1.0.0"
             translation["egs_published_at_iso_ms"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
+            logger.info("process_commands: translation result valid=%s kind=%s cmd=%s",
+                        translation.get("valid"), translation.get("kind"),
+                        translation.get("structured", {}).get("command"))
+
             # Output translation back to WebSocket bridge (or just log it)
             msgs_to_pub.append({
                 "channel": "egs.command_translations",
                 "data": translation
             })
+            logger.info("process_commands: queued for publish on egs.command_translations")
 
             if translation.get("valid"):
                 pending = egs_state.setdefault("pending_commands", {})
