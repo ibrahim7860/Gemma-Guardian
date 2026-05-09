@@ -175,7 +175,7 @@ Each drone agent:
 
 ### 3. Edge Ground Station (EGS) — "The Brain"
 
-> **Who built it:** Qasim (you!)  
+> **Who built it:** Qasim  
 > **What it does:** Aggregates everything, runs the local **Gemma 4 E4B** model for command translation and mission replanning
 
 The EGS is the central coordinator. It:
