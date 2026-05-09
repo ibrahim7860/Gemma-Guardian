@@ -256,7 +256,7 @@ class MissionState extends ChangeNotifier {
   String submitOperatorCommand({
     required String rawText,
     required String language,
-    Duration translationTimeout = const Duration(seconds: 15),
+    Duration translationTimeout = const Duration(seconds: 120),
   }) {
     // Orphan the prior active command (if any) before overwriting.
     final prior = _activeCommandId;

@@ -250,6 +250,10 @@ class RedisSubscriber:
             _LOG.warning("RedisSubscriber: unhandled channel %r; dropping", channel)
             return
 
+        # Only print for non-spammy channels
+        if schema_name == "command_translations_envelope":
+            print(f"[ws_bridge] _handle_message: channel={channel} schema={schema_name}", flush=True)
+
         data_raw = message.get("data")
         if isinstance(data_raw, (bytes, bytearray)):
             data_bytes = bytes(data_raw)
@@ -291,6 +295,9 @@ class RedisSubscriber:
                 f"{first_err.field_path}: {first_err.message}"
                 if first_err is not None else "schema_invalid"
             )
+            if schema_name == "command_translations_envelope":
+                print(f"[ws_bridge] VALIDATION FAILED for translation: {detail}", flush=True)
+                print(f"[ws_bridge] RAW PAYLOAD: {payload}", flush=True)
             self._log_validation_failure(
                 schema_name=schema_name,
                 drone_id=drone_id,
