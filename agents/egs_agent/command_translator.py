@@ -21,9 +21,23 @@ async def translate_operator_command(
     """Translates natural language to an OperatorCommand schema."""
     
     system_prompt = f"""You are the EGS command translator for a disaster response drone swarm.
-Your job is to translate the operator's natural language into one of the available commands:
-restrict_zone, exclude_zone, recall_drone, set_priority, set_language, or unknown_command.
-If you cannot understand the command, return unknown_command with a suggestion.
+Your job is to translate the operator's natural language into one of the available commands.
+
+Available commands and their REQUIRED args (you must include ALL required fields):
+- restrict_zone: args = {{"zone_id": "<string>"}}
+- exclude_zone: args = {{"zone_id": "<string>"}}
+- recall_drone: args = {{"drone_id": "<droneN>", "reason": "<why>"}}
+- set_priority: args = {{"finding_type": "<victim|fire|structural_damage|hazmat|road_blockage>", "priority_level": "<critical|high|medium|low>"}}
+- set_language: args = {{"lang_code": "<2-letter ISO code>"}}
+- unknown_command: args = {{"operator_text": "<original text>", "suggestion": "<what you think they meant>"}}
+
+If you cannot understand the command, return unknown_command.
+
+Your output MUST be a JSON object with these keys:
+- "command": one of the command names above
+- "args": object with ALL required fields for that command
+- "preview_text": a short English summary of the command
+- "preview_text_in_operator_language": the same summary translated into the operator's language ({language})
 
 Current swarm state summary:
 Active drones: {list(egs_state.get('drones_summary', {}).keys())}
@@ -53,12 +67,19 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
         
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(endpoint, json=payload, timeout=30.0)
+                resp = await client.post(endpoint, json=payload, timeout=180.0)
                 resp.raise_for_status()
                 data = resp.json()
                 
+                # Extract content string for logging/fallback
+                content_str = data.get("message", {}).get("content", "{}")
+                
                 # Use shared normalize
                 canonical = normalize(data, layer="operator")
+                
+                # Extract and strip extra fields to satisfy strict schema validation
+                preview_text = canonical.pop("preview_text", "Translating command")
+                preview_text_in_op = canonical.pop("preview_text_in_operator_language", f"Translation for {language}")
                 
                 # Structural Validation
                 val_res = validation_node.validate_operator_command(canonical)
@@ -89,13 +110,15 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
                         retries += 1
                         continue
 
-                # Everything valid!
+                # Everything structurally valid!
+                # Per schema contract: unknown_command must always be valid=false
+                is_valid = cmd_name != "unknown_command"
                 return {
-                    "type": "command_translation",
+                    "kind": "command_translation",
                     "structured": canonical,
-                    "valid": True,
-                    "preview_text": f"Translating to {cmd_name}",
-                    "preview_text_in_operator_language": f"Translation for {language}",
+                    "valid": is_valid,
+                    "preview_text": preview_text,
+                    "preview_text_in_operator_language": preview_text_in_op,
                 }
 
         except AdapterError as e:
@@ -108,7 +131,7 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
             
     # Failed after retries
     return {
-        "type": "command_translation",
+        "kind": "command_translation",
         "structured": {"command": "unknown_command", "args": {"operator_text": operator_text, "suggestion": "Failed to translate."}},
         "valid": False,
         "preview_text": "Failed to translate command",

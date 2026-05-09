@@ -26,6 +26,7 @@ class EGSState(TypedDict):
     incoming_telemetry: List[Dict[str, Any]]
     incoming_findings: List[Dict[str, Any]]
     incoming_commands: List[Dict[str, Any]]
+    incoming_actions: List[Dict[str, Any]]
     messages_to_publish: List[Dict[str, Any]] # e.g. {"channel": "...", "data": "..."}
     trigger_replan: bool
 
@@ -43,13 +44,15 @@ class EGSCoordinator:
         workflow.add_node("process_telemetry", self.process_telemetry)
         workflow.add_node("process_findings", self.process_findings)
         workflow.add_node("process_commands", self.process_commands)
+        workflow.add_node("process_actions", self.process_actions)
         workflow.add_node("refresh_validation_events", self.refresh_validation_events)
         workflow.add_node("replan", self.replan)
 
         workflow.add_edge(START, "process_telemetry")
         workflow.add_edge("process_telemetry", "process_findings")
         workflow.add_edge("process_findings", "process_commands")
-        workflow.add_edge("process_commands", "refresh_validation_events")
+        workflow.add_edge("process_commands", "process_actions")
+        workflow.add_edge("process_actions", "refresh_validation_events")
 
         def should_replan(state: EGSState):
             if state.get("trigger_replan", False):
@@ -123,31 +126,75 @@ class EGSCoordinator:
         return {**state, "egs_state": egs_state, "incoming_findings": []}
 
     async def process_commands(self, state: EGSState) -> EGSState:
+        egs_state = state["egs_state"].copy()
         msgs_to_pub = state.get("messages_to_publish", []).copy()
         trigger_replan = state.get("trigger_replan", False)
 
-        for c in state.get("incoming_commands", []):
+        incoming = state.get("incoming_commands", [])
+        if incoming:
+            logger.info("process_commands: received %d command(s)", len(incoming))
+
+        for c in incoming:
             op_txt = c.get("raw_text", "")
             lang = c.get("language", "en")
             cmd_id = c.get("command_id", "")
+            logger.info("process_commands: translating cmd_id=%s lang=%s text=%r", cmd_id, lang, op_txt)
 
             translation = await translate_operator_command(op_txt, lang, state["egs_state"], self.validation_node)
             translation["command_id"] = cmd_id
             translation["contract_version"] = "1.0.0"
+            translation["egs_published_at_iso_ms"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+            # Sanitize structured.args to only keep schema-allowed fields.
+            # The LLM sometimes adds extra keys (e.g., "reason" on exclude_zone)
+            # that pass EGS validation but fail the bridge's strict re-validation.
+            _ALLOWED_ARGS = {
+                "restrict_zone": {"zone_id"},
+                "exclude_zone": {"zone_id"},
+                "recall_drone": {"drone_id", "reason"},
+                "set_priority": {"finding_type", "priority_level"},
+                "set_language": {"lang_code"},
+                "unknown_command": {"operator_text", "suggestion"},
+            }
+            structured = translation.get("structured", {})
+            cmd_name = structured.get("command", "")
+            allowed = _ALLOWED_ARGS.get(cmd_name)
+            if allowed and isinstance(structured.get("args"), dict):
+                structured["args"] = {k: v for k, v in structured["args"].items() if k in allowed}
+
+            logger.info("process_commands: translation result valid=%s kind=%s cmd=%s",
+                        translation.get("valid"), translation.get("kind"), cmd_name)
+            logger.info("process_commands: FULL PAYLOAD: %s", json.dumps(translation))
 
             # Output translation back to WebSocket bridge (or just log it)
             msgs_to_pub.append({
-                "channel": "egs.operator_actions", # example channel
+                "channel": "egs.command_translations",
                 "data": translation
             })
+            logger.info("process_commands: queued for publish on egs.command_translations")
 
             if translation.get("valid"):
-                # some commands trigger replan
-                cmd_name = translation["structured"].get("command")
-                if cmd_name in ["restrict_zone", "exclude_zone", "recall_drone"]:
-                    trigger_replan = True
+                pending = egs_state.setdefault("pending_commands", {})
+                pending[cmd_id] = translation["structured"]
 
-        return {**state, "trigger_replan": trigger_replan, "incoming_commands": [], "messages_to_publish": msgs_to_pub}
+        return {**state, "egs_state": egs_state, "trigger_replan": trigger_replan, "incoming_commands": [], "messages_to_publish": msgs_to_pub}
+
+    def process_actions(self, state: EGSState) -> EGSState:
+        egs_state = state["egs_state"].copy()
+        trigger_replan = state.get("trigger_replan", False)
+
+        for action in state.get("incoming_actions", []):
+            kind = action.get("type", action.get("kind"))
+            if kind == "operator_command_dispatch":
+                cmd_id = action.get("command_id")
+                pending = egs_state.get("pending_commands", {})
+                if cmd_id in pending:
+                    cmd = pending.pop(cmd_id)
+                    cmd_name = cmd.get("command")
+                    if cmd_name in ["restrict_zone", "exclude_zone", "recall_drone"]:
+                        trigger_replan = True
+
+        return {**state, "egs_state": egs_state, "trigger_replan": trigger_replan, "incoming_actions": []}
 
     def refresh_validation_events(self, state: EGSState) -> EGSState:
         """Every Nth tick, refresh `egs_state.recent_validation_events` from

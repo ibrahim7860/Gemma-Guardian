@@ -56,7 +56,7 @@ Rules:
         
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(endpoint, json=payload, timeout=45.0)
+                resp = await client.post(endpoint, json=payload, timeout=180.0)
                 resp.raise_for_status()
                 data = resp.json()
                 

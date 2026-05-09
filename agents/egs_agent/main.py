@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import redis.asyncio as redis
 
 from shared.contracts import CONFIG
@@ -44,8 +44,10 @@ async def publish_egs_state(redis_client, state_ref):
         try:
             state = state_ref.get("egs_state")
             if state:
-                state["timestamp"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
-                await redis_client.publish(EGS_STATE, json.dumps(state))
+                # Deep copy to avoid mutating the coordinator's in-memory state
+                pub_state = {k: v for k, v in state.items() if k != "pending_commands"}
+                pub_state["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                await redis_client.publish(EGS_STATE, json.dumps(pub_state))
         except Exception as e:
             logger.error(f"Error publishing EGS state: {e}")
         await asyncio.sleep(1.0)
@@ -59,6 +61,7 @@ async def main():
     await pubsub.psubscribe("drones.*.state")
     await pubsub.psubscribe("drones.*.findings")
     await pubsub.subscribe("egs.operator_commands") # Assuming this channel exists for incoming commands
+    await pubsub.subscribe("egs.operator_actions")
     # Loop-back channel: _replan_impl publishes survey-point assignments here
     # after the LLM call so the main loop can update egs_state.survey_points
     # without coupling the background task to state_ref. Per Contract 9 this
@@ -81,6 +84,7 @@ async def main():
         "incoming_telemetry": [],
         "incoming_findings": [],
         "incoming_commands": [],
+        "incoming_actions": [],
         "messages_to_publish": [],
         "trigger_replan": False
     }
@@ -107,6 +111,8 @@ async def main():
                     state["incoming_findings"].append(data)
                 elif "operator_commands" in channel:
                     state["incoming_commands"].append(data)
+                elif "operator_actions" in channel:
+                    state["incoming_actions"].append(data)
                 elif channel == "egs.replan_events" and data.get("type") == "survey_assignments":
                     # Apply assignment to in-memory survey_points so subsequent
                     # publish_egs_state ticks reflect the new status. This is
@@ -118,7 +124,7 @@ async def main():
             
             # Run graph
             # If no incoming items and no trigger_replan, we skip calling graph to save CPU
-            if state["incoming_telemetry"] or state["incoming_findings"] or state["incoming_commands"] or state["trigger_replan"]:
+            if state["incoming_telemetry"] or state["incoming_findings"] or state["incoming_commands"] or state["incoming_actions"] or state["trigger_replan"]:
                 state = await coordinator.graph.ainvoke(state)
                 state_ref["egs_state"] = state["egs_state"]
                 
