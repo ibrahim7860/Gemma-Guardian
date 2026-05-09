@@ -26,6 +26,7 @@ class EGSState(TypedDict):
     incoming_telemetry: List[Dict[str, Any]]
     incoming_findings: List[Dict[str, Any]]
     incoming_commands: List[Dict[str, Any]]
+    incoming_actions: List[Dict[str, Any]]
     messages_to_publish: List[Dict[str, Any]] # e.g. {"channel": "...", "data": "..."}
     trigger_replan: bool
 
@@ -43,13 +44,15 @@ class EGSCoordinator:
         workflow.add_node("process_telemetry", self.process_telemetry)
         workflow.add_node("process_findings", self.process_findings)
         workflow.add_node("process_commands", self.process_commands)
+        workflow.add_node("process_actions", self.process_actions)
         workflow.add_node("refresh_validation_events", self.refresh_validation_events)
         workflow.add_node("replan", self.replan)
 
         workflow.add_edge(START, "process_telemetry")
         workflow.add_edge("process_telemetry", "process_findings")
         workflow.add_edge("process_findings", "process_commands")
-        workflow.add_edge("process_commands", "refresh_validation_events")
+        workflow.add_edge("process_commands", "process_actions")
+        workflow.add_edge("process_actions", "refresh_validation_events")
 
         def should_replan(state: EGSState):
             if state.get("trigger_replan", False):
@@ -123,6 +126,7 @@ class EGSCoordinator:
         return {**state, "egs_state": egs_state, "incoming_findings": []}
 
     async def process_commands(self, state: EGSState) -> EGSState:
+        egs_state = state["egs_state"].copy()
         msgs_to_pub = state.get("messages_to_publish", []).copy()
         trigger_replan = state.get("trigger_replan", False)
 
@@ -137,17 +141,32 @@ class EGSCoordinator:
 
             # Output translation back to WebSocket bridge (or just log it)
             msgs_to_pub.append({
-                "channel": "egs.operator_actions", # example channel
+                "channel": "egs.command_translations",
                 "data": translation
             })
 
             if translation.get("valid"):
-                # some commands trigger replan
-                cmd_name = translation["structured"].get("command")
-                if cmd_name in ["restrict_zone", "exclude_zone", "recall_drone"]:
-                    trigger_replan = True
+                pending = egs_state.setdefault("pending_commands", {})
+                pending[cmd_id] = translation["structured"]
 
-        return {**state, "trigger_replan": trigger_replan, "incoming_commands": [], "messages_to_publish": msgs_to_pub}
+        return {**state, "egs_state": egs_state, "trigger_replan": trigger_replan, "incoming_commands": [], "messages_to_publish": msgs_to_pub}
+
+    def process_actions(self, state: EGSState) -> EGSState:
+        egs_state = state["egs_state"].copy()
+        trigger_replan = state.get("trigger_replan", False)
+
+        for action in state.get("incoming_actions", []):
+            kind = action.get("type", action.get("kind"))
+            if kind == "operator_command_dispatch":
+                cmd_id = action.get("command_id")
+                pending = egs_state.get("pending_commands", {})
+                if cmd_id in pending:
+                    cmd = pending.pop(cmd_id)
+                    cmd_name = cmd.get("command")
+                    if cmd_name in ["restrict_zone", "exclude_zone", "recall_drone"]:
+                        trigger_replan = True
+
+        return {**state, "egs_state": egs_state, "trigger_replan": trigger_replan, "incoming_actions": []}
 
     def refresh_validation_events(self, state: EGSState) -> EGSState:
         """Every Nth tick, refresh `egs_state.recent_validation_events` from

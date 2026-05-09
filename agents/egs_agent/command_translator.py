@@ -25,6 +25,12 @@ Your job is to translate the operator's natural language into one of the availab
 restrict_zone, exclude_zone, recall_drone, set_priority, set_language, or unknown_command.
 If you cannot understand the command, return unknown_command with a suggestion.
 
+Your output MUST be a JSON object with the following keys:
+- "command": the translated command name
+- "args": an object containing the arguments for the command
+- "preview_text": a short English summary of the command
+- "preview_text_in_operator_language": the same summary translated into the operator's language ({language})
+
 Current swarm state summary:
 Active drones: {list(egs_state.get('drones_summary', {}).keys())}
 """
@@ -56,6 +62,16 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
                 resp = await client.post(endpoint, json=payload, timeout=30.0)
                 resp.raise_for_status()
                 data = resp.json()
+                
+                # Extract translations before normalizing drops them
+                content_str = data.get("message", {}).get("content", "{}")
+                try:
+                    parsed_content = json.loads(content_str)
+                    preview_text = parsed_content.get("preview_text", "Translating command")
+                    preview_text_in_op = parsed_content.get("preview_text_in_operator_language", f"Translation for {language}")
+                except:
+                    preview_text = "Translating command"
+                    preview_text_in_op = f"Translation for {language}"
                 
                 # Use shared normalize
                 canonical = normalize(data, layer="operator")
@@ -94,8 +110,8 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
                     "type": "command_translation",
                     "structured": canonical,
                     "valid": True,
-                    "preview_text": f"Translating to {cmd_name}",
-                    "preview_text_in_operator_language": f"Translation for {language}",
+                    "preview_text": preview_text,
+                    "preview_text_in_operator_language": preview_text_in_op,
                 }
 
         except AdapterError as e:
