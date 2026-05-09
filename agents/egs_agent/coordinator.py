@@ -138,6 +138,7 @@ class EGSCoordinator:
             translation = await translate_operator_command(op_txt, lang, state["egs_state"], self.validation_node)
             translation["command_id"] = cmd_id
             translation["contract_version"] = "1.0.0"
+            translation["egs_published_at_iso_ms"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
             # Output translation back to WebSocket bridge (or just log it)
             msgs_to_pub.append({

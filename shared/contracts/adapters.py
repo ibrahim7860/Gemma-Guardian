@@ -73,6 +73,11 @@ def normalize(response_or_payload: Any, *, layer: str) -> Dict[str, Any]:
     # Structured-output path
     content = msg.get("content")
     if content is not None:
+        if content.strip().startswith("```json"):
+            content = content.strip()[7:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError as exc:

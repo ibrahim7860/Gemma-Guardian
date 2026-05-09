@@ -21,13 +21,21 @@ async def translate_operator_command(
     """Translates natural language to an OperatorCommand schema."""
     
     system_prompt = f"""You are the EGS command translator for a disaster response drone swarm.
-Your job is to translate the operator's natural language into one of the available commands:
-restrict_zone, exclude_zone, recall_drone, set_priority, set_language, or unknown_command.
-If you cannot understand the command, return unknown_command with a suggestion.
+Your job is to translate the operator's natural language into one of the available commands.
 
-Your output MUST be a JSON object with the following keys:
-- "command": the translated command name
-- "args": an object containing the arguments for the command
+Available commands and their REQUIRED args (you must include ALL required fields):
+- restrict_zone: args = {{"zone_id": "<string>"}}
+- exclude_zone: args = {{"zone_id": "<string>"}}
+- recall_drone: args = {{"drone_id": "<droneN>", "reason": "<why>"}}
+- set_priority: args = {{"finding_type": "<victim|fire|structural_damage|hazmat|road_blockage>", "priority_level": "<critical|high|medium|low>"}}
+- set_language: args = {{"lang_code": "<2-letter ISO code>"}}
+- unknown_command: args = {{"operator_text": "<original text>", "suggestion": "<what you think they meant>"}}
+
+If you cannot understand the command, return unknown_command.
+
+Your output MUST be a JSON object with these keys:
+- "command": one of the command names above
+- "args": object with ALL required fields for that command
 - "preview_text": a short English summary of the command
 - "preview_text_in_operator_language": the same summary translated into the operator's language ({language})
 
@@ -63,18 +71,15 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
                 resp.raise_for_status()
                 data = resp.json()
                 
-                # Extract translations before normalizing drops them
+                # Extract content string for logging/fallback
                 content_str = data.get("message", {}).get("content", "{}")
-                try:
-                    parsed_content = json.loads(content_str)
-                    preview_text = parsed_content.get("preview_text", "Translating command")
-                    preview_text_in_op = parsed_content.get("preview_text_in_operator_language", f"Translation for {language}")
-                except:
-                    preview_text = "Translating command"
-                    preview_text_in_op = f"Translation for {language}"
                 
                 # Use shared normalize
                 canonical = normalize(data, layer="operator")
+                
+                # Extract and strip extra fields to satisfy strict schema validation
+                preview_text = canonical.pop("preview_text", "Translating command")
+                preview_text_in_op = canonical.pop("preview_text_in_operator_language", f"Translation for {language}")
                 
                 # Structural Validation
                 val_res = validation_node.validate_operator_command(canonical)
@@ -107,7 +112,7 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
 
                 # Everything valid!
                 return {
-                    "type": "command_translation",
+                    "kind": "command_translation",
                     "structured": canonical,
                     "valid": True,
                     "preview_text": preview_text,
@@ -124,7 +129,7 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
             
     # Failed after retries
     return {
-        "type": "command_translation",
+        "kind": "command_translation",
         "structured": {"command": "unknown_command", "args": {"operator_text": operator_text, "suggestion": "Failed to translate."}},
         "valid": False,
         "preview_text": "Failed to translate command",
