@@ -189,7 +189,7 @@ The EGS is the central coordinator. It:
 - When multiple drones report the same finding type at nearly the same GPS location within 30 seconds, the EGS keeps only the **first-seen** report
 - This is the `EGS_DUPLICATE_FINDING` rule you see in the logs
 
-#### C. Translates Operator Commands (Your Key Feature)
+#### C. Translates Operator Commands
 The operator can type commands in **any language**. The EGS:
 
 1. Receives the raw text from the dashboard (via Redis `egs.operator_commands`)
@@ -238,8 +238,6 @@ The dashboard shows:
 ---
 
 ## The Command Flow (End to End)
-
-This is the flow you just debugged and fixed:
 
 ```mermaid
 sequenceDiagram
