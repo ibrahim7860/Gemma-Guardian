@@ -250,10 +250,6 @@ class RedisSubscriber:
             _LOG.warning("RedisSubscriber: unhandled channel %r; dropping", channel)
             return
 
-        # Only print for non-spammy channels
-        if schema_name == "command_translations_envelope":
-            print(f"[ws_bridge] _handle_message: channel={channel} schema={schema_name}", flush=True)
-
         data_raw = message.get("data")
         if isinstance(data_raw, (bytes, bytearray)):
             data_bytes = bytes(data_raw)
@@ -296,8 +292,10 @@ class RedisSubscriber:
                 if first_err is not None else "schema_invalid"
             )
             if schema_name == "command_translations_envelope":
-                print(f"[ws_bridge] VALIDATION FAILED for translation: {detail}", flush=True)
-                print(f"[ws_bridge] RAW PAYLOAD: {payload}", flush=True)
+                _LOG.warning(
+                    "validation failed for command_translation: %s", detail,
+                )
+                _LOG.debug("command_translation raw payload: %s", payload)
             self._log_validation_failure(
                 schema_name=schema_name,
                 drone_id=drone_id,
@@ -323,7 +321,6 @@ class RedisSubscriber:
             # the WS contract. Then enqueue for the broadcaster task. We do
             # NOT call ``registry.broadcast`` here — see the constructor
             # docstring on ``_translation_queue`` for the rationale.
-            print(f"[ws_bridge] redis_subscriber: received translation cmd_id={payload.get('command_id')} valid={payload.get('valid')}", flush=True)
             if self._translation_queue is not None:
                 ws_frame: Dict[str, Any] = {
                     "type": "command_translation",
@@ -336,7 +333,6 @@ class RedisSubscriber:
                     ],
                     "contract_version": payload["contract_version"],
                 }
-                print(f"[ws_bridge] redis_subscriber: enqueuing WS frame: {ws_frame}", flush=True)
                 try:
                     self._translation_queue.put_nowait(ws_frame)
                 except asyncio.QueueFull:

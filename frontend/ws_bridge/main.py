@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,8 @@ from frontend.ws_bridge.aggregator import StateAggregator
 from frontend.ws_bridge.config import BridgeConfig
 from frontend.ws_bridge.redis_publisher import RedisPublisher
 from frontend.ws_bridge.redis_subscriber import RedisSubscriber
+
+logger = logging.getLogger(__name__)
 
 # ---- helpers ---------------------------------------------------------------
 
@@ -114,9 +117,11 @@ class _ConnectionRegistry:
         async with self._lock:
             targets: List[WebSocket] = list(self._clients)
         if not targets:
-            print(f"[ws_bridge] broadcast: NO WS clients registered, dropping frame type={message.get('type')}", flush=True)
+            logger.debug(
+                "broadcast: no WS clients registered, dropping frame type=%s",
+                message.get("type"),
+            )
             return
-        print(f"[ws_bridge] broadcast: sending to {len(targets)} client(s), type={message.get('type')}", flush=True)
         encoded = json.dumps(message)
 
         async def _send(ws: WebSocket) -> Optional[WebSocket]:
@@ -269,13 +274,11 @@ def create_app() -> FastAPI:
         try/except shape as ``_emit_loop`` so a single bad frame never
         kills the broadcaster.
         """
-        print("[ws_bridge] translation_broadcaster_loop started", flush=True)
         while True:
             try:
                 frame = await translation_queue.get()
             except asyncio.CancelledError:
                 raise
-            print(f"[ws_bridge] broadcaster: got frame from queue, cmd_id={frame.get('command_id')}", flush=True)
             try:
                 # Defense in depth: re-validate the post-strip frame
                 # against the WS contract before broadcasting. If the
@@ -289,7 +292,6 @@ def create_app() -> FastAPI:
                         f"post-strip: {outcome.errors}"
                     )
                     continue
-                print(f"[ws_bridge] broadcaster: frame validated, broadcasting...", flush=True)
                 await registry.broadcast(frame)
             except asyncio.CancelledError:
                 raise

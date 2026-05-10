@@ -16,14 +16,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **CI:** `.github/workflows/test.yml` `bridge_e2e` job updated to invoke both Playwright test files.
 - **Owner:** Person 4 (closed by this PR).
 
-### EGS subscriber for `egs.operator_actions`
-- **What:** EGS-side subscriber that consumes `egs.operator_actions` Redis channel (operator approve/dismiss decisions on findings) and reflects approved findings into the next `state_update` envelope.
-- **Why:** Phase 3 ships the bridge → Redis publish path with a typed schema. Without an EGS subscriber, operator decisions land in Redis but never propagate back to the dashboard as confirmed state. Phase 3 visual UI uses two-stage feedback (grey check = bridge ack, green check = EGS-confirmed) precisely so this is forward-compatible.
-- **Pros:** Closes the loop; green-check-on-confirmed becomes truthful, not aspirational; multi-operator scenarios work correctly.
-- **Cons:** Couples to EGS state shape, needs replan logic on approve.
-- **Context:** Schema at `shared/schemas/operator_actions.json` (added in Phase 3). Topic constant in `shared/contracts/topics.yaml` and generated `topics.dart`. Bridge stamps `bridge_received_at_iso_ms` on the payload before publish; EGS dedupes on `command_id`.
-- **Depends on:** Phase 3 merge.
-- **Owner:** Person 3 (EGS).
+### EGS subscriber for `egs.operator_actions` — finding_approval variant
+- **Status (2026-05-09, partial):** PR #38 shipped the EGS subscriber on `egs.operator_actions` and it correctly consumes the `operator_command_dispatch` action variant — replan only triggers after the operator confirms via DISPATCH, closing that half of the loop. The `finding_approval` action variant (operator approve/dismiss decisions on findings, published by the bridge) is **STILL NOT consumed** — those payloads land in Redis but the EGS does not yet reflect approved findings into the next `state_update` envelope.
+- **What's left:** Wire the `finding_approval` branch in the EGS `egs.operator_actions` handler so approved findings flow back into `egs.state` and the dashboard's two-stage feedback (grey check = bridge ack, green check = EGS-confirmed) becomes truthful.
+- **Why:** Without the `finding_approval` consumer, the green-check state in the dashboard remains aspirational and multi-operator scenarios will not converge.
+- **Pros:** Closes the remaining half of the loop; green-check-on-confirmed becomes truthful; multi-operator scenarios work correctly.
+- **Cons:** Couples to EGS state shape; may want lightweight replan-on-approve logic.
+- **Context:** Schema at `shared/schemas/operator_actions.json`. Topic constant in `shared/contracts/topics.yaml` and generated `topics.dart`. Bridge stamps `bridge_received_at_iso_ms` before publish; EGS dedupes on `command_id`. The `operator_command_dispatch` handler in PR #38 is a good template for the new `finding_approval` branch.
+- **Owner:** Person 3 (Qasim).
 
 ### CLOSED — Static aerial base image for map panel
 - **Resolution:** Shipped Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`. Mississippi post-Katrina FEMA blue-roof aerial wired into `frontend/flutter_dashboard/lib/widgets/map_panel.dart` via `Image.asset` over a 3-layer Stack (procedural grid fallback ← `AnimatedOpacity` aerial overlay at 0.80 ← markers). Bbox locks to `scenario.base_image_extents` (LOCKED DESIGN DECISION D1); off-extents drones render as edge chevrons with tap-to-show distance/cardinal toast. Drone-id labels moved out of the painter into white-pill `Positioned` widgets for legibility against photographic backgrounds (D3); finding circles got a 7px white halo; touch targets bumped 18→24 / 14→24 (48px hit area, meets iOS 44px minimum).
