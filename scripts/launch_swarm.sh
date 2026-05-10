@@ -142,8 +142,14 @@ fi
 # --- Sim components (Hazim — always present) ------------------------------
 emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
 emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
+# EGS position must match the active scenario's `origin` (all three shipped
+# scenarios — disaster_zone_v1, resilience_v1, single_drone_smoke — use
+# 34.0000 / -118.5000). Without these flags `MeshSimulator.forward_finding`
+# silently drops every payload because `egs_pos is None`, which means the
+# dashboard shows zero findings during demo capture (PR #41 made the mesh
+# sim the required gateway for the bridge's `.findings.delivered` path).
 emit_if_exists mesh "agents/mesh_simulator/main.py" \
-  "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/mesh.log"
+  "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL --egs-lat 34.0000 --egs-lon -118.5000 2>&1 | tee $LOG_DIR/mesh.log"
 
 # --- EGS (Qasim) ----------------------------------------------------------
 emit_if_exists egs "agents/egs_agent/main.py" \
