@@ -8,6 +8,7 @@ class Channels {
   static String perDroneState(String droneId) => "drones.$droneId.state";
   static String perDroneTasks(String droneId) => "drones.$droneId.tasks";
   static String perDroneFindings(String droneId) => "drones.$droneId.findings";
+  static String perDroneFindingsDelivered(String droneId) => "drones.$droneId.findings.delivered";
   static String perDroneCamera(String droneId) => "drones.$droneId.camera";
   static String perDroneCmd(String droneId) => "drones.$droneId.cmd";
   static String swarmBroadcast(String droneId) => "swarm.broadcasts.$droneId";
@@ -19,4 +20,6 @@ class Channels {
   static const egsOperatorCommands = "egs.operator_commands";
   static const egsCommandTranslations = "egs.command_translations";
   static const meshAdjacency = "mesh.adjacency_matrix";
+  static const meshLinkStatus = "mesh.link_status";
+  static const simScriptedEvents = "sim.scripted_events";
 }

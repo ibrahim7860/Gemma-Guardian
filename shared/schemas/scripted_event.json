@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/scripted_event.json",
+  "title": "Scripted simulator event (v1, locked 2026-05-10)",
+  "description": "Published on Redis channel sim.scripted_events whenever the waypoint runner fires a scenario-defined event. Cross-component reactions (mesh sim gate, EGS replan triggers) consume this stream.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["t", "type", "wall_clock_iso_ms"],
+  "properties": {
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Scenario tick at which the event fired."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "drone_failure",
+        "zone_update",
+        "fire_spread",
+        "mission_complete",
+        "egs_link_drop",
+        "egs_link_restore"
+      ]
+    },
+    "drone_id": {"$ref": "_common.json#/$defs/drone_id"},
+    "detail": {
+      "type": "string",
+      "description": "Free-text annotation from the scenario YAML."
+    },
+    "wall_clock_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"}
+  }
+}

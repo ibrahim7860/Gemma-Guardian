@@ -1,11 +1,12 @@
 contract_version_floor: "1.0"
 redis:
   per_drone:
-    state:    {channel: "drones.{drone_id}.state",    payload: "json",       json_schema: "drone_state"}
-    tasks:    {channel: "drones.{drone_id}.tasks",    payload: "json",       json_schema: "task_assignment"}
-    findings: {channel: "drones.{drone_id}.findings", payload: "json",       json_schema: "finding"}
-    camera:   {channel: "drones.{drone_id}.camera",   payload: "jpeg_bytes"}
-    cmd:      {channel: "drones.{drone_id}.cmd",      payload: "json",       json_schema: null}
+    state:               {channel: "drones.{drone_id}.state",               payload: "json",       json_schema: "drone_state"}
+    tasks:               {channel: "drones.{drone_id}.tasks",               payload: "json",       json_schema: "task_assignment"}
+    findings:            {channel: "drones.{drone_id}.findings",            payload: "json",       json_schema: "finding"}
+    findings_delivered:  {channel: "drones.{drone_id}.findings.delivered",  payload: "json",       json_schema: "finding"}
+    camera:              {channel: "drones.{drone_id}.camera",              payload: "jpeg_bytes"}
+    cmd:                 {channel: "drones.{drone_id}.cmd",                 payload: "json",       json_schema: null}
   swarm:
     broadcast:       {channel: "swarm.broadcasts.{drone_id}",            payload: "json", json_schema: "peer_broadcast"}
     visible_to:      {channel: "swarm.{drone_id}.visible_to.{drone_id}", payload: "json", json_schema: "peer_broadcast"}
@@ -17,7 +18,10 @@ redis:
     operator_commands:      {channel: "egs.operator_commands",      payload: "json", json_schema: "operator_commands_envelope"}
     command_translations:   {channel: "egs.command_translations",   payload: "json", json_schema: "command_translations_envelope"}
   mesh:
-    adjacency: {channel: "mesh.adjacency_matrix", payload: "json", json_schema: null}
+    adjacency:   {channel: "mesh.adjacency_matrix", payload: "json", json_schema: null}
+    link_status: {channel: "mesh.link_status",      payload: "json", json_schema: "mesh_link_status"}
+  sim:
+    scripted_events: {channel: "sim.scripted_events", payload: "json", json_schema: "scripted_event"}
 websocket:
   endpoint: "ws://localhost:9090"
   schema:   "websocket_messages"

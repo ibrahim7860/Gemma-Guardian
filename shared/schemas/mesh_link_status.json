@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibrahim7860/Gemma-Guardian/shared/schemas/v1/mesh_link_status.json",
+  "title": "Mesh per-drone EGS-link status event (v1, locked 2026-05-10)",
+  "description": "Published on Redis channel mesh.link_status whenever a drone's link to the EGS transitions, either by geometric range crossing (mesh.egs_link_range_meters) or by a scripted egs_link_drop / egs_link_restore event. Drones subscribe and flip their standalone bit on receipt; the dashboard uses the same stream for the EGS LINK SEVERED banner.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["drone_id", "link", "t", "wall_clock_iso_ms", "reason"],
+  "properties": {
+    "drone_id": {"$ref": "_common.json#/$defs/drone_id"},
+    "link": {
+      "type": "string",
+      "enum": ["up", "down"]
+    },
+    "t": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Scenario tick at the moment of the transition."
+    },
+    "wall_clock_iso_ms": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+    "reason": {
+      "type": "string",
+      "enum": ["geometric", "scripted", "heartbeat"],
+      "description": "Why the transition fired. 'geometric' = drone crossed egs_link_range; 'scripted' = sim.scripted_events override; 'heartbeat' = periodic re-emit for liveness."
+    }
+  }
+}
