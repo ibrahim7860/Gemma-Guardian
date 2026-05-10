@@ -14,7 +14,10 @@ the seeded `state_update` envelope while the subscriber retries.
 Channel-to-schema mapping:
 - ``egs.state`` -> ``egs_state`` -> ``aggregator.update_egs_state``
 - ``drones.<id>.state`` -> ``drone_state`` -> ``aggregator.update_drone_state``
-- ``drones.<id>.findings`` -> ``finding`` -> ``aggregator.add_finding``
+- ``drones.<id>.findings.delivered`` -> ``finding`` -> ``aggregator.add_finding``
+  (PR1: bridge migrated from ``.findings`` onto the mesh-sim-gated
+  ``.delivered`` copy. PR2 adds the actual gate; for now mesh sim is a pure
+  passthrough.)
 
 Channel constants come from ``shared.contracts.topics``; subscribe patterns
 are derived by replacing ``{drone_id}`` with ``*``. Do not hard-code channel
@@ -43,7 +46,10 @@ _LOG = logging.getLogger(__name__)
 # psubscribe for the per-drone wildcard channels; the literal ``egs.state`` is
 # subscribed via plain ``subscribe`` (it carries no glob metacharacters).
 _DRONE_STATE_PATTERN: str = topics.PER_DRONE_STATE.replace("{drone_id}", "*")
-_DRONE_FINDINGS_PATTERN: str = topics.PER_DRONE_FINDINGS.replace("{drone_id}", "*")
+# PR1: the bridge consumes the mesh-sim-gated copy of findings.
+_DRONE_FINDINGS_PATTERN: str = topics.PER_DRONE_FINDINGS_DELIVERED.replace(
+    "{drone_id}", "*"
+)
 _EGS_STATE_CHANNEL: str = topics.EGS_STATE
 _EGS_COMMAND_TRANSLATIONS_CHANNEL: str = topics.EGS_COMMAND_TRANSLATIONS
 
@@ -74,9 +80,11 @@ def _classify_channel(channel: str) -> Tuple[Optional[str], Optional[str]]:
         parts = channel.split(".")
         if len(parts) == 3:
             return "drone_state", parts[1]
-    if channel.startswith("drones.") and channel.endswith(".findings"):
+    # PR1: findings now arrive on the mesh-sim-gated `.delivered` channel.
+    # Form: drones.<id>.findings.delivered (4 dotted parts).
+    if channel.startswith("drones.") and channel.endswith(".findings.delivered"):
         parts = channel.split(".")
-        if len(parts) == 3:
+        if len(parts) == 4:
             return "finding", parts[1]
     return None, None
 

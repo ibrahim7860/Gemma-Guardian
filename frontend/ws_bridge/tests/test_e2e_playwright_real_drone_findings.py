@@ -103,6 +103,13 @@ def test_real_drone_finding_renders_in_dashboard(tmp_path):
                  "--scenario", scenario, "--redis-url", redis_url],
                 name="frame",
             ), _spawn(
+                # PR1: bridge subscribes to drones.*.findings.delivered, so the
+                # mesh simulator must run as the passthrough between the drone
+                # agent's drones.<id>.findings publish and the bridge.
+                [sys.executable, "-m", "agents.mesh_simulator.main",
+                 "--redis-url", redis_url],
+                name="mesh-sim",
+            ), _spawn(
                 [sys.executable, "-m", "agents.drone_agent",
                  "--drone-id", "drone1", "--scenario", scenario,
                  "--redis-url", redis_url,

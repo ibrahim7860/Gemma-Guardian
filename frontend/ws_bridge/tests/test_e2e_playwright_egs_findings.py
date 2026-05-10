@@ -172,6 +172,13 @@ def test_egs_findings_count_renders_in_flutter_semantics_tree(
             env=env_extras,
             name="egs",
         ) as egs_proc, _spawn(
+            # PR1: EGS now subscribes to drones.*.findings.delivered, so the
+            # mesh simulator must run as the passthrough between the fake
+            # findings producer and the EGS / bridge consumers.
+            [sys.executable, "-m", "agents.mesh_simulator.main"],
+            env=env_extras,
+            name="mesh-sim",
+        ), _spawn(
             [sys.executable, "scripts/dev_fake_producers.py",
              "--emit=findings", "--drone-id", drone_id, "--tick-s", "0.5"],
             env=env_extras,

@@ -118,6 +118,13 @@ def test_finding_renders_in_flutter_semantics_tree(tmp_path, flutter_static_serv
                  "--scenario", scenario, "--redis-url", redis_url],
                 name="frame",
             ), _spawn(
+                # PR1: bridge subscribes to drones.*.findings.delivered, so
+                # the mesh simulator must run as the passthrough between the
+                # drone agent and the bridge.
+                [sys.executable, "-m", "agents.mesh_simulator.main",
+                 "--redis-url", redis_url],
+                name="mesh-sim",
+            ), _spawn(
                 [sys.executable, "-m", "agents.drone_agent",
                  "--drone-id", "drone1", "--scenario", scenario,
                  "--redis-url", redis_url,

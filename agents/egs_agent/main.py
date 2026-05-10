@@ -59,7 +59,12 @@ async def main():
     
     # Pattern subscribe
     await pubsub.psubscribe("drones.*.state")
-    await pubsub.psubscribe("drones.*.findings")
+    # PR1 channel migration: findings now flow via the mesh-simulator-gated
+    # `.delivered` channel. The mesh sim psubs the raw `drones.*.findings`
+    # publish from drones and republishes verbatim on `.delivered`. PR1 is a
+    # pure refactor — gating arrives in PR2.
+    logger.info("egs subscribing to %s for findings", "drones.*.findings.delivered")
+    await pubsub.psubscribe("drones.*.findings.delivered")
     await pubsub.subscribe("egs.operator_commands") # Assuming this channel exists for incoming commands
     await pubsub.subscribe("egs.operator_actions")
     # Loop-back channel: _replan_impl publishes survey-point assignments here
@@ -107,7 +112,8 @@ async def main():
                 
                 if ".state" in channel:
                     state["incoming_telemetry"].append(data)
-                elif ".findings" in channel:
+                elif channel.endswith(".findings.delivered"):
+                    # PR1: EGS now consumes the mesh-sim-gated copy.
                     state["incoming_findings"].append(data)
                 elif "operator_commands" in channel:
                     state["incoming_commands"].append(data)

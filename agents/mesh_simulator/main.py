@@ -1,8 +1,11 @@
 """Mesh simulator main loop.
 
 Subscribes to ``drones.*.state`` (psubscribe) to maintain a position cache,
-and to ``swarm.broadcasts.*`` to forward peer broadcasts to in-range
-recipients via ``swarm.<receiver_id>.visible_to.<receiver_id>``.
+to ``swarm.broadcasts.*`` to forward peer broadcasts to in-range
+recipients via ``swarm.<receiver_id>.visible_to.<receiver_id>``, and to
+``drones.*.findings`` to republish findings verbatim onto
+``drones.<id>.findings.delivered`` (PR1: pure passthrough — gate behavior
+arrives in PR2).
 
 Also publishes a JSON adjacency snapshot on ``mesh.adjacency_matrix`` once per
 second (configurable). The snapshot is debug-only — agents do not consume it,
@@ -13,6 +16,7 @@ Public surface for tests:
     sim.ingest_state(state_dict)
     sim.set_egs_position(lat, lon)
     sim.forward_broadcast(sender_id, raw_bytes)
+    sim.forward_finding(sender_id, raw_bytes)
     sim.publish_adjacency()
 
 The CLI entry point ``main()`` wires these methods to redis-py pubsub and
@@ -44,20 +48,24 @@ from agents.mesh_simulator.range_filter import (
 from shared.contracts.config import CONFIG
 from shared.contracts.topics import (
     MESH_ADJACENCY,
+    PER_DRONE_FINDINGS,
     PER_DRONE_STATE,
     SWARM_BROADCAST,
+    per_drone_findings_delivered_channel,
     swarm_visible_to_channel,
 )
 
 # psubscribe patterns derived from the channel templates (single source of truth).
 _STATE_PATTERN = PER_DRONE_STATE.replace("{drone_id}", "*")
 _BROADCAST_PATTERN = SWARM_BROADCAST.replace("{drone_id}", "*")
+_FINDINGS_PATTERN = PER_DRONE_FINDINGS.replace("{drone_id}", "*")
 
 LatLon = Tuple[float, float]
 
 
 _STATE_CHANNEL_RE = re.compile(r"^drones\.(drone\d+)\.state$")
 _BROADCAST_CHANNEL_RE = re.compile(r"^swarm\.broadcasts\.(drone\d+)$")
+_FINDINGS_CHANNEL_RE = re.compile(r"^drones\.(drone\d+)\.findings$")
 
 
 def drone_id_from_state_channel(channel: str) -> Optional[str]:
@@ -67,6 +75,11 @@ def drone_id_from_state_channel(channel: str) -> Optional[str]:
 
 def drone_id_from_broadcast_channel(channel: str) -> Optional[str]:
     m = _BROADCAST_CHANNEL_RE.match(channel)
+    return m.group(1) if m else None
+
+
+def drone_id_from_findings_channel(channel: str) -> Optional[str]:
+    m = _FINDINGS_CHANNEL_RE.match(channel)
     return m.group(1) if m else None
 
 
@@ -128,6 +141,24 @@ class MeshSimulator:
             published += 1
         return published
 
+    # --- Findings passthrough (PR1: pure refactor; PR2 will add the gate) ---------
+
+    def forward_finding(self, sender_id: str, raw_message: bytes) -> int:
+        """Republish a raw findings payload verbatim on the .delivered channel.
+
+        PR1 contract: this is an unconditional passthrough so EGS / bridge can
+        migrate their subscriptions onto the gated channel without behavior
+        change. PR2 will reuse this entry point and add range / scripted-event
+        gating. Returns the number of subscribers the publish reached (best
+        effort — Redis returns the receiver count from PUBLISH).
+        """
+        channel = per_drone_findings_delivered_channel(sender_id)
+        result = self.redis.publish(channel, raw_message)
+        try:
+            return int(result)
+        except (TypeError, ValueError):  # pragma: no cover — defensive
+            return 0
+
     # --- Adjacency snapshot --------------------------------------------------------
 
     def adjacency_snapshot(self) -> Dict[str, list]:
@@ -146,9 +177,9 @@ class MeshSimulator:
     def run_forever(self, *, adjacency_hz: float = 1.0) -> None:
         """Blocking loop: psubscribe, dispatch, periodically publish adjacency."""
         pubsub = self.redis.pubsub()
-        pubsub.psubscribe(_STATE_PATTERN, _BROADCAST_PATTERN)
-        # drain initial subscribe acks
-        for _ in range(2):
+        pubsub.psubscribe(_STATE_PATTERN, _BROADCAST_PATTERN, _FINDINGS_PATTERN)
+        # drain initial subscribe acks (one per pattern)
+        for _ in range(3):
             pubsub.get_message(timeout=0.5)
 
         stop = threading.Event()
@@ -183,6 +214,12 @@ class MeshSimulator:
                 if drone_id is not None:
                     raw = data if isinstance(data, (bytes, bytearray)) else str(data).encode()
                     self.forward_broadcast(drone_id, bytes(raw))
+                    continue
+                drone_id = drone_id_from_findings_channel(channel)
+                if drone_id is not None:
+                    # PR1: pure passthrough. PR2 will gate this on link state.
+                    raw = data if isinstance(data, (bytes, bytearray)) else str(data).encode()
+                    self.forward_finding(drone_id, bytes(raw))
                     continue
         except KeyboardInterrupt:
             print("[mesh_simulator] stopped via SIGINT", flush=True)

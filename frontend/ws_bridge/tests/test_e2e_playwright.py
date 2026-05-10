@@ -203,6 +203,10 @@ def pipeline() -> Iterator[Dict[str, Any]]:
     bridge_proc: Optional[subprocess.Popen] = None
     producer_proc: Optional[subprocess.Popen] = None
     http_proc: Optional[subprocess.Popen] = None
+    # PR1: bridge subscribes to drones.*.findings.delivered, so the mesh
+    # simulator must run as the passthrough between dev_fake_producers
+    # and the bridge.
+    mesh_sim_proc: Optional[subprocess.Popen] = None
 
     try:
         # 1. Redis on a non-default port, no persistence.
@@ -245,7 +249,24 @@ def pipeline() -> Iterator[Dict[str, Any]]:
         )
         _wait_http_ready(f"http://127.0.0.1:{bridge_port}/health", timeout_s=15.0)
 
-        # 3. Fake producer (no need to wait — bridge will catch up).
+        # 3a. Mesh simulator: PR1 passthrough so .findings → .findings.delivered.
+        mesh_sim_env = os.environ.copy()
+        existing_pp = mesh_sim_env.get("PYTHONPATH", "")
+        mesh_sim_env["PYTHONPATH"] = (
+            f"{_REPO_ROOT}{os.pathsep}{existing_pp}" if existing_pp else str(_REPO_ROOT)
+        )
+        mesh_sim_proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "agents.mesh_simulator.main",
+                "--redis-url", f"redis://127.0.0.1:{redis_port}",
+            ],
+            env=mesh_sim_env,
+            cwd=str(_REPO_ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # 3b. Fake producer (no need to wait — bridge will catch up).
         producer_proc = subprocess.Popen(
             [
                 sys.executable, str(_DEV_PRODUCER),
@@ -282,6 +303,7 @@ def pipeline() -> Iterator[Dict[str, Any]]:
         }
     finally:
         _terminate_proc(producer_proc, "fake_producer")
+        _terminate_proc(mesh_sim_proc, "mesh_simulator")
         _terminate_proc(http_proc, "http.server")
         _terminate_proc(bridge_proc, "uvicorn_bridge")
         _terminate_proc(redis_proc, "redis-server")

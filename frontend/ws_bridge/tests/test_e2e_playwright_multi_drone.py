@@ -152,6 +152,10 @@ def multi_drone_pipeline() -> Iterator[Dict[str, Any]]:
     egs_producer: Optional[subprocess.Popen] = None
     drone_producers: List[subprocess.Popen] = []
     http_proc: Optional[subprocess.Popen] = None
+    # PR1: bridge subscribes to drones.*.findings.delivered, so the mesh
+    # simulator must run as the passthrough between dev_fake_producers
+    # (which publishes drones.<id>.findings) and the bridge.
+    mesh_sim_proc: Optional[subprocess.Popen] = None
 
     try:
         # 1. Redis on isolated port, no persistence.
@@ -205,6 +209,23 @@ def multi_drone_pipeline() -> Iterator[Dict[str, Any]]:
             stderr=subprocess.DEVNULL,
         )
 
+        # 3b. Mesh simulator: PR1 passthrough so .findings → .findings.delivered.
+        mesh_sim_env = os.environ.copy()
+        existing_pp = mesh_sim_env.get("PYTHONPATH", "")
+        mesh_sim_env["PYTHONPATH"] = (
+            f"{_REPO_ROOT}{os.pathsep}{existing_pp}" if existing_pp else str(_REPO_ROOT)
+        )
+        mesh_sim_proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "agents.mesh_simulator.main",
+                "--redis-url", f"redis://127.0.0.1:{redis_port}",
+            ],
+            env=mesh_sim_env,
+            cwd=str(_REPO_ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
         # 4. Per-drone producers (state + findings each).
         for drone_id in _DRONE_ROSTER:
             proc = subprocess.Popen(
@@ -247,6 +268,7 @@ def multi_drone_pipeline() -> Iterator[Dict[str, Any]]:
         _terminate_proc(egs_producer, "egs_producer")
         for i, p in enumerate(drone_producers):
             _terminate_proc(p, f"drone_producer[{i}]")
+        _terminate_proc(mesh_sim_proc, "mesh_simulator")
         _terminate_proc(http_proc, "http.server")
         _terminate_proc(bridge_proc, "uvicorn_bridge")
         _terminate_proc(redis_proc, "redis-server")
