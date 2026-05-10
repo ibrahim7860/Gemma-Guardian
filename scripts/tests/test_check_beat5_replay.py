@@ -152,3 +152,32 @@ def test_replay_missing_log_returns_exit_2(tmp_path: Path) -> None:
         f"stderr={result.stderr}"
     )
     assert "empty or missing" in (result.stdout + result.stderr)
+
+
+def test_replay_skips_envelopes_with_bad_timestamps(tmp_path: Path) -> None:
+    """Lines with missing or non-numeric received_at_s must be skipped, not
+    silently re-anchored to time.monotonic().
+
+    If every line is corrupt, the file is effectively empty and the
+    "log is empty or missing" exit-2 path should fire — proving the
+    skip-on-bad-ts path doesn't fall back to live-mode monotonic clocks.
+    """
+    ws_log = tmp_path / "ws_frames.jsonl"
+    val_log = tmp_path / "validation_events.jsonl"
+    val_log.write_text("")
+
+    # All four lines have bad/missing received_at_s. None should ingest.
+    rows = [
+        {"envelope": _envelope("active", {})},  # missing received_at_s
+        {"received_at_s": None, "envelope": _envelope("active", {})},
+        {"received_at_s": "not-a-number", "envelope": _envelope("active", {})},
+        {"received_at_s": [], "envelope": _envelope("active", {})},
+    ]
+    _write_jsonl(ws_log, rows)
+
+    result = _run_check_beat5(ws_log, val_log)
+    assert result.returncode == 2, (
+        f"expected rc=2 (effectively empty after skipping bad ts), "
+        f"got rc={result.returncode}\nstderr={result.stderr}"
+    )
+    assert "empty or missing" in (result.stdout + result.stderr)

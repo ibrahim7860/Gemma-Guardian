@@ -503,6 +503,13 @@ def _replay_ws_log(log_path: Path, state: _RunState) -> int:
             ts_f = float(ts) if ts is not None else None
         except (TypeError, ValueError):
             ts_f = None
+        if ts_f is None:
+            # Skip envelopes with missing or non-numeric received_at_s.
+            # Falling back to time.monotonic() would mix wall-clocks and
+            # produce garbage scenario_t values; better to drop the line
+            # and let _amain's "log is empty" exit-2 path fire if every
+            # line is corrupt.
+            continue
         _ingest_envelope(env, state, now_wall=ts_f)
         n += 1
     return n

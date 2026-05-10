@@ -519,6 +519,16 @@ uv run python scripts/check_beat5.py \
     --deadline-s 30
 ```
 
+After the stack is torn down (or on a second machine), re-verify the same take from the recorded artifacts alone, with no live bridge required. `scripts/run_beat5_capture.sh` runs `scripts/ws_recorder.py` alongside the bridge during a capture, writing every `state_update` envelope to `$DEMO_DIR/ws_frames.jsonl`:
+
+```bash
+uv run python scripts/check_beat5.py \
+    --ws-replay-log $DEMO_DIR/ws_frames.jsonl \
+    --validation-log $DEMO_DIR/validation_events.jsonl
+```
+
+Replay uses the recorded `received_at_s` timestamps so A3/A4 timing semantics are preserved exactly. This is the load-bearing path for the Day 15 two-machine backup verification.
+
 Exit code 0 with all six A-assertions PASS = the take is usable. Non-zero with a table of which A-assertions failed = re-run the scenario. Common failure modes (see the script's per-assertion `detail` text):
 
 - A1 fails (`drone3 never observed in standalone`) → mesh sim wasn't running, or `egs_link_drop` wasn't received, or drone3's `LinkStatusSubscriber` died. Check `$DEMO_DIR/mesh.log` and `$DEMO_DIR/drone3.log` for "subscribed to mesh.link_status".
