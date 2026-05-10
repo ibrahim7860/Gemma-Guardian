@@ -215,10 +215,19 @@ def multi_drone_pipeline() -> Iterator[Dict[str, Any]]:
         mesh_sim_env["PYTHONPATH"] = (
             f"{_REPO_ROOT}{os.pathsep}{existing_pp}" if existing_pp else str(_REPO_ROOT)
         )
+        # EGS lat/lon must match the drone position emitted by
+        # `scripts/dev_fake_producers.py` (fixture `01_active.json`) so the
+        # mesh sim's range gate (`egs_link_range_meters`, default 500 m)
+        # treats every drone as in-range and forwards findings onto
+        # `.findings.delivered`. Without these flags `forward_finding`
+        # silently drops every payload (see `agents/mesh_simulator/main.py`
+        # `forward_finding` early-out when `egs_pos is None`).
         mesh_sim_proc = subprocess.Popen(
             [
                 sys.executable, "-m", "agents.mesh_simulator.main",
                 "--redis-url", f"redis://127.0.0.1:{redis_port}",
+                "--egs-lat", "34.1234",
+                "--egs-lon", "-118.5678",
             ],
             env=mesh_sim_env,
             cwd=str(_REPO_ROOT),
