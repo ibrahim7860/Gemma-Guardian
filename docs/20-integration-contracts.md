@@ -404,7 +404,10 @@ inference:
   egs_model: "gemma4:e4b"       # ollama.com/library/gemma4 — pinned 2026-05-06
   drone_sampling_hz: 1.0
   ollama_drone_endpoint: "http://localhost:11434"
-  ollama_egs_endpoint: "http://localhost:11435"
+  ollama_egs_endpoint: "http://localhost:11434"
+  # NOTE (2026-05-09, PR #38): Consolidated to a single local Ollama daemon on :11434
+  # serving both the drone (E2B) and EGS (E4B) models. Ollama multiplexes models on one
+  # daemon, so a second instance on :11435 is unnecessary in dev / hackathon-demo deployments.
   function_call_path:
     egs: "native_tools"             # uses Ollama tools[] when available
     drone: "structured_output"      # uses Ollama format=<schema> as the safer default

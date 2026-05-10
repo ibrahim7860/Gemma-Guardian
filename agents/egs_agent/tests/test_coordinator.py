@@ -56,7 +56,11 @@ def test_coordinator_process_findings_aggregates(coordinator):
     new_state = coordinator.process_findings(state)
     assert new_state["egs_state"]["findings_count_by_type"]["victim"] == 1
     
-def test_coordinator_process_commands_restrict_zone_triggers_replan(coordinator):
+def test_coordinator_process_commands_queues_publish_and_pends_without_triggering_replan(coordinator):
+    """Per PR #38: process_commands queues the translation for publish and
+    parks the structured command in egs_state.pending_commands. It MUST NOT
+    trigger replan — replan is now gated on the operator's DISPATCH action,
+    which lands via process_actions. See test_process_actions_* below."""
     async def run_test():
         state = {
             "egs_state": {},
@@ -65,21 +69,24 @@ def test_coordinator_process_commands_restrict_zone_triggers_replan(coordinator)
             "incoming_commands": [
                 {"raw_text": "focus on zone A", "language": "en", "command_id": "c1"}
             ],
+            "incoming_actions": [],
             "messages_to_publish": [],
             "trigger_replan": False
         }
-        
+
         mock_translate = AsyncMock()
         mock_translate.return_value = {
             "valid": True,
             "structured": {"command": "restrict_zone", "args": {"zone_id": "zone_A"}}
         }
-        
+
         with patch("agents.egs_agent.coordinator.translate_operator_command", new=mock_translate):
             new_state = await coordinator.process_commands(state)
-            assert new_state["trigger_replan"] is True
+            assert new_state["trigger_replan"] is False
             assert len(new_state["messages_to_publish"]) == 1
+            assert new_state["messages_to_publish"][0]["channel"] == "egs.command_translations"
             assert new_state["messages_to_publish"][0]["data"]["command_id"] == "c1"
+            assert new_state["egs_state"]["pending_commands"]["c1"]["command"] == "restrict_zone"
 
     asyncio.run(run_test())
 
@@ -262,6 +269,158 @@ def test_coordinator_does_not_refresh_on_off_ticks(tmp_path, monkeypatch):
         )
 
     asyncio.run(run())
+
+
+def test_process_actions_dispatch_zone_command_pops_pending_and_triggers_replan(coordinator):
+    """PR #38/#39: operator_command_dispatch on a pending restrict/exclude/recall
+    command pops the entry from pending_commands and sets trigger_replan=True."""
+    state = {
+        "egs_state": {
+            "pending_commands": {
+                "c42": {"command": "exclude_zone", "args": {"zone_id": "alpha"}}
+            }
+        },
+        "incoming_telemetry": [],
+        "incoming_findings": [],
+        "incoming_commands": [],
+        "incoming_actions": [
+            {"type": "operator_command_dispatch", "command_id": "c42"}
+        ],
+        "messages_to_publish": [],
+        "trigger_replan": False,
+    }
+
+    new_state = coordinator.process_actions(state)
+    assert new_state["trigger_replan"] is True
+    assert "c42" not in new_state["egs_state"].get("pending_commands", {})
+
+
+def test_process_actions_dispatch_non_replan_command_pops_without_replan(coordinator):
+    """A pending command that is NOT restrict/exclude/recall is popped on dispatch
+    but does NOT trigger replan (e.g., set_language)."""
+    state = {
+        "egs_state": {
+            "pending_commands": {
+                "c7": {"command": "set_language", "args": {"lang_code": "es"}}
+            }
+        },
+        "incoming_telemetry": [],
+        "incoming_findings": [],
+        "incoming_commands": [],
+        "incoming_actions": [
+            {"type": "operator_command_dispatch", "command_id": "c7"}
+        ],
+        "messages_to_publish": [],
+        "trigger_replan": False,
+    }
+
+    new_state = coordinator.process_actions(state)
+    assert new_state["trigger_replan"] is False
+    assert "c7" not in new_state["egs_state"].get("pending_commands", {})
+
+
+def test_process_actions_dispatch_unknown_command_id_is_noop(coordinator):
+    """Dispatch action whose command_id is not in pending_commands is a no-op:
+    no replan, pending_commands untouched."""
+    state = {
+        "egs_state": {
+            "pending_commands": {
+                "c1": {"command": "exclude_zone", "args": {"zone_id": "alpha"}}
+            }
+        },
+        "incoming_telemetry": [],
+        "incoming_findings": [],
+        "incoming_commands": [],
+        "incoming_actions": [
+            {"type": "operator_command_dispatch", "command_id": "does_not_exist"}
+        ],
+        "messages_to_publish": [],
+        "trigger_replan": False,
+    }
+
+    new_state = coordinator.process_actions(state)
+    assert new_state["trigger_replan"] is False
+    assert "c1" in new_state["egs_state"]["pending_commands"]
+
+
+def test_process_commands_strips_extra_args_for_exclude_zone(coordinator):
+    """PR #38/#39 args sanitizer: LLM-hallucinated extra keys (e.g., 'reason'
+    on exclude_zone) must be dropped from the published structured.args."""
+    async def run_test():
+        state = {
+            "egs_state": {},
+            "incoming_telemetry": [],
+            "incoming_findings": [],
+            "incoming_commands": [
+                {"raw_text": "exclude alpha for evacuation", "language": "en", "command_id": "cz1"}
+            ],
+            "incoming_actions": [],
+            "messages_to_publish": [],
+            "trigger_replan": False,
+        }
+
+        mock_translate = AsyncMock()
+        mock_translate.return_value = {
+            "valid": True,
+            "kind": "operator_command",
+            "structured": {
+                "command": "exclude_zone",
+                "args": {"zone_id": "alpha", "reason": "evacuation"},
+            },
+        }
+
+        with patch("agents.egs_agent.coordinator.translate_operator_command", new=mock_translate):
+            new_state = await coordinator.process_commands(state)
+
+        published = [
+            m for m in new_state["messages_to_publish"]
+            if m["channel"] == "egs.command_translations"
+        ]
+        assert len(published) == 1
+        args = published[0]["data"]["structured"]["args"]
+        assert args == {"zone_id": "alpha"}, f"expected only zone_id, got {args}"
+
+    asyncio.run(run_test())
+
+
+def test_process_commands_keeps_drone_id_and_reason_for_recall_drone(coordinator):
+    """PR #38/#39 args sanitizer: recall_drone allows both drone_id and reason;
+    neither should be stripped."""
+    async def run_test():
+        state = {
+            "egs_state": {},
+            "incoming_telemetry": [],
+            "incoming_findings": [],
+            "incoming_commands": [
+                {"raw_text": "recall drone1 low battery", "language": "en", "command_id": "cr1"}
+            ],
+            "incoming_actions": [],
+            "messages_to_publish": [],
+            "trigger_replan": False,
+        }
+
+        mock_translate = AsyncMock()
+        mock_translate.return_value = {
+            "valid": True,
+            "kind": "operator_command",
+            "structured": {
+                "command": "recall_drone",
+                "args": {"drone_id": "drone1", "reason": "low_battery"},
+            },
+        }
+
+        with patch("agents.egs_agent.coordinator.translate_operator_command", new=mock_translate):
+            new_state = await coordinator.process_commands(state)
+
+        published = [
+            m for m in new_state["messages_to_publish"]
+            if m["channel"] == "egs.command_translations"
+        ]
+        assert len(published) == 1
+        args = published[0]["data"]["structured"]["args"]
+        assert args == {"drone_id": "drone1", "reason": "low_battery"}
+
+    asyncio.run(run_test())
 
 
 def test_process_telemetry_drones_summary_passes_egs_state_schema():

@@ -1,4 +1,4 @@
-# STATUS — Day 8 / May 8, 2026
+# STATUS — Day 9 / May 9, 2026
 
 Living snapshot of where each person stands against the plan. Updated at standup. Source of truth for "are we on track for the next gate?"
 
@@ -6,10 +6,10 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ## Where we are
 
-- **Today:** Day 8 (Thursday May 8) — GATE 2 closed; fixture swap (PR #35) + Flutter map-panel aerial overlay (PR #36, Task 8) both landed; next focus is GATE 3 prep with Kaleel
+- **Today:** Day 9 (Saturday May 9) — GATE 2 closed; fixture swap (PR #35) + Flutter map-panel aerial overlay (PR #36, Task 8) both landed; next focus is GATE 3 prep with Kaleel
 - **GATE 2 status:** 7 of 7 criteria GREEN; GATE 2 closed by Qasim's branch
 - **Next gate:** GATE 3 — Day 10 (Monday May 12) — fine-tuning go/no-go (Kaleel)
-- **Days remaining to submission:** 10 (deadline Sunday May 18 23:59 UTC)
+- **Days remaining to submission:** 9 (deadline Sunday May 18 23:59 UTC)
 
 ## Per-person status
 
@@ -61,7 +61,7 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Note:** xBD-proper (xView2 credentials gated) is unaffected by this swap and remains Kaleel's GATE 3 fine-tune path. The swapped sim fixtures are functionally equivalent for vision-iteration and demo-footage purposes.
 
-## Risk register (Day 7)
+## Risk register
 
 | Risk | Likelihood | Impact | Owner | Mitigation |
 |---|---|---|---|---|

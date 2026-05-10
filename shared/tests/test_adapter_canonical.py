@@ -73,3 +73,34 @@ def test_normalize_rejects_message_with_neither_tool_calls_nor_content():
     response = {"message": {"role": "assistant"}}
     with pytest.raises(AdapterError, match="neither"):
         normalize(response, layer="drone")
+
+
+def test_normalize_strips_json_fenced_content():
+    """PR #38/#39 markdown fence stripper: ```json ... ``` wrappers around
+    LLM responses must be stripped before JSON parsing."""
+    canonical = {"command": "set_language", "args": {"lang_code": "en"}}
+    fenced = "```json\n" + json.dumps(canonical) + "\n```"
+    response = {"message": {"content": fenced}}
+    assert normalize(response, layer="operator") == canonical
+
+
+def test_normalize_does_not_strip_unlabeled_triple_backtick_fences():
+    """Stripper only matches ```json (with the language tag). A plain ``` ... ```
+    fence is not stripped, so JSON parsing of the still-fenced content fails.
+
+    This pins the current implementation behavior: only labeled fences are
+    handled. If we ever want to support unlabeled fences, this test must be
+    updated alongside the stripper."""
+    canonical = {"command": "set_language", "args": {"lang_code": "en"}}
+    fenced = "```\n" + json.dumps(canonical) + "\n```"
+    response = {"message": {"content": fenced}}
+    with pytest.raises(AdapterError):
+        normalize(response, layer="operator")
+
+
+def test_normalize_unfenced_content_still_parses():
+    """Regression: bare JSON (no fences) continues to work after the fence
+    stripper was added."""
+    canonical = {"command": "set_language", "args": {"lang_code": "en"}}
+    response = {"message": {"content": json.dumps(canonical)}}
+    assert normalize(response, layer="operator") == canonical
