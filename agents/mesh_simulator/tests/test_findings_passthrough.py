@@ -1,9 +1,10 @@
-"""PR1 wire test: mesh sim republishes findings verbatim onto `.delivered`.
+"""Wire test: mesh sim republishes findings verbatim onto `.delivered`.
 
-PR1 is a pure refactor. The mesh simulator psubs `drones.*.findings`, and on
-each message republishes the raw payload bytes onto
-`drones.<id>.findings.delivered`. PR2 adds the actual range / scripted-event
-gate; in PR1 every input must produce exactly one output, byte-identical.
+Originally a pure-passthrough test (PR1). Wave 2 Lane D added a real gate
+(haversine vs egs_link_range + scripted-override set), so these tests now
+seed an EGS position + an in-range drone position before asserting the
+forwarding behavior. The byte-identical passthrough invariant is still
+enforced — the gate either drops or republishes unchanged.
 """
 from __future__ import annotations
 
@@ -35,6 +36,37 @@ def _drain_messages(pubsub) -> List[bytes]:
     return out
 
 
+_ORIGIN = (34.0, -118.5)
+_NORTH_100M = (34.000898, -118.5)  # ~100 m from origin; well inside 500 m EGS link
+
+
+def _state_payload(drone_id: str, lat: float, lon: float) -> dict:
+    return {
+        "drone_id": drone_id,
+        "timestamp": "2026-05-15T14:23:11.342Z",
+        "position": {"lat": lat, "lon": lon, "alt": 25.0},
+        "velocity": {"vx": 0.0, "vy": 0.0, "vz": 0.0},
+        "battery_pct": 100,
+        "heading_deg": 0,
+        "current_task": None,
+        "current_waypoint_id": None,
+        "assigned_survey_points_remaining": 0,
+        "last_action": "none",
+        "last_action_timestamp": None,
+        "validation_failures_total": 0,
+        "findings_count": 0,
+        "in_mesh_range_of": [],
+        "agent_status": "active",
+    }
+
+
+def _seed_in_range(sim, drone_ids):
+    """Place EGS at origin, every drone 100 m north — all inside 500 m EGS link."""
+    sim.set_egs_position(*_ORIGIN)
+    for did in drone_ids:
+        sim.ingest_state(_state_payload(did, *_NORTH_100M))
+
+
 def _finding_payload(drone_id: str, finding_id: str) -> dict:
     """Minimal Contract-4-shaped finding (only the fields the passthrough
     cares about, which is none — the payload is opaque bytes to the sim)."""
@@ -52,6 +84,7 @@ class TestForwardFinding:
     def test_forward_finding_publishes_on_delivered_channel(self, fake_redis):
         """Calling forward_finding republishes verbatim on `.delivered`."""
         sim = MeshSimulator(fake_redis, range_m=200.0, egs_link_range_m=500.0)
+        _seed_in_range(sim, ["drone1"])
         sub = _subscribe(
             fake_redis, per_drone_findings_delivered_channel("drone1"),
         )
@@ -68,6 +101,7 @@ class TestForwardFinding:
     def test_forward_finding_does_not_touch_raw_findings_channel(self, fake_redis):
         """The mesh sim must NOT echo back to the input channel."""
         sim = MeshSimulator(fake_redis, range_m=200.0, egs_link_range_m=500.0)
+        _seed_in_range(sim, ["drone1"])
         # Subscribe to the raw findings channel — anyone listening should see
         # nothing produced by the sim itself (the drone is the only producer).
         sub = _subscribe(fake_redis, per_drone_findings_channel("drone1"))
@@ -85,6 +119,7 @@ class TestForwardFinding:
     def test_forward_finding_isolates_per_drone(self, fake_redis):
         """Each drone's `.delivered` channel only carries that drone's bytes."""
         sim = MeshSimulator(fake_redis, range_m=200.0, egs_link_range_m=500.0)
+        _seed_in_range(sim, ["drone1", "drone2"])
         sub1 = _subscribe(
             fake_redis, per_drone_findings_delivered_channel("drone1"),
         )
@@ -114,6 +149,7 @@ class TestPubSubRoundTrip:
         from agents.mesh_simulator.main import drone_id_from_findings_channel
 
         sim = MeshSimulator(fake_redis, range_m=200.0, egs_link_range_m=500.0)
+        _seed_in_range(sim, ["drone1"])
         sub = _subscribe(
             fake_redis, per_drone_findings_delivered_channel("drone1"),
         )

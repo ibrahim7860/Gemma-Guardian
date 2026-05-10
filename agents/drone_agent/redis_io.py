@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 from collections import deque
+from typing import Callable
 
 import numpy as np
 import redis as _redis_sync
@@ -23,6 +24,7 @@ from agents.drone_agent.perception import DroneState
 from agents.drone_agent.state_translator import translate_drone_state
 from shared.contracts import validate as schema_validate
 from shared.contracts.topics import (
+    MESH_LINK_STATUS,
     per_drone_camera_channel,
     per_drone_state_channel,
     swarm_visible_to_channel,
@@ -217,6 +219,74 @@ class PeerSubscriber:
 
     def recent(self) -> list[dict]:
         return list(self._buf)
+
+    async def stop(self) -> None:
+        self._stop.set()
+
+
+class LinkStatusSubscriber:
+    """Async subscriber for `mesh.link_status`. Filters by drone_id.
+
+    Beat 5 Path A-full Component 2 (Wave 2 Lane E). Lane D publishes a
+    single shared `mesh.link_status` channel covering all drones; this
+    subscriber drops any payload whose `drone_id` is not ours, validates
+    the in-scope ones against the `mesh_link_status` schema, and on a
+    valid event invokes `on_link_event(link)` so the runtime can update
+    its `LinkStateMonitor` and reconcile `BufferedPublisher`.
+    """
+
+    def __init__(
+        self,
+        client: _redis_async.Redis,
+        drone_id: str,
+        on_link_event: Callable[[str], None],
+    ):
+        self._client = client
+        self._drone_id = drone_id
+        self._channel = MESH_LINK_STATUS
+        self._on_link_event = on_link_event
+        self._stop = asyncio.Event()
+
+    async def run(self) -> None:
+        pubsub = self._client.pubsub()
+        await pubsub.subscribe(self._channel)
+        try:
+            while not self._stop.is_set():
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+                if msg is None:
+                    continue
+                data = msg.get("data")
+                if isinstance(data, (bytes, bytearray)):
+                    text = data.decode("utf-8", errors="replace")
+                else:
+                    text = data
+                try:
+                    payload = json.loads(text)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("link_status: malformed JSON dropped")
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                # Filter to events for *our* drone before paying schema cost.
+                if payload.get("drone_id") != self._drone_id:
+                    continue
+                outcome = schema_validate("mesh_link_status", payload)
+                if not outcome.valid:
+                    logger.warning(
+                        "link_status: schema invalid dropped: %s",
+                        outcome.errors[0].message if outcome.errors else "?",
+                    )
+                    continue
+                link = payload.get("link")
+                if not isinstance(link, str):
+                    continue
+                try:
+                    self._on_link_event(link)
+                except Exception:
+                    logger.exception("link_status: callback raised; continuing")
+        finally:
+            await pubsub.unsubscribe(self._channel)
+            await pubsub.close()
 
     async def stop(self) -> None:
         self._stop.set()

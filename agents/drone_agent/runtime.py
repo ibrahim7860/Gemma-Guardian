@@ -27,10 +27,12 @@ import redis.asyncio as _redis_async
 from agents.drone_agent.action import ActionNode
 from agents.drone_agent.buffered_publisher import BufferedPublisher
 from agents.drone_agent.finding_buffer import FindingBuffer
+from agents.drone_agent.link_state_monitor import LinkStateMonitor
 from agents.drone_agent.main import DroneAgent
 from agents.drone_agent.perception import PerceptionBundle
 from agents.drone_agent.redis_io import (
     CameraSubscriber,
+    LinkStatusSubscriber,
     PeerSubscriber,
     RedisPublisher,
     StateSubscriber,
@@ -112,6 +114,19 @@ class DroneRuntime:
         # event will drain via set_standalone(False).
         if restored:
             self.buffered_publisher.set_standalone(True)
+        # Beat 5 Component 2 (Wave 2 Lane E): event-driven standalone
+        # detection. The LinkStateMonitor consumes mesh.link_status events
+        # filtered by drone_id (via LinkStatusSubscriber) and is the single
+        # source of truth for the standalone bit. The runtime keeps the
+        # BufferedPublisher in sync on every event AND on the periodic 1 Hz
+        # republish tick (see _state_republish_loop) so the staleness
+        # fallback engages even when no event has arrived in a while.
+        self.link_monitor = LinkStateMonitor(drone_id=drone_id)
+        self.link_subscriber = LinkStatusSubscriber(
+            async_client,
+            drone_id=drone_id,
+            on_link_event=self._handle_link_event,
+        )
         self.agent.action = ActionNode(
             drone_id=drone_id,
             publisher=self.buffered_publisher,
@@ -143,6 +158,9 @@ class DroneRuntime:
         camera_task = asyncio.create_task(self.camera.run(), name=f"{self.drone_id}.camera")
         state_task = asyncio.create_task(self.state.run(), name=f"{self.drone_id}.state")
         peers_task = asyncio.create_task(self.peers.run(), name=f"{self.drone_id}.peers")
+        link_task = asyncio.create_task(
+            self.link_subscriber.run(), name=f"{self.drone_id}.link_status",
+        )
         loop_task = asyncio.create_task(self._step_loop(), name=f"{self.drone_id}.loop")
         republish_task = asyncio.create_task(self._state_republish_loop(), name=f"{self.drone_id}.republish")
         try:
@@ -151,12 +169,23 @@ class DroneRuntime:
             await self.camera.stop()
             await self.state.stop()
             await self.peers.stop()
-            for t in (camera_task, state_task, peers_task, loop_task, republish_task):
+            await self.link_subscriber.stop()
+            for t in (camera_task, state_task, peers_task, link_task, loop_task, republish_task):
                 t.cancel()
             await asyncio.gather(
-                camera_task, state_task, peers_task, loop_task, republish_task,
+                camera_task, state_task, peers_task, link_task, loop_task, republish_task,
                 return_exceptions=True,
             )
+
+    def _handle_link_event(self, link: str) -> None:
+        """Callback for LinkStatusSubscriber. Updates monitor + reconciles buffer.
+
+        Idempotent: BufferedPublisher.set_standalone() is a no-op when the
+        value already matches, so calling this on every event (including a
+        repeat 'up' heartbeat) is safe.
+        """
+        self.link_monitor.note_event(link)
+        self.buffered_publisher.set_standalone(self.link_monitor.is_standalone())
 
     async def stop(self) -> None:
         self._stop.set()
@@ -191,9 +220,20 @@ class DroneRuntime:
     async def _state_republish_loop(self) -> None:
         while not self._stop.is_set():
             await asyncio.sleep(self._republish_period_s)
-            # Skip until the agent has actually done something — prevents a
-            # noisy duplicate of the sim's state and keeps StateSubscriber's
-            # raw-cache filter (last_action != "none") meaningful.
+            # Beat 5 Component 2: reconcile BufferedPublisher with the
+            # LinkStateMonitor on every tick. This is the periodic check
+            # that engages the staleness fallback when no mesh.link_status
+            # event has arrived in a while (e.g. mesh sim crashed mid-
+            # heartbeat). Idempotent — set_standalone is a no-op when the
+            # value already matches. Runs unconditionally, BEFORE the
+            # last_action gate, so the buffer flip happens even before the
+            # agent has produced its first action.
+            standalone = self.link_monitor.is_standalone()
+            self.buffered_publisher.set_standalone(standalone)
+            # Skip the actual republish until the agent has actually done
+            # something — prevents a noisy duplicate of the sim's state and
+            # keeps StateSubscriber's raw-cache filter (last_action != "none")
+            # meaningful.
             if self._last_action == "none":
                 continue
             base = self.state.latest_raw_sim()
@@ -206,6 +246,10 @@ class DroneRuntime:
             merged["validation_failures_total"] = self._validation_failures_total
             merged["findings_count"] = self._findings_count
             merged["current_task"] = base.get("current_task") or "survey"
+            # Beat 5 Component 2: agent_status now self-detected from the
+            # LinkStateMonitor. Supersedes Kaleel's manual-flip TODO; the
+            # drone is the source of truth for its own link state.
+            merged["agent_status"] = "standalone" if standalone else "active"
             outcome = schema_validate("drone_state", merged)
             if not outcome.valid:
                 logger.warning("agent-state republish skipped (schema invalid): %s",
