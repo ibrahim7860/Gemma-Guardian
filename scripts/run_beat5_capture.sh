@@ -76,6 +76,7 @@ if [ "$TEARDOWN" -eq 1 ]; then
   pkill -f "sim.waypoint_runner"         2>/dev/null || true
   pkill -f "sim.frame_server"            2>/dev/null || true
   pkill -f "uvicorn frontend.ws_bridge"  2>/dev/null || true
+  pkill -f "scripts/ws_recorder.py"      2>/dev/null || true
   pkill -f "http.server.*beat5_capture"  2>/dev/null || true
   if [ -f "$LOG_DIR/ports.env" ]; then
     # shellcheck disable=SC1091
@@ -203,6 +204,8 @@ done
 
 emit ws_bridge "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL python3 -m uvicorn frontend.ws_bridge.main:app --host 127.0.0.1 --port $BRIDGE_PORT --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
+emit ws_recorder "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 scripts/ws_recorder.py --bridge-url ws://127.0.0.1:$BRIDGE_PORT --out $LOG_DIR/ws_frames.jsonl --deadline-s 300 2>&1 | tee $LOG_DIR/ws_recorder.log"
+
 emit flutter "cd $REPO_ROOT/frontend/flutter_dashboard/build/web && python3 -m http.server $FLUTTER_PORT --bind 127.0.0.1 2>&1 | tee $LOG_DIR/flutter.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
@@ -253,6 +256,13 @@ print_ready_banner() {
           --bridge-url ws://127.0.0.1:${BRIDGE_PORT} \\
           --validation-log $LOG_DIR/validation_events.jsonl \\
           --deadline-s 30
+
+  On a second machine (or after the stack is torn down), re-verify
+  from artifacts alone:
+
+      uv run python scripts/check_beat5.py \\
+          --ws-replay-log $LOG_DIR/ws_frames.jsonl \\
+          --validation-log $LOG_DIR/validation_events.jsonl
 
   Tear the stack down (idempotent):
 

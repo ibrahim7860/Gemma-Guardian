@@ -39,6 +39,26 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 (none — see `docs/superpowers/specs/2026-05-02-phase3-dashboard-mvp-design.md` once it lands)
 
+## Demo Capture Follow-ups
+
+### Drone3-specific `report_finding` reliability check
+- **What:** Day-11 pre-flight: run the full `resilience_v1` stack three times in a row and assert that `validation_events.jsonl` contains at least one `report_finding` for drone3 within the standalone window t∈[120,180] on every run. Acceptance: 3/3 hits. Owner runs this before scheduling the Day 12 capture session.
+- **Why:** STATUS.md verifies live Gemma `report_finding` on drone1 (FEMA Katrina image, 5× runs 2026-05-06). drone3 has a different waypoint track in `sim/scenarios/resilience_v1.yaml` and a different frame mapping. If drone3's path doesn't pass over a frame that triggers a victim/damage finding, A2 fails every Beat 5 take. The capture plan (`docs/plans/2026-05-12-beat5-video-capture.md` prereq #10) calls this out and provides the mock-Ollama fallback, but the proactive Day-11 check is what avoids burning a capture afternoon on a broken assumption.
+- **Pros:** Surfaces the failure mode 24 hours before capture, leaving time to re-tune drone3's frame mapping or accept the mock fallback. Cheap (3 runs × 4 min = 12 min wall clock).
+- **Cons:** Adds a 30 min slot to Day 11. None of the team's other Day 11 work blocks on it.
+- **Context:** Capture plan prereq #10 in `docs/plans/2026-05-12-beat5-video-capture.md` is the canonical reference for the procedure. If 2/3 hits → re-tune `resilience_v1.yaml` frame mapping. If ≤1/3 → fall back to `scripts/ollama_mock_server.py` (and note this in the writeup as "deterministic take for repeatability"). Validation log lives at `$GG_LOG_DIR/validation_events.jsonl` per `agents/drone_agent/runtime.py`.
+- **Owner:** Ibrahim (Person 4) with Kaleel on call if frame mapping needs to change.
+
+## Mesh Simulator Follow-ups
+
+### Derive EGS lat/lon from active scenario YAML
+- **What:** Teach `agents/mesh_simulator/main.py` to accept `--scenario <name>` (mirroring `sim/waypoint_runner.py`), load it via `sim/scenario.py:load_scenario`, and pull `origin.lat` / `origin.lon` as the EGS position. Keep `--egs-lat` / `--egs-lon` as an explicit override for tests that need a custom position. Then strip the redundant `--egs-lat`/`--egs-lon` flags from `scripts/launch_swarm.sh`, `scripts/run_beat5_capture.sh`, and the 6 e2e fixtures that hardcode them today.
+- **Why:** `MeshSimulator.forward_finding` silently returns 0 when `egs_pos is None`, dropping every finding. PRs #42 and #43 papered over this in 7 callers by hardcoding scenario-origin coords; that's the same value duplicated 7 times. A scenario change would silently desync them. Single source of truth fixes the trap permanently.
+- **Pros:** One source of truth for scenario coords; no per-caller hardcoding; new scenarios automatically work; CI traps stay caught at the schema layer.
+- **Cons:** Couples mesh sim startup to scenario YAML loading (already a `sim` extra, so no new dep); needs a sensible fallback when `--scenario` is omitted (current behavior: no EGS, drop everything — surprising but explicit).
+- **Context:** Bug surfaced 2026-05-10 as 6 CI Playwright failures after PR #41 made the mesh sim the required findings gateway (bridge subscribes to `.findings.delivered`). Hardcoded callers today: `scripts/launch_swarm.sh:146`, `scripts/run_beat5_capture.sh:188`, `frontend/ws_bridge/tests/test_e2e_playwright.py`, `test_e2e_playwright_multi_drone.py`, `test_e2e_phase3.py`, `test_e2e_playwright_dom_render.py`, `test_e2e_playwright_real_drone_findings.py`, `test_e2e_playwright_egs_findings.py`. All three shipped scenarios (`disaster_zone_v1`, `resilience_v1`, `single_drone_smoke`) use `origin: {lat: 34.0000, lon: -118.5000}`.
+- **Owner:** Unassigned (post-submission cleanup; current workaround works for demo capture).
+
 ## Drone-Agent Follow-ups
 
 ### Migrate drone agent zone source to `egs.state.zone_polygon` (GATE 4)

@@ -127,7 +127,7 @@ async def _consume_bridge(
                         continue
                     if env.get("type") != "state_update":
                         continue
-                    _ingest_envelope(env, state)
+                    _ingest_envelope(env, state, now_wall=time.monotonic())
     except Exception as exc:  # noqa: BLE001
         # Surface the error via state.anchor_wall_s being None — main()
         # will detect "we never connected".
@@ -137,9 +137,21 @@ async def _consume_bridge(
         )
 
 
-def _ingest_envelope(env: dict, state: _RunState) -> None:
-    """Update accumulator from one bridge envelope."""
-    now_wall = time.monotonic()
+def _ingest_envelope(
+    env: dict,
+    state: _RunState,
+    now_wall: Optional[float] = None,
+) -> None:
+    """Update accumulator from one bridge envelope.
+
+    ``now_wall`` is the monotonic-style timestamp to associate with this
+    envelope. When ``None`` (live mode) we read ``time.monotonic()`` so
+    behavior matches the pre-refactor implementation. When replaying from
+    a recorded log, the caller passes the recorded ``received_at_s`` so
+    A3/A4 timing semantics are preserved.
+    """
+    if now_wall is None:
+        now_wall = time.monotonic()
     if state.anchor_wall_s is None:
         state.anchor_wall_s = now_wall
     t_scenario = now_wall - state.anchor_wall_s
@@ -444,7 +456,63 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             "240, matching the resilience_v1 mission_complete tick)"
         ),
     )
+    parser.add_argument(
+        "--ws-replay-log",
+        default=None,
+        help=(
+            "Path to a JSONL file of recorded bridge envelopes. When set, "
+            "check_beat5 skips the live WS connection and replays envelopes "
+            "from this file using their recorded timestamps. Use this for "
+            "backup-machine verification after the live run."
+        ),
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
+
+
+def _replay_ws_log(log_path: Path, state: _RunState) -> int:
+    """Replay recorded bridge envelopes from a JSONL file.
+
+    Each line should be ``{"received_at_s": <float>, "envelope": {...}}``.
+    Tolerates missing/empty/corrupted lines like ``_read_validation_events``.
+    Returns the number of state_update envelopes ingested.
+    """
+    if not log_path.exists():
+        return 0
+    try:
+        text = log_path.read_text()
+    except OSError:
+        return 0
+    n = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        env = obj.get("envelope")
+        ts = obj.get("received_at_s")
+        if not isinstance(env, dict):
+            continue
+        if env.get("type") != "state_update":
+            continue
+        try:
+            ts_f = float(ts) if ts is not None else None
+        except (TypeError, ValueError):
+            ts_f = None
+        if ts_f is None:
+            # Skip envelopes with missing or non-numeric received_at_s.
+            # Falling back to time.monotonic() would mix wall-clocks and
+            # produce garbage scenario_t values; better to drop the line
+            # and let _amain's "log is empty" exit-2 path fire if every
+            # line is corrupt.
+            continue
+        _ingest_envelope(env, state, now_wall=ts_f)
+        n += 1
+    return n
 
 
 async def _amain(args: argparse.Namespace) -> int:
@@ -452,30 +520,53 @@ async def _amain(args: argparse.Namespace) -> int:
     stop_event = asyncio.Event()
     log_path = Path(args.validation_log)
 
-    sys.stdout.write(
-        f"[check_beat5] tailing bridge {args.bridge_url} "
-        f"(deadline {args.deadline_s:.0f}s, "
-        f"log={log_path})\n"
-    )
-    sys.stdout.flush()
-
-    bridge_task = asyncio.create_task(
-        _consume_bridge(args.bridge_url, state, args.deadline_s, stop_event),
-    )
-    try:
-        await bridge_task
-    except Exception as exc:  # noqa: BLE001
-        sys.stderr.write(
-            f"[check_beat5] bridge tail crashed: "
-            f"{type(exc).__name__}: {exc}\n"
+    replay_log = getattr(args, "ws_replay_log", None)
+    if replay_log:
+        # User explicitly opted into replay mode. If they also passed
+        # --bridge-url with a non-default value, warn — we ignore it.
+        if args.bridge_url and args.bridge_url != "ws://127.0.0.1:9090":
+            sys.stderr.write(
+                "[check_beat5] WARNING: --bridge-url is ignored when "
+                "--ws-replay-log is set\n"
+            )
+        replay_path = Path(replay_log)
+        sys.stdout.write(
+            f"[check_beat5] replay mode: reading bridge envelopes from "
+            f"{replay_path} (validation log={log_path})\n"
         )
-
-    if state.anchor_wall_s is None:
-        sys.stderr.write(
-            "[check_beat5] connection error: never received a state_update "
-            f"envelope from {args.bridge_url}. Is the bridge up?\n"
+        sys.stdout.flush()
+        n_replayed = _replay_ws_log(replay_path, state)
+        if n_replayed == 0 or state.anchor_wall_s is None:
+            sys.stderr.write(
+                f"[check_beat5] replay log {replay_path} is empty or "
+                "missing\n"
+            )
+            return 2
+    else:
+        sys.stdout.write(
+            f"[check_beat5] tailing bridge {args.bridge_url} "
+            f"(deadline {args.deadline_s:.0f}s, "
+            f"log={log_path})\n"
         )
-        return 2
+        sys.stdout.flush()
+
+        bridge_task = asyncio.create_task(
+            _consume_bridge(args.bridge_url, state, args.deadline_s, stop_event),
+        )
+        try:
+            await bridge_task
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"[check_beat5] bridge tail crashed: "
+                f"{type(exc).__name__}: {exc}\n"
+            )
+
+        if state.anchor_wall_s is None:
+            sys.stderr.write(
+                "[check_beat5] connection error: never received a state_update "
+                f"envelope from {args.bridge_url}. Is the bridge up?\n"
+            )
+            return 2
 
     validation_events = _read_validation_events(log_path)
     if not validation_events:

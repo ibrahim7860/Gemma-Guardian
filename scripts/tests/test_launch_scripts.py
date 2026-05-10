@@ -571,3 +571,54 @@ def test_disaster_zone_v1_roster_matches_hybrid_test_assumptions():
         f"disaster_zone_v1 roster changed to {roster!r}; update hybrid "
         f"dry-run tests to match"
     )
+
+
+def test_launch_swarm_passes_egs_coords_to_mesh_simulator():
+    """Regression guard for the silent-drop bug fixed in PR #42 / PR #43.
+
+    PR #41 made `agents/mesh_simulator/main.py` the required gateway for
+    findings (the bridge subscribes to `drones.<id>.findings.delivered`,
+    which only the mesh sim publishes). `MeshSimulator.forward_finding`
+    returns 0 (drops the payload) when `egs_pos is None`. If `launch_swarm.sh`
+    ever loses its `--egs-lat`/`--egs-lon` flags, every demo and capture run
+    would silently show zero findings on the dashboard with no error.
+
+    This test fails fast with one clear message if the flags drop out.
+
+    When `agents/mesh_simulator` learns to derive the EGS lat/lon from the
+    active scenario YAML (TODOS.md "Derive EGS lat/lon from active scenario
+    YAML"), this guard can be relaxed to assert `--scenario` is passed
+    instead.
+    """
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"dry-run failed: stderr={result.stderr}"
+    # The mesh sim invocation must include both EGS-position flags. We don't
+    # assert the exact numeric values because a scenario change is a valid
+    # reason to update them — but BOTH flags must be present together so
+    # `forward_finding` doesn't hit the `egs_pos is None` early-out.
+    mesh_lines = [
+        line for line in result.stdout.splitlines()
+        if "mesh_simulator/main.py" in line
+    ]
+    assert mesh_lines, (
+        "launch_swarm.sh dry-run did not emit a mesh_simulator invocation"
+    )
+    for line in mesh_lines:
+        assert "--egs-lat" in line, (
+            f"mesh_simulator invocation missing --egs-lat: {line!r}. "
+            "Without this flag, MeshSimulator.forward_finding silently "
+            "drops every finding (PR #41 made mesh sim the findings "
+            "gateway). Re-pin scenario-origin coords or implement the "
+            "scenario-derived EGS-position follow-up in TODOS.md."
+        )
+        assert "--egs-lon" in line, (
+            f"mesh_simulator invocation missing --egs-lon: {line!r}. "
+            "See the --egs-lat assertion above for context."
+        )
