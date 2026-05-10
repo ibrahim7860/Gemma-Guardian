@@ -394,3 +394,144 @@ pkill -f "http.server $FLUTTER"
 The screenshot file `docs_assets/dashboard-egs-state-counts.png` is
 captured manually by Ibrahim or Qasim during a demo-prep pass; it is
 not yet committed.
+
+## Beat 5 offline-proof capture path — disconnection-tolerant findings
+
+**Last verified:** stub — capture pending Day 12 demo-prep pass.
+Reference asset (target): `docs_assets/beat5-offline-proof.mp4`.
+
+**Purpose:** capture a screen recording of the storyboard's Beat 5
+mechanics table (`docs/21-demo-storyboard.md`, Beat 5 frame-by-frame)
+running against the real integrated stack — sim, mesh sim, EGS, three
+drone agents, bridge, dashboard — with a 60 s window during which
+drone3 is severed from the EGS, produces a `report_finding` while
+standalone, and on reconnect replays that finding into the EGS where
+it ticks the `findings_count_by_type.victim` chip exactly once. The
+final screen capture must include both the in-stack `egs_link_drop`
+event (which severs drone3 → EGS findings delivery in the wire-level
+sense — see `agents/mesh_simulator/main.py` `apply_scripted_event`)
+AND a real WAN-down moment driven by the operator (the
+"airplane-mode" tile of the offline proof).
+
+The fully automated equivalents — minus the screen recording — live
+at:
+- `frontend/ws_bridge/tests/test_e2e_playwright_beat5_offline_recovery.py` (synth-WS-driven; verifies the dashboard renders banner → badge → finding tile across the timeline with stable Semantics identifiers)
+- `agents/egs_agent/tests/test_e2e_link_drop_replay.py` (real-redis e2e against an ephemeral `fakeredis` broker; verifies the wire-level buffer-and-replay invariants)
+
+Both must be green before scheduling a capture pass. This runbook is
+the manual MCP-driven version used to produce the demo asset.
+
+### 1. Pick free ports + log dir
+
+The capture-rig orchestrator does this for you, but the manual path
+mirrors the Beat 3 / Beat 4 sections above:
+
+```bash
+DEMO_DIR=/tmp/gg_beat5_capture
+mkdir -p "$DEMO_DIR"
+python3 -c "
+import socket
+for tag in ['REDIS', 'BRIDGE', 'FLUTTER']:
+    s = socket.socket(); s.bind(('127.0.0.1', 0))
+    print(f'{tag}_PORT={s.getsockname()[1]}'); s.close()
+" > "$DEMO_DIR/ports.env"
+source "$DEMO_DIR/ports.env"
+```
+
+### 2. Pre-warm Ollama
+
+The Beat 5 take is long (240 s of scripted timeline) and the cold-load
+penalty for E4B (~99 s on Apple Silicon — see this runbook's
+"Recovering from common failures" section) bleeds into the
+ofline-proof window if the EGS is the first caller. Pre-warm both
+models BEFORE you hit record:
+
+```bash
+for MODEL in "gemma4:e2b" "gemma4:e4b"; do
+  curl -fsS -X POST http://127.0.0.1:11434/api/chat \
+       --max-time 180 \
+       -H 'content-type: application/json' \
+       -d "{\"model\":\"$MODEL\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}]}" \
+       > "$DEMO_DIR/prewarm_${MODEL//:/}.log"
+done
+```
+
+### 3. Boot order
+
+The capture rig encapsulates the orchestration; the one-liner is:
+
+```bash
+bash scripts/run_beat5_capture.sh
+```
+
+This script:
+1. Picks free ports for `REDIS_PORT`, `BRIDGE_PORT`, `FLUTTER_PORT` and writes them to `$DEMO_DIR/ports.env`.
+2. Pre-warms Ollama (E2B + E4B) — skip with `--no-prewarm` if pointing at `scripts/ollama_mock_server.py`.
+3. Starts an ephemeral `redis-server` on the chosen port.
+4. Launches `agents/mesh_simulator` (with `--egs-lat 34.0000 --egs-lon -118.5000` so the geometric gate is meaningful), `agents/egs_agent.main`, `sim/waypoint_runner.py`, `sim/frame_server.py`, three drone agents (drone1, drone2, drone3), the WS bridge, and a `python3 -m http.server` for the Flutter web bundle.
+5. Pre-flight settles for ~3 s, then prints a "READY TO RECORD" banner + the dashboard URL + the wifi-drop / wifi-restore command snippets for both macOS and Linux + the connectivity-probe one-liner (see §4 below).
+6. Starts a foreground 1 Hz scenario-tick pacer that prints `scenario_tick=<N>s` until t=240 (mission_complete).
+
+The locked scenario is `resilience_v1`; the script does not accept a scenario flag.
+
+### 4. Operator opens two terminal panes
+
+**Pane A — command shell** runs the wifi-drop and wifi-restore commands when the pacer prints the right tick:
+
+```bash
+# macOS:
+sudo ifconfig en0 down                    # at scenario t≈100
+sudo ifconfig en0 up                      # at scenario t≈190
+
+# Linux (substitute your interface, often wlan0 or wlp3s0):
+sudo ip link set wlan0 down               # at scenario t≈100
+sudo ip link set wlan0 up                 # at scenario t≈190
+```
+
+**Pane B — connectivity-probe loop** runs the verbatim one-liner that proves WAN is gone (printed in the rig's READY banner; reproduced here for searchability):
+
+```bash
+while true; do
+  printf '%(%H:%M:%S)T  ' -1
+  if curl -fsS --max-time 1 https://www.google.com > /dev/null; then
+    echo "WAN: up"
+  else
+    echo "WAN: DOWN"
+  fi
+  sleep 1
+done
+```
+
+Why both? The in-sim `egs_link_drop` event at t=120 is the load-bearing offline-proof marker — it severs drone3 → EGS findings delivery deterministically inside the mesh sim. The operator's WAN drop is the visual seal: viewers see the probe loop go from `WAN: up` to `WAN: DOWN` and the dashboard keeps working.
+
+### 5. Operator drops wifi at scenario t≈100; brings it up at t≈190
+
+Watch the pacer; run the wifi-drop command in pane A as the pacer prints `scenario_tick=100s` (anywhere t∈[95, 110] is fine — the in-sim `egs_link_drop` fires at t=120 and that is what actually severs the link). Run the wifi-restore command at scenario t≈190 (anywhere t∈[185, 200]; the in-sim `egs_link_restore` is at t=180 — the WAN-back lag is fine because we're showing recovery from a real network outage).
+
+The pacer exits at t=240 (mission_complete). Stop the screen recording.
+
+### 6. Run `scripts/check_beat5.py` to verify the run is good-to-cut
+
+```bash
+uv run python scripts/check_beat5.py \
+    --bridge-url ws://127.0.0.1:${BRIDGE_PORT} \
+    --validation-log $DEMO_DIR/validation_events.jsonl \
+    --deadline-s 30
+```
+
+Exit code 0 with all six A-assertions PASS = the take is usable. Non-zero with a table of which A-assertions failed = re-run the scenario. Common failure modes (see the script's per-assertion `detail` text):
+
+- A1 fails (`drone3 never observed in standalone`) → mesh sim wasn't running, or `egs_link_drop` wasn't received, or drone3's `LinkStatusSubscriber` died. Check `$DEMO_DIR/mesh.log` and `$DEMO_DIR/drone3.log` for "subscribed to mesh.link_status".
+- A2 fails (`no drone3 report_finding`) → Gemma never produced a `report_finding` for drone3 inside the t∈[120,180] window. Re-run; if persistent, fall back to the MOCK Ollama path via `GG_OLLAMA_URL=http://127.0.0.1:<mock-port>` + `scripts/ollama_mock_server.py`.
+- A3/A4 fail (`no count increment after restore` / `>5 s`) → buffer didn't drain (drone3's `_handle_link_event` wasn't called) OR the mesh sim's findings gate didn't relax `_link_down_overrides`. Check `$DEMO_DIR/mesh.log` for "egs_link_restore" log lines.
+- A6 fails (`post-restore delta exceeds expected unique-finding count`) → EGS dedup regressed. Should not happen post-Wave-3a; if it does, suspect a bad merge.
+
+### 7. Save the screen recording
+
+Save the OBS / QuickTime capture to `docs_assets/beat5-offline-proof.mp4`. Tear the stack down with:
+
+```bash
+bash scripts/run_beat5_capture.sh --teardown
+```
+
+This is idempotent — safe to run twice or after a partial earlier failure.
