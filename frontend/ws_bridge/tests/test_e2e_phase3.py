@@ -120,8 +120,14 @@ def bridge_and_producers():
         # PR1: bridge subscribes to drones.*.findings.delivered, so the mesh
         # simulator must run as the passthrough between dev_fake_producers
         # (which publishes drones.<id>.findings) and the bridge.
+        # EGS lat/lon must match the drone position in
+        # `scripts/dev_fake_producers.py` (fixture `01_active.json`,
+        # 34.1234 / -118.5678) so the mesh sim's range gate forwards
+        # findings onto `.findings.delivered`. Without these flags
+        # `forward_finding` silently drops everything when `egs_pos is None`.
         mesh_sim = subprocess.Popen(
-            ["python3", "-m", "agents.mesh_simulator.main"],
+            ["python3", "-m", "agents.mesh_simulator.main",
+             "--egs-lat", "34.1234", "--egs-lon", "-118.5678"],
             cwd=str(REPO_ROOT), env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )

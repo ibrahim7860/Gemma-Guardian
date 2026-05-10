@@ -174,8 +174,12 @@ def test_egs_findings_count_renders_in_flutter_semantics_tree(
         ) as egs_proc, _spawn(
             # PR1: EGS now subscribes to drones.*.findings.delivered, so the
             # mesh simulator must run as the passthrough between the fake
-            # findings producer and the EGS / bridge consumers.
-            [sys.executable, "-m", "agents.mesh_simulator.main"],
+            # findings producer and the EGS / bridge consumers. EGS lat/lon
+            # match the drone position in `dev_fake_producers.py` fixture
+            # `01_active.json` (34.1234 / -118.5678) so `forward_finding`
+            # doesn't drop every payload on the `egs_pos is None` early-out.
+            [sys.executable, "-m", "agents.mesh_simulator.main",
+             "--egs-lat", "34.1234", "--egs-lon", "-118.5678"],
             env=env_extras,
             name="mesh-sim",
         ), _spawn(
