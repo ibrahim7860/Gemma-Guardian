@@ -49,12 +49,11 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** GATE 2 plan ships scenario-derived bbox with a 50m buffer. Zone migration deferred to GATE 4 with the cross-drone awareness work.
 - **Owner:** Kaleel.
 
-### Wire `agent_status` flips in drone state republish (GATE 4 / Beat 4 demo)
-- **What:** Have the drone runtime flip `agent_status` to `"returning"` on `return_to_base`, `"standalone"` on lost-EGS-link, `"error"` on max-retries-exhausted. Today the republish copies whatever the sim emitted (`"active"` or `"offline"`).
-- **Why:** Storyboard Beat 4's STANDALONE MODE UI in the dashboard depends on a non-`active` `agent_status` to render the badge. Without this, the resilience demo falls back to Backup Beat 4.
-- **Dashboard side:** Ready as of 2026-05-07. `frontend/flutter_dashboard/lib/widgets/drone_status_panel.dart` renders the badge inline in each tile when `agent_status == "standalone"`, with `Semantics(identifier: 'standalone-badge-<drone_id>')`. The matching `EGS LINK SEVERED` global banner triggers on `egs.state` heartbeat staleness (>5 s) in `lib/main.dart`. Six widget tests in `test/standalone_mode_test.dart` cover both states.
-- **Remaining:** Kaleel flips the field at runtime; on first live `agent_status: "standalone"` the badge auto-lights without further dashboard work.
-- **Owner:** Kaleel (dashboard consumer side closed by Ibrahim).
+### CLOSED — Wire `agent_status` flips in drone state republish (GATE 4 / Beat 4 demo)
+- **Resolution (2026-05-10, Path A-full Wave 2 Lane E):** Superseded by autonomous link-state detection. The drone now self-detects standalone via the `mesh.link_status` event channel (consumed by `agents/drone_agent/redis_io.py:LinkStatusSubscriber`, fed into `agents/drone_agent/link_state_monitor.py:LinkStateMonitor` with a 10 s staleness fallback). `agents/drone_agent/runtime.py:_state_republish_loop` writes `agent_status: "standalone" | "active"` on every republish based on the monitor's verdict. No manual flips required from Kaleel; the badge auto-lights the moment a `mesh.link_status link="down"` event arrives (whether from geometric range crossing or a scripted `egs_link_drop` override).
+- **Verification:** 5 integration tests in `agents/drone_agent/tests/test_runtime_link_state_integration.py` (incl. the staleness-fallback regression) + 6 unit tests in `test_link_state_monitor.py` + 4 subscriber tests. Manual Playwright MCP capture at `docs_assets/dashboard-beat5-phase3-restored.png` confirms the badge attaches and detaches correctly across the link-drop window.
+- **Note:** the original TODO also asked for `"returning"` (on `return_to_base`) and `"error"` (on max-retries-exhausted) flips. Those remain unimplemented; track separately if/when Beat 4 backup mode needs them.
+- **Owner:** Closed by Ibrahim 2026-05-10.
 
 ### Drone-agent Ollama startup healthcheck (delivered, monitor)
 - **What:** Plan ships an httpx `GET /api/tags` healthcheck logging a clear warning if the model isn't pulled or the daemon is down. Track whether the warning is actually surfacing in operator runs.
