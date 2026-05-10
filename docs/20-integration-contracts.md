@@ -254,7 +254,9 @@ The `mesh_simulator` process subscribes to `swarm.broadcasts.*` (Redis pattern s
 ## Contract 8: WebSocket Endpoint
 
 **Endpoint:** `ws://localhost:9090`
-**Owner:** Ibrahim connects; Qasim hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
+**Owner:** Ibrahim connects; Qasim hosts via a small FastAPI WebSocket app at `frontend/ws_bridge/`. The bridge subscribes to a fixed list of Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings.delivered`) and forwards a single envelope per second to all connected dashboard clients. Operator commands flow back through the same WebSocket and are republished by the bridge onto the corresponding Redis channels.
+
+**Note (2026-05-10, Path A-full):** the bridge migrated its findings subscription from `drones.*.findings` to `drones.*.findings.delivered` so it sees only the EGS-gated stream. The mesh simulator is now the gateway: drones still publish to `drones.<id>.findings`, mesh sim psubscribes, applies the `egs_link_range` haversine gate + scripted-override set, and republishes verbatim to `drones.<id>.findings.delivered`. Drones also subscribe to `mesh.link_status` events to flip their own `BufferedPublisher` standalone bit (buffers findings to JSONL during outage, replays in FIFO on restore). EGS dedupes by `finding_id` so replays don't double-count `findings_count_by_type`. EGS startup gates on a single `mesh.adjacency_matrix` heartbeat — without the mesh sim running, the EGS exits non-zero rather than silently never seeing a finding. See `docs/plans/2026-05-10-beat5-path-a-full.md` for the architecture diagram and full component breakdown.
 
 **Endpoint discovery (Flutter web).** The dashboard's `_wsBridgeUrl()` in `frontend/flutter_dashboard/lib/main.dart` reads `Uri.base.queryParameters['ws']` (kIsWeb-guarded) and falls back to `Channels.wsEndpoint` (`ws://localhost:9090/`). This `?ws=ws://host:port/` override is the canonical way to point the dashboard at a per-test bridge port; e2e tests under `frontend/ws_bridge/tests/` use it via the `flutter_static_server` fixture in `conftest.py`. It is **not** a deployment knob — the production demo always uses the default endpoint.
 
@@ -282,7 +284,8 @@ Messages from Flutter to EGS (event-driven):
 # Per-drone channels (payload: JSON, validated against the named schema)
 drones.<id>.state                drone_state
 drones.<id>.tasks                task_assignment
-drones.<id>.findings             finding
+drones.<id>.findings             finding             (drone publishes; mesh_simulator psubscribes)
+drones.<id>.findings.delivered   finding             (mesh_simulator republishes after EGS-link gate; EGS + bridge subscribe here)
 drones.<id>.camera               (raw JPEG bytes; not JSON-validated)
 drones.<id>.cmd                  (sim-internal flight commands; not part of the agent contract)
 
@@ -294,9 +297,16 @@ swarm.operator_alerts            (free-form, debug-only)
 # EGS channels
 egs.state                        egs_state
 egs.replan_events                (free-form, debug-only)
+egs.operator_commands            operator_commands_envelope
+egs.command_translations         command_translations_envelope
+egs.operator_actions             operator_actions
 
 # Mesh simulator
-mesh.adjacency_matrix            (debug only)
+mesh.adjacency_matrix            (debug only — also serves as the EGS startup healthcheck pulse)
+mesh.link_status                 mesh_link_status     (per-drone EGS-link transitions; geometric or scripted; 1 Hz heartbeat)
+
+# Sim
+sim.scripted_events              scripted_event       (egs_link_drop / egs_link_restore / drone_failure / etc.)
 ```
 
 Every contract channel carries a JSON string. Subscribers `redis.pubsub().subscribe(channel)` and parse the message body. The `drones.<id>.camera` channel is the one exception — it carries raw JPEG bytes (the pre-recorded frame for the current simulated tick from `sim/frame_server.py`). Receivers handle camera and JSON channels through different code paths.

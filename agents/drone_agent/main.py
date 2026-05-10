@@ -32,8 +32,14 @@ class DroneAgent:
         self.perception = PerceptionNode()
         self.reasoning = ReasoningNode(model=model, endpoint=ollama_endpoint, send_image=send_image, extra_options=extra_options)
         self.validation = ValidationNode()
-        self.action = ActionNode(drone_id=drone_id, publisher=StdoutPublisher())
         self.memory = MemoryStore(drone_id=drone_id)
+        # Inject memory.next_finding_id so finding_ids survive process restart
+        # (Beat 5 Component 5; bundles the deferred TODO).
+        self.action = ActionNode(
+            drone_id=drone_id,
+            publisher=StdoutPublisher(),
+            next_id_fn=self.memory.next_finding_id,
+        )
         self.max_retries = max_retries
         self._validation_log = ValidationEventLogger(path=VALIDATION_LOG_PATH)
 

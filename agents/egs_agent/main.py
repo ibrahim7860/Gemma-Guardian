@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 import redis.asyncio as redis
 
@@ -14,6 +15,60 @@ from agents.egs_agent.scenario_state import build_initial_egs_state
 
 logging.basicConfig(level=getattr(logging, CONFIG.logging.level, "INFO"))
 logger = logging.getLogger(__name__)
+
+# Wave 3a (Component 4): silent-zero diagnostic log cadence. Every 30s the
+# EGS emits "egs.findings_consumed total=N" — even at zero — so that a
+# broken channel migration or a mid-run mesh-sim crash is visible in logs
+# instead of being mistaken for "no findings yet".
+FINDINGS_CONSUMED_LOG_PERIOD_S = 30.0
+
+
+async def _await_mesh_sim(redis_client, timeout_s: float = 5.0) -> None:
+    """Wait for at least one heartbeat on ``mesh.adjacency_matrix``.
+
+    The mesh sim publishes adjacency at 1 Hz unconditionally (see
+    ``agents/mesh_simulator/main.py`` ``_adjacency_thread``). Absence after
+    ``timeout_s`` means the gateway isn't running — every gated finding
+    would silently never reach EGS — so we fail fast with a remediation
+    hint instead of starting the main loop.
+    """
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe("mesh.adjacency_matrix")
+    deadline = time.time() + timeout_s
+    try:
+        while time.time() < deadline:
+            msg = await pubsub.get_message(
+                timeout=0.5, ignore_subscribe_messages=True,
+            )
+            if msg is not None:
+                return
+    finally:
+        try:
+            await pubsub.unsubscribe("mesh.adjacency_matrix")
+        except Exception:  # pragma: no cover — defensive cleanup
+            pass
+    raise RuntimeError(
+        "mesh_simulator not detected on mesh.adjacency_matrix within "
+        f"{timeout_s}s. Findings WILL NOT be delivered to EGS without it. "
+        "Start it: `python -m agents.mesh_simulator`."
+    )
+
+
+async def findings_consumed_log_loop(
+    coordinator: EGSCoordinator,
+    period_s: float = FINDINGS_CONSUMED_LOG_PERIOD_S,
+) -> None:
+    """Periodic silent-zero diagnostic.
+
+    Reads ``coordinator._findings_accepted_total`` and emits
+    ``egs.findings_consumed total=N`` once per ``period_s`` seconds. Fires
+    even when N is zero — that's the diagnostic signature for broken
+    migrations or mesh-sim crashes mid-run.
+    """
+    while True:
+        await asyncio.sleep(period_s)
+        total = coordinator._findings_accepted_total
+        logger.info("egs.findings_consumed total=%d", total)
 
 def _apply_survey_assignments(egs_state, assignments):
     """Mutate egs_state.survey_points to reflect a fresh assignment from
@@ -55,11 +110,22 @@ async def publish_egs_state(redis_client, state_ref):
 async def main():
     logger.info("Starting EGS Agent...")
     redis_client = redis.from_url(CONFIG.transport.redis_url)
+
+    # Wave 3a (Component 4): mesh-sim availability healthcheck.
+    # Fail fast if the gateway isn't up — without it the .delivered channel
+    # is silent and every finding is dropped.
+    await _await_mesh_sim(redis_client)
+
     pubsub = redis_client.pubsub()
-    
+
     # Pattern subscribe
     await pubsub.psubscribe("drones.*.state")
-    await pubsub.psubscribe("drones.*.findings")
+    # PR1 channel migration: findings now flow via the mesh-simulator-gated
+    # `.delivered` channel. The mesh sim psubs the raw `drones.*.findings`
+    # publish from drones and republishes verbatim on `.delivered`. PR1 is a
+    # pure refactor — gating arrives in PR2.
+    logger.info("egs subscribing to %s for findings", "drones.*.findings.delivered")
+    await pubsub.psubscribe("drones.*.findings.delivered")
     await pubsub.subscribe("egs.operator_commands") # Assuming this channel exists for incoming commands
     await pubsub.subscribe("egs.operator_actions")
     # Loop-back channel: _replan_impl publishes survey-point assignments here
@@ -90,6 +156,8 @@ async def main():
     }
     
     asyncio.create_task(publish_egs_state(redis_client, state_ref))
+    # Wave 3a (Component 4): silent-zero diagnostic log task.
+    asyncio.create_task(findings_consumed_log_loop(coordinator))
     
     logger.info("Entering main event loop...")
     while True:
@@ -107,7 +175,8 @@ async def main():
                 
                 if ".state" in channel:
                     state["incoming_telemetry"].append(data)
-                elif ".findings" in channel:
+                elif channel.endswith(".findings.delivered"):
+                    # PR1: EGS now consumes the mesh-sim-gated copy.
                     state["incoming_findings"].append(data)
                 elif "operator_commands" in channel:
                     state["incoming_commands"].append(data)

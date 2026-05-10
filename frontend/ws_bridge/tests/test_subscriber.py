@@ -1,9 +1,10 @@
+# Bypasses mesh sim; publishes directly to gated channel.
 """Integration tests for the Phase 2 RedisSubscriber against fakeredis.
 
 The subscriber owns the asyncio task that reads from `egs.state`,
-`drones.*.state`, and `drones.*.findings`, validates each payload against the
-matching contract schema, and dispatches into the StateAggregator. These tests
-drive that loop end-to-end with `fakeredis.aioredis.FakeRedis` standing in for
+`drones.*.state`, and `drones.*.findings.delivered` (PR1 channel migration —
+the bridge consumes the mesh-sim-gated copy of findings). These tests drive
+that loop end-to-end with `fakeredis.aioredis.FakeRedis` standing in for
 real Redis.
 
 fakeredis design constraint: fakeredis 2.35 async pub/sub does NOT share
@@ -253,8 +254,8 @@ async def test_finding_payload_added_to_findings(
         f2["finding_id"] = "f_drone2_002"
         f2["source_drone_id"] = "drone2"
 
-        await fake.publish("drones.drone1.findings", json.dumps(f1))
-        await fake.publish("drones.drone2.findings", json.dumps(f2))
+        await fake.publish("drones.drone1.findings.delivered", json.dumps(f1))
+        await fake.publish("drones.drone2.findings.delivered", json.dumps(f2))
 
         ok = await _wait_for(
             lambda: {"f_drone1_001", "f_drone2_002"}.issubset(set(aggregator._findings.keys())),

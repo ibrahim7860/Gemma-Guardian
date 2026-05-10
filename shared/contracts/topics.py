@@ -9,6 +9,7 @@ WS_SCHEMA = "websocket_messages"
 PER_DRONE_STATE = "drones.{drone_id}.state"
 PER_DRONE_TASKS = "drones.{drone_id}.tasks"
 PER_DRONE_FINDINGS = "drones.{drone_id}.findings"
+PER_DRONE_FINDINGS_DELIVERED = "drones.{drone_id}.findings.delivered"
 PER_DRONE_CAMERA = "drones.{drone_id}.camera"
 PER_DRONE_CMD = "drones.{drone_id}.cmd"
 SWARM_BROADCAST = "swarm.broadcasts.{drone_id}"
@@ -20,6 +21,8 @@ EGS_OPERATOR_ACTIONS = "egs.operator_actions"
 EGS_OPERATOR_COMMANDS = "egs.operator_commands"
 EGS_COMMAND_TRANSLATIONS = "egs.command_translations"
 MESH_ADJACENCY = "mesh.adjacency_matrix"
+MESH_LINK_STATUS = "mesh.link_status"
+SIM_SCRIPTED_EVENTS = "sim.scripted_events"
 
 def per_drone_state_channel(drone_id: str) -> str:
     return PER_DRONE_STATE.replace("{drone_id}", drone_id)
@@ -29,6 +32,9 @@ def per_drone_tasks_channel(drone_id: str) -> str:
 
 def per_drone_findings_channel(drone_id: str) -> str:
     return PER_DRONE_FINDINGS.replace("{drone_id}", drone_id)
+
+def per_drone_findings_delivered_channel(drone_id: str) -> str:
+    return PER_DRONE_FINDINGS_DELIVERED.replace("{drone_id}", drone_id)
 
 def per_drone_camera_channel(drone_id: str) -> str:
     return PER_DRONE_CAMERA.replace("{drone_id}", drone_id)

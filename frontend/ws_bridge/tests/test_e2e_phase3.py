@@ -117,6 +117,14 @@ def bridge_and_producers():
     )
     try:
         _wait_for_port("127.0.0.1", 9090)
+        # PR1: bridge subscribes to drones.*.findings.delivered, so the mesh
+        # simulator must run as the passthrough between dev_fake_producers
+        # (which publishes drones.<id>.findings) and the bridge.
+        mesh_sim = subprocess.Popen(
+            ["python3", "-m", "agents.mesh_simulator.main"],
+            cwd=str(REPO_ROOT), env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
         producers = subprocess.Popen(
             ["python3", "scripts/dev_fake_producers.py", "--tick-s", "0.5"],
             cwd=str(REPO_ROOT), env=env,
@@ -130,6 +138,11 @@ def bridge_and_producers():
                 producers.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 producers.kill()
+            mesh_sim.terminate()
+            try:
+                mesh_sim.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                mesh_sim.kill()
     finally:
         bridge.terminate()
         try:

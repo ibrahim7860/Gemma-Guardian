@@ -43,8 +43,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import redis
 
+from shared.contracts import validate_or_raise
 from shared.contracts.config import CONFIG
-from shared.contracts.topics import per_drone_state_channel
+from shared.contracts.topics import SIM_SCRIPTED_EVENTS, per_drone_state_channel
 from sim.geo import haversine_meters, interpolate
 from sim.scenario import Drone, Scenario, ScriptedEvent, load_scenario
 
@@ -171,9 +172,35 @@ class WaypointRunner:
     def _fire(self, event: ScriptedEvent) -> None:
         if event.type == "drone_failure" and event.drone_id in self._drones:
             self._drones[event.drone_id].failed = True
-        # zone_update / fire_spread / egs_link_drop / egs_link_restore /
-        # mission_complete are observational for the sim — they don't change
-        # kinematics. Mesh sim and EGS handle the operational consequences.
+        # Events are also broadcast on sim.scripted_events for cross-component
+        # reactions (mesh sim consumes egs_link_drop/restore for the EGS-link
+        # gate; future EGS may consume drone_failure for replan triggers).
+        payload: dict = {
+            "t": event.t,
+            "type": event.type,
+            "wall_clock_iso_ms": _now_iso_ms(),
+        }
+        if event.drone_id is not None:
+            payload["drone_id"] = event.drone_id
+        if event.detail is not None:
+            payload["detail"] = event.detail
+        try:
+            validate_or_raise("scripted_event", payload)
+        except Exception as exc:  # noqa: BLE001 — never crash the sim on bad publish
+            print(
+                f"[waypoint_runner] scripted_event validation failed; skipping publish: "
+                f"event={payload!r} error={exc}",
+                flush=True,
+            )
+            return
+        try:
+            self.redis.publish(SIM_SCRIPTED_EVENTS, json.dumps(payload))
+        except Exception as exc:  # noqa: BLE001 — never crash the sim on Redis hiccups
+            print(
+                f"[waypoint_runner] failed to publish scripted_event: "
+                f"event={payload!r} error={exc}",
+                flush=True,
+            )
 
     def _build_state_message(self, ds: _DroneState, t_seconds: float) -> dict:
         d = ds.drone

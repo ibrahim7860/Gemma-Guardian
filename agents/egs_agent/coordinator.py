@@ -1,9 +1,11 @@
 import asyncio
 import json
 import logging
+import time
+from collections import deque
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import TypedDict, Dict, Any, List
+from typing import TypedDict, Dict, Any, List, Deque, Tuple
 
 from langgraph.graph import StateGraph, START, END
 
@@ -19,6 +21,12 @@ logger = logging.getLogger(__name__)
 # on long runs while staying well under the dashboard's 1Hz publish budget
 # (worst-case 5 ticks of staleness, typically <1s).
 VALIDATION_REFRESH_EVERY_N_TICKS = 5
+
+# Wave 3a (Component 4): how long a finding_id remains memoized before we
+# forget we've seen it. 5 minutes is generous against realistic outage
+# windows (resilience_v1's drop window is 60s) while bounding memory at
+# ~5000 keys × ~50 bytes = ~250 KB even at 1000 findings/min.
+SEEN_FINDING_ID_TTL_S = 300.0
 
 
 class EGSState(TypedDict):
@@ -36,6 +44,19 @@ class EGSCoordinator:
         self.redis_client = redis_client
         self._replan_in_flight = False  # re-entrancy guard for fire-and-forget replan
         self._validation_refresh_counter = 0  # gates refresh_validation_events node
+        # Wave 3a (Component 4): finding_id deduplication.
+        # We keep both a deque (for FIFO eviction) and a set (for O(1)
+        # membership) — deque keeps eviction simple; set keeps the hot path
+        # fast. Without this, replayed findings (drone-side buffer flush on
+        # link restore) would double-increment findings_count_by_type.
+        self._seen_finding_ids: Deque[Tuple[str, float]] = deque()
+        self._seen_finding_id_set: set[str] = set()
+        # Wave 3a (Component 4): silent-zero diagnostic counter.
+        # Incremented for each finding that survives dedup AND validation;
+        # main.py's 30s periodic task reads this to emit
+        # "egs.findings_consumed total=N" so a broken migration or mesh-sim
+        # crash mid-run becomes observable instead of silent.
+        self._findings_accepted_total = 0
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -105,12 +126,35 @@ class EGSCoordinator:
             "victim": 0, "fire": 0, "smoke": 0, "damaged_structure": 0, "blocked_route": 0
         })
 
+        # Wave 3a (Component 4): finding_id dedup before validation.
+        # Compute now_s once per call. FIFO-evict expired entries from the
+        # head of the deque (O(k) where k = expired this call) and mirror
+        # the eviction in the membership set so the two structures stay in
+        # sync. The set is the hot-path lookup; the deque is the time-
+        # ordered eviction record.
+        now_s = time.time()
+        while self._seen_finding_ids and (
+            now_s - self._seen_finding_ids[0][1] >= SEEN_FINDING_ID_TTL_S
+        ):
+            expired_fid, _ = self._seen_finding_ids.popleft()
+            self._seen_finding_id_set.discard(expired_fid)
+
         for f in state.get("incoming_findings", []):
+            fid = f.get("finding_id")
+            if fid is not None and fid in self._seen_finding_id_set:
+                logger.info(
+                    "egs.findings duplicate dropped finding_id=%s", fid,
+                )
+                continue
             val_res = self.validation_node.validate_finding(f)
             if val_res.valid:
                 ftype = f.get("type")
                 if ftype in counts:
                     counts[ftype] += 1
+                    if fid is not None:
+                        self._seen_finding_ids.append((fid, now_s))
+                        self._seen_finding_id_set.add(fid)
+                    self._findings_accepted_total += 1
                     logger.info(
                         "egs.findings accepted source=%s type=%s finding_id=%s "
                         "gps=(%s,%s) total_%s=%d",

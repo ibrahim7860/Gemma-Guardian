@@ -23,6 +23,21 @@ EGS_NODE_ID = "egs"
 LatLon = Tuple[float, float]
 
 
+def is_drone_in_egs_link_range(
+    drone_pos: LatLon,
+    egs_pos: LatLon,
+    egs_link_range_m: float,
+) -> bool:
+    """True iff the drone is within ``egs_link_range_m`` haversine meters of the EGS.
+
+    Used by the mesh sim's findings gate (``MeshSimulator.forward_finding``)
+    and by its geometric link-state tracker (drives ``mesh.link_status``
+    transitions). Kept as a tiny named helper so the gate's intent reads
+    cleanly at call sites.
+    """
+    return haversine_meters(drone_pos, egs_pos) <= egs_link_range_m
+
+
 def filter_recipients(
     *,
     sender_id: str,

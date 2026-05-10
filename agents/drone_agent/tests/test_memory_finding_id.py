@@ -6,14 +6,14 @@ import re
 from agents.drone_agent.memory import DroneMemory
 
 
-def test_next_finding_id_format():
-    mem = DroneMemory(drone_id="drone1")
+def test_next_finding_id_format(tmp_path):
+    mem = DroneMemory(drone_id="drone1", persist_dir=tmp_path)
     fid = mem.next_finding_id()
     assert re.match(r"^f_drone1_\d+$", fid), f"Bad format: {fid!r}"
 
 
-def test_next_finding_id_monotonic():
-    mem = DroneMemory(drone_id="drone2")
+def test_next_finding_id_monotonic(tmp_path):
+    mem = DroneMemory(drone_id="drone2", persist_dir=tmp_path)
     a = mem.next_finding_id()
     b = mem.next_finding_id()
     c = mem.next_finding_id()
@@ -24,10 +24,10 @@ def test_next_finding_id_monotonic():
     assert b_n == a_n + 1 == c_n - 1
 
 
-def test_next_finding_id_different_drones():
+def test_next_finding_id_different_drones(tmp_path):
     """Two DroneMemory instances must produce IDs that match their respective drone_id."""
-    m1 = DroneMemory(drone_id="drone1")
-    m2 = DroneMemory(drone_id="drone7")
+    m1 = DroneMemory(drone_id="drone1", persist_dir=tmp_path)
+    m2 = DroneMemory(drone_id="drone7", persist_dir=tmp_path)
     f1 = m1.next_finding_id()
     f2 = m2.next_finding_id()
     assert f1.startswith("f_drone1_")

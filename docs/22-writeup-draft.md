@@ -264,6 +264,33 @@ loopback. The demo's closing beat (Beat 5, 1:20–1:30 in
 no active network interface alongside `ollama list` running both Gemma 4
 variants locally. That is the claim, and the demo is the test.
 
+### 5.7 Disconnection-tolerant findings pipeline
+
+Even with everything on `localhost`, a real disaster scenario implies
+a *radio* link between drones and the ground station that can fail. Our
+simulation models that with the mesh simulator's haversine `egs_link_range`
+gate and scripted `egs_link_drop` / `egs_link_restore` events from the
+scenario YAML. When a drone crosses out of EGS link range or the operator
+trips a scripted drop, the mesh simulator emits a `mesh.link_status` event
+on Redis; the drone's onboard `LinkStateMonitor` flips a `BufferedPublisher`
+into standalone mode. While standalone, every Contract-4 finding the drone
+produces is appended to a per-drone JSONL queue (`{drone_id}_findings_queue.jsonl`)
+in addition to the in-memory deque. On link restore the buffer drains in
+strict FIFO order through the same Redis publisher the drone uses normally.
+The EGS dedupes by `finding_id` against a 5-minute sliding window so a
+replayed finding never double-counts in `findings_count_by_type`. The
+result: a 60-second outage in the resilience scenario produces no data
+loss in the dashboard's findings panel. The demo's strongest single image
+is a victim-count chip ticking from 0 to 1 *after* the link-restore
+event, with the buffered finding tile labeled "buffered during link drop"
+in the Findings panel
+([`docs_assets/dashboard-beat5-phase3-restored.png`](../docs_assets/dashboard-beat5-phase3-restored.png)).
+The full pipeline is regression-tested in
+`agents/egs_agent/tests/test_e2e_link_drop_replay.py` against fakeredis
+and DOM-verified in
+`frontend/ws_bridge/tests/test_e2e_playwright_beat5_offline_recovery.py`
+against a real Chromium build.
+
 ---
 
 ## 6. Validation-and-Retry Loop
