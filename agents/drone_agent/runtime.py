@@ -18,12 +18,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 import redis as _redis_sync
 import redis.asyncio as _redis_async
 
 from agents.drone_agent.action import ActionNode
+from agents.drone_agent.buffered_publisher import BufferedPublisher
+from agents.drone_agent.finding_buffer import FindingBuffer
 from agents.drone_agent.main import DroneAgent
 from agents.drone_agent.perception import PerceptionBundle
 from agents.drone_agent.redis_io import (
@@ -33,7 +36,7 @@ from agents.drone_agent.redis_io import (
     StateSubscriber,
 )
 from shared.contracts import validate as schema_validate
-from shared.contracts.logging import now_iso_ms
+from shared.contracts.logging import default_log_dir, now_iso_ms
 from shared.contracts.topics import per_drone_state_channel
 from sim.scenario import Scenario
 
@@ -64,6 +67,7 @@ class DroneRuntime:
         send_image: bool = True,
         agent_step_period_s: float = 1.0,
         agent_state_publish_period_s: float = 0.5,
+        log_dir: Path | None = None,
     ):
         self.drone_id = drone_id
         self.agent = DroneAgent(
@@ -73,8 +77,49 @@ class DroneRuntime:
             max_retries=max_retries,
             send_image=send_image,
         )
+        # Beat 5 Component 1: drone-side findings buffer + replay across an
+        # EGS link drop. The BufferedPublisher wraps the raw RedisPublisher
+        # and intercepts findings while standalone; restored entries replay
+        # in FIFO order on link restore.
+        #
+        # Wave 2 Lane E will add a LinkStateMonitor that calls
+        # `self.buffered_publisher.set_standalone(...)` on link transitions.
+        # This runtime change is intentionally minimal so the Lane E merge
+        # stays ~5 LOC.
+        resolved_log_dir = Path(log_dir) if log_dir is not None else default_log_dir()
+        resolved_log_dir.mkdir(parents=True, exist_ok=True)
+        self._finding_buffer = FindingBuffer(
+            persist_path=resolved_log_dir / f"{drone_id}_findings_queue.jsonl",
+            maxlen=1000,
+        )
+        # Rehydrate any persisted entries from a prior process incarnation.
+        # They will replay on the next set_standalone(False) transition.
+        restored = self._finding_buffer.restore_from_disk()
+        if restored:
+            logger.info(
+                "FindingBuffer: restored %d buffered entries from disk for drone %s",
+                restored,
+                drone_id,
+            )
+        self.buffered_publisher = BufferedPublisher(
+            inner=RedisPublisher(sync_client),
+            buffer=self._finding_buffer,
+        )
+        # If we rehydrated entries, treat this process as resuming a
+        # standalone window. The prior incarnation died before its EGS link
+        # was restored (otherwise the buffer would have been drained), so
+        # the buffer's current state IS standalone. The next link-restore
+        # event will drain via set_standalone(False).
+        if restored:
+            self.buffered_publisher.set_standalone(True)
         self.agent.action = ActionNode(
-            drone_id=drone_id, publisher=RedisPublisher(sync_client),
+            drone_id=drone_id,
+            publisher=self.buffered_publisher,
+            # Beat 5 Component 5: durable per-drone finding_id counter sourced
+            # from MemoryStore (which persists to disk). Bundles the deferred
+            # TODO "Replace ActionNode._finding_counter with MemoryStore
+            # .next_finding_id()".
+            next_id_fn=self.agent.memory.next_finding_id,
         )
         self.camera = CameraSubscriber(async_client, drone_id=drone_id)
         self.state = StateSubscriber(

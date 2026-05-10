@@ -61,7 +61,6 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Why:** The Day 1-7 standalone work assumed Ollama Just Works; partial pulls and daemon-not-running have already cost an integration session.
 - **Owner:** Kaleel (delivered); Ibrahim verifies in demo prep.
 
-### Replace `ActionNode._finding_counter` with `MemoryStore.next_finding_id()`
-- **What:** `MemoryStore.next_finding_id()` already exists with the canonical `f_drone\d+_\d+` format. The action node maintains its own parallel counter — drift risk if either changes.
-- **Why:** DRY. Pre-existing technical debt; surfaced during the Redis wiring plan but out of scope for that PR.
-- **Owner:** Kaleel.
+### CLOSED — Replace `ActionNode._finding_counter` with `MemoryStore.next_finding_id()`
+- **Resolution:** Bundled into Beat 5 Path A-full Component 5 (counter durability) PR. `ActionNode` now takes a `next_id_fn: Callable[[], str]` injected at construction; `runtime.py` and `main.py` pass `memory.next_finding_id` so production paths share a single, durable, per-drone counter source. Regression guard test in `agents/drone_agent/tests/test_action_uses_memory_for_finding_id.py` asserts `ActionNode` no longer exposes `_finding_counter`. Plan ref: `docs/plans/2026-05-10-beat5-path-a-full.md` §4 Component 5.
+- **Owner:** Person 4 (closed by this PR).

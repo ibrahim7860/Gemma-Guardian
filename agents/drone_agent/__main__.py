@@ -45,6 +45,18 @@ def build_parser() -> argparse.ArgumentParser:
                         help="skip image (for text-only Gemma stand-ins during integration)")
     parser.add_argument("--cpu-only", action="store_true",
                         help="force CPU inference via num_gpu=0 in Ollama")
+    parser.add_argument(
+        "--standalone",
+        action="store_true",
+        help=(
+            "boot in standalone mode — findings produced before link restore "
+            "are buffered to JSONL on disk and replayed when "
+            "BufferedPublisher.set_standalone(False) is called. Used for demo "
+            "control and the synth-replay-via-cli pattern. Wave 2's "
+            "LinkStateMonitor (not yet wired) will own this toggle in "
+            "production."
+        ),
+    )
     return parser
 
 
@@ -107,6 +119,13 @@ async def _run(args: argparse.Namespace) -> int:
         max_retries=args.max_retries,
         send_image=not args.text_only,
     )
+    if args.standalone:
+        runtime.buffered_publisher.set_standalone(True)
+        print(
+            f"[drone_agent] drone_id={args.drone_id} starting in STANDALONE mode "
+            "— findings will buffer until set_standalone(False)",
+            flush=True,
+        )
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

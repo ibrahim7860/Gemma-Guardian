@@ -17,7 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Callable, Optional, Protocol
 
 from shared.contracts import validate_or_raise
 from shared.contracts.logging import now_iso_ms
@@ -42,10 +42,36 @@ class StdoutPublisher:
 
 
 class ActionNode:
-    def __init__(self, drone_id: str, publisher: Publisher | None = None):
+    def __init__(
+        self,
+        drone_id: str,
+        publisher: Publisher | None = None,
+        next_id_fn: Callable[[], str] | None = None,
+    ):
+        """Construct an action node.
+
+        `next_id_fn` is the source of finding_ids. Production wiring passes
+        `MemoryStore.next_finding_id` so the counter is durable across drone
+        restarts (Beat 5 Path A-full, Component 5). Bundled the deferred TODO
+        "Replace ActionNode._finding_counter with MemoryStore.next_finding_id()"
+        from TODOS.md — ActionNode no longer maintains its own counter.
+
+        For unit tests that don't construct a MemoryStore, the fallback is a
+        local in-memory counter (same f_<drone_id>_<n> shape, NOT durable).
+        """
         self.drone_id = drone_id
         self.publisher = publisher or StdoutPublisher()
-        self._finding_counter = 0
+        if next_id_fn is None:
+            self._fallback_counter = 0
+            self._next_id_fn: Callable[[], str] = self._fallback_next_id
+        else:
+            self._next_id_fn = next_id_fn
+
+    def _fallback_next_id(self) -> str:
+        """In-memory fallback used only when no next_id_fn is injected
+        (unit tests). Production paths inject MemoryStore.next_finding_id."""
+        self._fallback_counter += 1
+        return f"f_{self.drone_id}_{self._fallback_counter}"
 
     def execute(self, call: dict, sender_position: dict, raw_frame_jpeg: bytes | None = None) -> None:
         name = call["function"]
@@ -54,8 +80,7 @@ class ActionNode:
         method(args, sender_position, raw_frame_jpeg)
 
     def _act_report_finding(self, args: dict, sender_position: dict, raw_frame_jpeg: Optional[bytes]) -> None:
-        self._finding_counter += 1
-        finding_id = f"f_{self.drone_id}_{self._finding_counter}"
+        finding_id = self._next_id_fn()
         ts = now_iso_ms()
 
         image_path = self._persist_frame(finding_id, raw_frame_jpeg) if raw_frame_jpeg else "<no_capture>"
