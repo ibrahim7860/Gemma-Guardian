@@ -52,12 +52,26 @@ async def test_egs_main_psubscribes_to_findings_delivered():
 
     fake_pubsub.psubscribe = AsyncMock(side_effect=_record_psub)
     fake_pubsub.subscribe = AsyncMock(side_effect=_record_sub)
+    fake_pubsub.unsubscribe = AsyncMock(return_value=None)
 
-    # After all subs land, raise to short-circuit the rest of main().
-    async def _bail_get_message(*args, **kwargs):
+    # The Wave 3a mesh-sim healthcheck calls get_message first (looking for
+    # mesh.adjacency_matrix). Return a fake adjacency message on the FIRST
+    # call so the healthcheck passes; on the next call (the main event loop)
+    # raise to short-circuit and capture psubscribe state.
+    call_state = {"n": 0}
+
+    async def _get_message(*args, **kwargs):
+        call_state["n"] += 1
+        if call_state["n"] == 1:
+            # Pretend mesh sim is alive.
+            return {
+                "type": "message",
+                "channel": b"mesh.adjacency_matrix",
+                "data": b"{}",
+            }
         raise _StopMain()
 
-    fake_pubsub.get_message = AsyncMock(side_effect=_bail_get_message)
+    fake_pubsub.get_message = AsyncMock(side_effect=_get_message)
 
     fake_client = MagicMock()
     fake_client.pubsub = MagicMock(return_value=fake_pubsub)
