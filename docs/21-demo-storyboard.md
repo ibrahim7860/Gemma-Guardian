@@ -105,6 +105,10 @@ Then the dramatic moment: a card appears: *"EGS LINK SEVERED."* The dashboard sh
 
 **Caption:** *"Multilingual operator commands. Continued operation when the EGS goes offline."*
 
+**Reference assets (already captured):**
+- `docs_assets/dashboard-multilingual-spanish.png` — live Gemma 4 E4B translation of *"Establecer la prioridad de búsqueda de víctimas en crítico."* through the EGS command pipeline into a structured action with `preview_text_in_operator_language` populated. Captured 2026-05-09 against the real (non-mocked) E4B daemon.
+- `docs_assets/dashboard-egs-severed.png` — `EGS LINK SEVERED` banner + per-drone `STANDALONE` badge driven by an `egs.state` heartbeat staleness >5 s.
+
 ## Beat 5: The Offline Proof + Closer (1:20 - 1:30)
 
 **Goal:** seal the offline claim and end strong.
@@ -127,7 +131,7 @@ The storyboard above assumes a fully integrated stack. As of today, several beat
 |---|---|---|---|
 | 3b drone-eye reasoning trace + `report_finding` overlay | `agents/drone_agent/main.py` publishing real findings on `drones.<id>.findings` | Kaleel | ✅ Done. Live Gemma fires `report_finding` on CC0 FEMA Katrina image; 5× verified 2026-05-06 (`docs/sim-live-run-notes.md` Gap #2). DOM render verified end-to-end by `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py` and MCP capture per `docs/runbooks/mcp-dom-verification.md`; reference asset `docs_assets/dashboard-finding-rendered.png`. |
 | 3c "EGS hallucinates 27 of 25 points → caught → corrected" | `agents/egs_agent/main.py` running `assign_survey_points` with the validation loop wired | Qasim | Not yet shipped |
-| 4 `command_translation` showing Spanish input → structured task | EGS Gemma 4 E4B path producing real `preview_text_in_operator_language` (TODOS.md tracks this as a Phase 5+ stub) | Qasim | ✅ Done. Gemma 4 E4B translates commands accurately and handles Flutter dashboard timeouts correctly. |
+| 4 `command_translation` showing Spanish input → structured task | EGS Gemma 4 E4B path producing real `preview_text_in_operator_language` (TODOS.md tracks this as a Phase 5+ stub) | Qasim | ✅ Done. Gemma 4 E4B translates commands accurately and handles Flutter dashboard timeouts correctly. Reference asset: `docs_assets/dashboard-multilingual-spanish.png` (captured 2026-05-09 via Playwright MCP against real E4B). |
 | 4 `EGS LINK SEVERED` card + "STANDALONE MODE ACTIVE" panel state | Dashboard rendering EGS-offline state | Person 4 (Ibrahim) | ✅ Dashboard side ready 2026-05-07 — banner triggers on egs.state heartbeat staleness >5s, badge keys off `agent_status == "standalone"`. Both have stable `Semantics(identifier: ...)` hooks for Playwright/MCP capture. Awaits Kaleel's runtime `agent_status` flips (TODOS.md "Wire `agent_status` flips") to fully light up under live sim. |
 | 4 `egs_link_drop` event firing in sim | `sim/scenarios/resilience_v1.yaml` — already ships `egs_link_drop` at t=120s and `egs_link_restore` at t=180s | Hazim | ✅ Done |
 | 5 offline proof terminal + `ollama list` showing two models | Demo box has both Gemma 4 tags pulled per `docs/20-integration-contracts.md` | Person 4 (demo box owner) | Verify on Day 14 |

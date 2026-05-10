@@ -174,6 +174,16 @@ redis-cli -p $REDIS SHUTDOWN NOSAVE
 - **Map panel renders grid-only, no aerial visible (post-PR-#36):** the bridge is forwarding `egs_state.base_image_path = null`, which fires `map_panel.dart`'s `errorBuilder` fallback. Two known causes:
   1. **No EGS in the stack:** Procedure §4 above lists EGS first for a reason. Without it, no process publishes `egs.state`, so the field is null. Confirm the §4 sanity probe passed.
   2. **EGS connected to the wrong redis:** the EGS reads `transport.redis_url` from `shared/config.yaml` (defaults to `localhost:6379`). For ephemeral-redis paths, you MUST set `REDIS_URL=redis://127.0.0.1:$REDIS/0` on the EGS launch line. Without the env override the EGS publishes on `localhost:6379` while the bridge listens on `$REDIS` — split bus, no aerial. (Fix added 2026-05-08; see `shared/contracts/config.py` env-override docstring.)
+- **Ollama returns HTTP 500 `model failed to load, resource limitations` after a Mac crash / hard reboot:** despite the message, this is usually NOT a memory problem — the macOS Metal compiler service is in a stuck state from the abnormal shutdown. Symptom: Console shows `Unable to reach MTLCompilerService ... Reentrancy avoided`; `ollama list` displays the models correctly; `ollama run <tag>` hangs or 500s on first chat call. The following did NOT work in our 2026-05-09 incident (Apple Silicon M1, macOS 26.4.1, Ollama 0.23.1): clearing `/var/folders/.../com.apple.metal/` shader cache, `pkill -f MTLCompilerService`, `brew services restart ollama`. The fix that did work, without needing another reboot:
+  ```bash
+  brew services stop ollama
+  brew reinstall ollama          # pulls a fresh binary with a clean precompiled Metal library
+  brew services start ollama
+  # Pre-warm to confirm:
+  curl -X POST http://127.0.0.1:11434/api/chat \
+       -d '{"model":"gemma4:e4b","stream":false,"messages":[{"role":"user","content":"ok"}]}'
+  ```
+  Cold-load on Apple Silicon: ~99 s for E4B, ~16 s for E2B post-reinstall — both within our 120 s default `ReasoningNode.timeout_s`. If the reinstall still 500s, only then suspect actual memory pressure (E2B 7.2 GB + E4B 9.6 GB = 16.8 GB, borderline on a 16 GB Mac with both loaded simultaneously) and run only one at a time.
 
 ## Beat 4 capture path — `EGS LINK SEVERED` + `STANDALONE MODE ACTIVE`
 
