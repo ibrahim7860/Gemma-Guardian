@@ -77,6 +77,16 @@ class BufferedPublisher:
 
         On a True→False transition, drain the buffer and publish each entry
         through the inner publisher in FIFO order.
+
+        Partial-flush resilience: if ``inner.publish()`` raises mid-loop
+        (e.g., Redis connection drops at the moment of restore), the
+        remaining entries are RE-BUFFERED so they are not silently lost,
+        and the publisher reverts to standalone. The next reconciliation
+        tick (runtime._state_republish_loop) will re-attempt the flush.
+        Successfully-published entries are NOT re-buffered, so no
+        double-publish; EGS finding_id dedup (Component 4) is the
+        belt-and-braces safety net.
+
         Idempotent: setting the same value twice is a no-op.
         """
         if value == self._is_standalone:
@@ -89,16 +99,39 @@ class BufferedPublisher:
                     "BufferedPublisher: link restored — flushing %d buffered entries",
                     len(entries),
                 )
-            for channel, payload in entries:
-                self._inner.publish(channel, payload)
+            for i, (channel, payload) in enumerate(entries):
+                try:
+                    self._inner.publish(channel, payload)
+                except Exception:
+                    # Re-buffer this entry plus everything after it. Flip
+                    # back to standalone so the next reconciliation tick
+                    # re-attempts. Do NOT re-raise — the runtime callback
+                    # path is event-driven and a raised exception here
+                    # would propagate into the LinkStatusSubscriber loop.
+                    remaining = entries[i:]
+                    logger.exception(
+                        "BufferedPublisher: inner.publish failed at entry %d/%d during "
+                        "flush; re-buffering %d remaining entries and reverting to "
+                        "standalone for retry",
+                        i + 1,
+                        len(entries),
+                        len(remaining),
+                    )
+                    for ch, pl in remaining:
+                        self._buffer.append(ch, pl)
+                    self._is_standalone = True
+                    return
 
     def close(self) -> None:
-        """Close the inner publisher.
+        """Close the inner publisher AND release the buffer's file handle.
 
         Buffered entries on disk are NOT cleared — a subsequent process can
         instantiate a fresh BufferedPublisher pointing at the same persist_path,
         call `restore_from_disk()`, and replay them via set_standalone(False).
         """
+        close_buf = getattr(self._buffer, "close", None)
+        if callable(close_buf):
+            close_buf()
         close = getattr(self._inner, "close", None)
         if callable(close):
             close()

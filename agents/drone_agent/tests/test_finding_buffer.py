@@ -104,6 +104,115 @@ def test_restore_from_missing_file_is_idempotent(tmp_path):
     assert not path.exists()
 
 
+def test_restore_from_disk_caps_return_at_maxlen(tmp_path):
+    """REGRESSION (review finding #2): if the on-disk JSONL has MORE lines
+    than maxlen (because a prior incarnation's deque overflowed and dropped
+    oldest in-memory while the file kept appending), restore_from_disk()
+    must return the deque length, not the line count. Otherwise the caller's
+    log message claims to have restored more entries than will actually
+    replay.
+    """
+    path = tmp_path / "q.jsonl"
+    lines = [
+        json.dumps({
+            "channel": "drones.drone1.findings",
+            "payload": _make_finding(i),
+            "ts_iso": "2026-05-10T00:00:00.000Z",
+        })
+        for i in range(1, 11)  # 10 lines on disk
+    ]
+    path.write_text("\n".join(lines) + "\n")
+
+    buf = FindingBuffer(persist_path=path, maxlen=3)
+    n = buf.restore_from_disk()
+    # Returns the deque length (3), not the line count (10).
+    assert n == 3
+    assert len(buf) == 3
+    # Sanity: deque holds the LAST 3 (8, 9, 10) — drop-oldest.
+    out = buf.drain()
+    ids = [p["finding_id"] for (_ch, p) in out]
+    assert ids == ["f_drone1_8", "f_drone1_9", "f_drone1_10"]
+
+
+def test_append_uses_single_writer_across_window(tmp_path):
+    """REGRESSION (review finding #3): the append path must NOT open and close
+    the file per call. With line-buffered text mode the writer is opened
+    lazily on first append and stays open until drain() / close(). We assert
+    by checking that the writer attribute is set after the first append, the
+    same writer object handles subsequent appends, and drain() releases it.
+    """
+    buf = FindingBuffer(persist_path=tmp_path / "q.jsonl", maxlen=10)
+    # Pre-append: writer is None (lazy).
+    assert buf._writer is None
+
+    buf.append("drones.drone1.findings", _make_finding(1))
+    assert buf._writer is not None
+    first_writer = buf._writer
+    assert not first_writer.closed
+
+    # Subsequent appends reuse the same writer.
+    buf.append("drones.drone1.findings", _make_finding(2))
+    buf.append("drones.drone1.findings", _make_finding(3))
+    assert buf._writer is first_writer
+    assert not first_writer.closed
+
+    # Persistence is durable mid-window (line-buffered flushes on each \n).
+    rows = _read_jsonl(tmp_path / "q.jsonl")
+    assert len(rows) == 3
+
+    # Drain releases the writer.
+    buf.drain()
+    assert buf._writer is None
+    # The file handle we held is closed.
+    assert first_writer.closed
+
+
+def test_close_releases_writer_without_truncating_file(tmp_path):
+    """close() releases the file descriptor but PRESERVES on-disk JSONL so a
+    subsequent process can restore_from_disk()."""
+    path = tmp_path / "q.jsonl"
+    buf = FindingBuffer(persist_path=path, maxlen=10)
+    buf.append("drones.drone1.findings", _make_finding(1))
+    buf.append("drones.drone1.findings", _make_finding(2))
+    held = buf._writer
+    assert held is not None and not held.closed
+
+    buf.close()
+    assert buf._writer is None
+    assert held.closed
+    # On-disk JSONL preserved (close ≠ drain).
+    rows = _read_jsonl(path)
+    assert len(rows) == 2
+
+
+def test_close_is_idempotent(tmp_path):
+    """Calling close() twice (or before any append) is a no-op."""
+    buf = FindingBuffer(persist_path=tmp_path / "q.jsonl", maxlen=10)
+    # close() before any append: no writer to close, no error.
+    buf.close()
+    buf.append("drones.drone1.findings", _make_finding(1))
+    buf.close()
+    buf.close()  # second close is a no-op
+    assert buf._writer is None
+
+
+def test_append_after_drain_reopens_writer(tmp_path):
+    """After drain() closes the writer, the next append must re-open it
+    cleanly. Otherwise a multi-window standalone session would break."""
+    path = tmp_path / "q.jsonl"
+    buf = FindingBuffer(persist_path=path, maxlen=10)
+    buf.append("drones.drone1.findings", _make_finding(1))
+    buf.drain()
+    assert buf._writer is None
+
+    # Second window.
+    buf.append("drones.drone1.findings", _make_finding(2))
+    assert buf._writer is not None and not buf._writer.closed
+    rows = _read_jsonl(path)
+    assert len(rows) == 1
+    assert rows[0]["payload"]["finding_id"] == "f_drone1_2"
+
+
 def test_restore_from_corrupted_jsonl_skips_bad_lines(tmp_path, caplog):
     path = tmp_path / "q.jsonl"
     valid1 = json.dumps({

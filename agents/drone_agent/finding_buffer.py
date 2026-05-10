@@ -22,6 +22,7 @@ import logging
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import IO, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,10 @@ logger = logging.getLogger(__name__)
 class FindingBuffer:
     """FIFO ring buffer for findings produced while standalone, with JSONL persistence.
 
-    Append → in-memory deque AND one JSON line on disk.
+    Append → in-memory deque AND one JSON line on disk (line-buffered, so each
+        newline triggers a flush — durable without an explicit flush() call,
+        and only one open()+close() per standalone window instead of one per
+        finding).
     Drain → return all entries in FIFO order, clear the deque, truncate the file.
     Restore → on (re)start, read the JSONL back into the deque so a process
         crash does not lose buffered findings.
@@ -42,6 +46,23 @@ class FindingBuffer:
         # NOTE: deque(maxlen=N) drops the OLDEST entry on overflow. See module
         # docstring for the implication on multi-hour standalone windows.
         self._deque: deque[tuple[str, dict, str]] = deque(maxlen=maxlen)
+        # Lazily-opened append-mode writer. One open per standalone window.
+        # Closed on drain() (which truncates) and on close().
+        self._writer: Optional[IO] = None
+
+    def _ensure_writer(self) -> IO:
+        """Lazily open the append-mode writer with line buffering.
+
+        ``buffering=1`` is line-buffered text mode — every ``\\n`` triggers a
+        flush, so persistence is durable without a per-write flush() call. The
+        first append in a standalone window pays the open() syscall; subsequent
+        appends pay only the write+flush.
+        """
+        if self._writer is None or self._writer.closed:
+            self._writer = self._persist_path.open(
+                "a", buffering=1, encoding="utf-8",
+            )
+        return self._writer
 
     def append(self, channel: str, payload: dict) -> None:
         """Append to the in-memory deque AND persist one JSON line.
@@ -58,8 +79,7 @@ class FindingBuffer:
         )
         self._deque.append((channel, payload, ts_iso))
         line = json.dumps({"channel": channel, "payload": payload, "ts_iso": ts_iso})
-        with self._persist_path.open("a") as f:
-            f.write(line + "\n")
+        self._ensure_writer().write(line + "\n")
 
     def drain(self) -> list[tuple[str, dict]]:
         """Return all entries in FIFO order. Clear the deque AND truncate the file.
@@ -71,10 +91,27 @@ class FindingBuffer:
         """
         entries = [(channel, payload) for (channel, payload, _ts) in self._deque]
         self._deque.clear()
+        # Close the writer BEFORE truncate so the file system observes the
+        # empty file, not a stale append buffer. The writer is lazily reopened
+        # on the next append.
+        if self._writer is not None and not self._writer.closed:
+            self._writer.close()
+        self._writer = None
         # Truncate by writing empty content. open("w") truncates atomically
         # on POSIX (single syscall to O_TRUNC).
         self._persist_path.write_text("")
         return entries
+
+    def close(self) -> None:
+        """Close the lazily-opened writer. In-memory deque is preserved.
+
+        Called from BufferedPublisher.close() so a graceful shutdown returns
+        the file descriptor to the OS. The on-disk JSONL is preserved so a
+        subsequent process can call ``restore_from_disk()``.
+        """
+        if self._writer is not None and not self._writer.closed:
+            self._writer.close()
+        self._writer = None
 
     def __len__(self) -> int:
         return len(self._deque)
@@ -82,17 +119,23 @@ class FindingBuffer:
     def restore_from_disk(self) -> int:
         """Read persist_path and rehydrate the deque.
 
-        Returns the number of entries restored. Idempotent: missing file or
-        empty file → returns 0 with no side effects on the deque. Corrupted
-        lines are skipped with a warning so a single bad write doesn't take
-        out the entire buffer.
+        Returns the number of entries currently held in the deque AFTER
+        restoration. If the on-disk JSONL contains more lines than ``maxlen``,
+        the deque silently drops the oldest entries during rehydration; the
+        return value reflects the in-memory state, not the line count. This is
+        the value callers want — it's what they'll actually replay on the next
+        link-restore.
+
+        Idempotent: missing file or empty file → returns 0 with no side
+        effects on the deque. Corrupted lines are skipped with a warning so a
+        single bad write doesn't take out the entire buffer.
         """
         if not self._persist_path.exists():
             return 0
         text = self._persist_path.read_text()
         if not text.strip():
             return 0
-        restored = 0
+        skipped = 0
         for lineno, raw in enumerate(text.splitlines(), start=1):
             stripped = raw.strip()
             if not stripped:
@@ -109,7 +152,13 @@ class FindingBuffer:
                     self._persist_path,
                     e,
                 )
+                skipped += 1
                 continue
             self._deque.append((channel, payload, ts_iso))
-            restored += 1
-        return restored
+        if skipped:
+            logger.info(
+                "FindingBuffer.restore: %d corrupted lines skipped from %s",
+                skipped,
+                self._persist_path,
+            )
+        return len(self._deque)

@@ -109,6 +109,129 @@ def test_close_does_not_lose_buffered_entries(tmp_path):
     assert fresh.restore_from_disk() == 2
 
 
+class _PartialFailPublisher:
+    """Spy that succeeds for the first ``ok_count`` publishes, then raises.
+
+    Used to simulate a Redis hiccup mid-flush. After the failure point the
+    BufferedPublisher must re-buffer the un-published entries and revert to
+    standalone so the next reconciliation tick retries.
+    """
+
+    def __init__(self, ok_count: int):
+        self.calls: list[tuple[str, dict]] = []
+        self._ok_count = ok_count
+        self.closed = False
+
+    def publish(self, channel: str, payload: dict) -> None:
+        if len(self.calls) >= self._ok_count:
+            raise ConnectionError("simulated redis hiccup")
+        self.calls.append((channel, payload))
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_set_standalone_partial_flush_re_buffers_remaining(buffer, caplog):
+    """REGRESSION (review finding #1): if inner.publish() raises mid-flush
+    after some entries have been delivered, the BufferedPublisher must
+    re-buffer the REMAINING entries (not the ones already published — that
+    would double-publish) and revert to standalone for retry on the next
+    reconciliation tick.
+    """
+    # First two publishes succeed, third raises. Entries 3, 4, 5 should be
+    # re-buffered.
+    inner = _PartialFailPublisher(ok_count=2)
+    bp = BufferedPublisher(inner=inner, buffer=buffer)
+    bp.set_standalone(True)
+    for i in (1, 2, 3, 4, 5):
+        bp.publish("drones.drone1.findings", _make_finding(i))
+    assert len(buffer) == 5
+
+    with caplog.at_level("ERROR", logger="agents.drone_agent.buffered_publisher"):
+        # set_standalone(False) attempts the flush; failure does NOT raise out.
+        bp.set_standalone(False)
+
+    # Entries 1 and 2 were published successfully.
+    ids_published = [p["finding_id"] for (_ch, p) in inner.calls]
+    assert ids_published == ["f_drone1_1", "f_drone1_2"]
+
+    # Entries 3, 4, 5 are back in the buffer in original order.
+    assert len(buffer) == 3
+    out = buffer.drain()
+    ids_rebuffered = [p["finding_id"] for (_ch, p) in out]
+    assert ids_rebuffered == ["f_drone1_3", "f_drone1_4", "f_drone1_5"]
+
+    # Publisher reverted to standalone for retry on the next tick.
+    assert bp.is_standalone is True
+
+    # An ERROR-level log fired so the operator can see it.
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert any("re-buffering" in r.message for r in errors)
+
+
+def test_set_standalone_partial_flush_retry_succeeds_after_recovery(buffer):
+    """Once the inner publisher recovers, the next set_standalone(True→False)
+    transition replays the re-buffered entries cleanly. No double-publish of
+    entries that already succeeded on the first attempt.
+    """
+    fail_then_ok = _PartialFailPublisher(ok_count=2)
+    bp = BufferedPublisher(inner=fail_then_ok, buffer=buffer)
+    bp.set_standalone(True)
+    for i in (1, 2, 3, 4, 5):
+        bp.publish("drones.drone1.findings", _make_finding(i))
+    bp.set_standalone(False)  # First attempt: 1, 2 succeed; 3-5 re-buffered.
+
+    # Swap in a healthy publisher and replace bp's inner. (Simulating "Redis
+    # came back" without modeling reconnect logic in the test.)
+    healthy = _RecordingPublisher()
+    bp._inner = healthy
+
+    # Reconciliation tick — same monitor still says active. Set False again.
+    # This is safe because bp reverted to standalone after the partial flush.
+    bp.set_standalone(False)
+
+    # Healthy inner saw exactly entries 3, 4, 5 in order — no replay of 1-2.
+    ids = [p["finding_id"] for (_ch, p) in healthy.calls]
+    assert ids == ["f_drone1_3", "f_drone1_4", "f_drone1_5"]
+    assert len(buffer) == 0
+    assert bp.is_standalone is False
+
+
+def test_set_standalone_partial_flush_at_first_entry(buffer):
+    """Edge case: first publish raises. ALL entries must be re-buffered (none
+    were successfully published)."""
+    inner = _PartialFailPublisher(ok_count=0)
+    bp = BufferedPublisher(inner=inner, buffer=buffer)
+    bp.set_standalone(True)
+    for i in (1, 2, 3):
+        bp.publish("drones.drone1.findings", _make_finding(i))
+    bp.set_standalone(False)
+
+    assert inner.calls == []
+    assert len(buffer) == 3
+    assert bp.is_standalone is True
+
+
+def test_close_releases_buffer_writer(tmp_path):
+    """close() must propagate to the FindingBuffer so the lazily-opened
+    file handle is released. Otherwise a long-running drone process leaks
+    one file descriptor per standalone window."""
+    persist_path = tmp_path / "q.jsonl"
+    buf = FindingBuffer(persist_path=persist_path, maxlen=100)
+    inner = _RecordingPublisher()
+    bp = BufferedPublisher(inner=inner, buffer=buf)
+    bp.set_standalone(True)
+    bp.publish("drones.drone1.findings", _make_finding(1))
+    held = buf._writer
+    assert held is not None and not held.closed
+
+    bp.close()
+    # Writer released; on-disk JSONL preserved.
+    assert buf._writer is None
+    assert held.closed
+    assert persist_path.read_text().strip() != ""
+
+
 def test_set_standalone_idempotent_when_unchanged(buffer):
     inner = _RecordingPublisher()
     bp = BufferedPublisher(inner=inner, buffer=buffer)
