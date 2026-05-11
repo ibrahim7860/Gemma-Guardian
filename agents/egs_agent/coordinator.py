@@ -28,6 +28,13 @@ VALIDATION_REFRESH_EVERY_N_TICKS = 5
 # ~5000 keys × ~50 bytes = ~250 KB even at 1000 findings/min.
 SEEN_FINDING_ID_TTL_S = 300.0
 
+# Bounded approval registry: cap egs_state.approved_findings at this many
+# entries (FIFO eviction). Defends against long-running missions where
+# the operator approves many findings, which would otherwise grow the
+# state_update envelope size linearly. 1000 is ~50x larger than any
+# realistic demo so the cap is purely defensive.
+MAX_APPROVED_FINDINGS: int = 1000
+
 
 class EGSState(TypedDict):
     egs_state: Dict[str, Any]
@@ -57,10 +64,11 @@ class EGSCoordinator:
         # "egs.findings_consumed total=N" so a broken migration or mesh-sim
         # crash mid-run becomes observable instead of silent.
         self._findings_accepted_total = 0
-        # Gate 4: finding_approval dedup. Same pattern as operator_command_dispatch:
-        # the bridge stamps each action with a unique command_id; we remember
-        # which ones we've processed so replayed messages are harmless.
-        self._seen_approval_command_ids: set[str] = set()
+        # Bounded dedup for finding_approval command_ids, mirrors the existing
+        # _seen_finding_ids deque+set pattern (TTL = SEEN_FINDING_ID_TTL_S).
+        # Without TTL eviction the set leaks linearly with operator clicks.
+        self._seen_approval_command_ids: Deque[Tuple[str, float]] = deque()
+        self._seen_approval_command_id_set: set[str] = set()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -252,8 +260,18 @@ class EGSCoordinator:
                 # Gate 4 (TODOS.md:19): consume finding_approval actions so
                 # approved findings flow back into egs.state and the
                 # dashboard's green-check becomes truthful.
+                # TTL-evict stale command_ids before lookup. Same pattern as
+                # process_findings' _seen_finding_ids eviction.
+                now_s = time.time()
+                while self._seen_approval_command_ids and (
+                    now_s - self._seen_approval_command_ids[0][1]
+                    >= SEEN_FINDING_ID_TTL_S
+                ):
+                    expired_cid, _ = self._seen_approval_command_ids.popleft()
+                    self._seen_approval_command_id_set.discard(expired_cid)
+
                 cmd_id = action.get("command_id")
-                if cmd_id and cmd_id in self._seen_approval_command_ids:
+                if cmd_id and cmd_id in self._seen_approval_command_id_set:
                     logger.info(
                         "egs.finding_approval duplicate dropped command_id=%s",
                         cmd_id,
@@ -266,9 +284,24 @@ class EGSCoordinator:
                     # Map the operator_actions schema value to the egs_state
                     # schema value ("approve" → "approved", "dismiss" → "dismissed").
                     status = "approved" if approval_action == "approve" else "dismissed"
+                    # FIFO cap on the approved_findings map to defend against long
+                    # runs with many operator decisions. Order is dict-insertion
+                    # (Python 3.7+ guarantee) so popping arbitrary items via iter()
+                    # gives us oldest-first eviction.
+                    if (
+                        finding_id not in approved
+                        and len(approved) >= MAX_APPROVED_FINDINGS
+                    ):
+                        oldest = next(iter(approved))
+                        del approved[oldest]
+                        logger.info(
+                            "egs.finding_approval cap evicted oldest finding_id=%s",
+                            oldest,
+                        )
                     approved[finding_id] = status
                     if cmd_id:
-                        self._seen_approval_command_ids.add(cmd_id)
+                        self._seen_approval_command_ids.append((cmd_id, now_s))
+                        self._seen_approval_command_id_set.add(cmd_id)
                     logger.info(
                         "egs.finding_approval confirmed finding_id=%s action=%s",
                         finding_id,

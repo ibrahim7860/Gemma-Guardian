@@ -339,3 +339,94 @@ def test_approved_findings_empty_dict_validates():
     assert egs_state["approved_findings"] == {}
     outcome = validate("egs_state", egs_state)
     assert outcome.valid, outcome.errors
+
+
+# ---------------------------------------------------------------------------
+# 13. finding_approval — TTL evicts stale command_ids (defensive bound)
+# ---------------------------------------------------------------------------
+
+def test_approval_dedup_ttl_evicts_stale_command_ids(coordinator, monkeypatch):
+    """Without TTL eviction the dedup set leaks linearly. Monkeypatch the TTL
+    down to make the test fast."""
+    from agents.egs_agent import coordinator as coord_mod
+    monkeypatch.setattr(coord_mod, "SEEN_FINDING_ID_TTL_S", 0.001)
+    # First action with command_id "c1" lands.
+    state = _base_state()
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c1",
+         "finding_id": "f_drone1_001", "action": "approve"},
+    ]
+    coordinator.process_actions(state)
+    assert "c1" in coordinator._seen_approval_command_id_set
+    # Sleep past TTL.
+    import time
+    time.sleep(0.05)
+    # Next process_actions call's TTL sweep must evict c1.
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c2",
+         "finding_id": "f_drone1_002", "action": "approve"},
+    ]
+    coordinator.process_actions(state)
+    assert "c1" not in coordinator._seen_approval_command_id_set
+    assert "c2" in coordinator._seen_approval_command_id_set
+
+
+# ---------------------------------------------------------------------------
+# 14. approved_findings cap evicts oldest FIFO entry (defensive bound)
+# ---------------------------------------------------------------------------
+
+def test_approved_findings_cap_evicts_oldest_fifo(coordinator, monkeypatch):
+    """Cap kicks in at MAX_APPROVED_FINDINGS; oldest-inserted entry evicts."""
+    from agents.egs_agent import coordinator as coord_mod
+    monkeypatch.setattr(coord_mod, "MAX_APPROVED_FINDINGS", 3)
+    state = _base_state()
+    # Fill the cap.
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": f"c-{i}",
+         "finding_id": f"f_drone1_{i:03d}", "action": "approve"}
+        for i in range(3)
+    ]
+    coordinator.process_actions(state)
+    assert set(state["egs_state"]["approved_findings"].keys()) == {
+        "f_drone1_000", "f_drone1_001", "f_drone1_002",
+    }
+    # 4th unique finding evicts the oldest (f_drone1_000).
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c-3",
+         "finding_id": "f_drone1_003", "action": "approve"},
+    ]
+    coordinator.process_actions(state)
+    assert set(state["egs_state"]["approved_findings"].keys()) == {
+        "f_drone1_001", "f_drone1_002", "f_drone1_003",
+    }
+
+
+# ---------------------------------------------------------------------------
+# 15. approved_findings cap does NOT evict on rewrite/flip (defensive bound)
+# ---------------------------------------------------------------------------
+
+def test_approved_findings_cap_does_not_evict_on_rewrite(
+    coordinator, monkeypatch,
+):
+    """Re-approving an already-recorded finding (or flipping approve↔dismiss)
+    must NOT trigger eviction — it's a rewrite, not a new entry."""
+    from agents.egs_agent import coordinator as coord_mod
+    monkeypatch.setattr(coord_mod, "MAX_APPROVED_FINDINGS", 2)
+    state = _base_state()
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c-a",
+         "finding_id": "f_drone1_A", "action": "approve"},
+        {"kind": "finding_approval", "command_id": "c-b",
+         "finding_id": "f_drone1_B", "action": "approve"},
+    ]
+    coordinator.process_actions(state)
+    # Flip f_drone1_A from approve to dismiss — should NOT evict f_drone1_B.
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c-a2",
+         "finding_id": "f_drone1_A", "action": "dismiss"},
+    ]
+    coordinator.process_actions(state)
+    assert set(state["egs_state"]["approved_findings"].keys()) == {
+        "f_drone1_A", "f_drone1_B",
+    }
+    assert state["egs_state"]["approved_findings"]["f_drone1_A"] == "dismissed"
