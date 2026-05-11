@@ -65,7 +65,10 @@ def test_snapshot_stamps_approved_for_finding_in_approved_findings_map():
     agg.update_egs_state(egs)
     snap = agg.snapshot(timestamp_iso="2026-05-11T00:00:02.000Z")
     [f] = snap["active_findings"]
-    assert f["approved"] is True
+    # NOTE: the `approved: bool` form was removed after the Task 6 e2e
+    # surfaced that Contract 4 (`shared/schemas/finding.json:7`) sets
+    # `additionalProperties: false`, so any extra property silently
+    # killed `_emit_loop`. Stamp is now `operator_status` only.
     assert f["operator_status"] == "approved"
 
 
@@ -77,7 +80,6 @@ def test_snapshot_stamps_dismissed_for_finding_in_approved_findings_map():
     agg.update_egs_state(egs)
     snap = agg.snapshot(timestamp_iso="2026-05-11T00:00:02.000Z")
     [f] = snap["active_findings"]
-    assert f["approved"] is False
     assert f["operator_status"] == "dismissed"
 
 
@@ -134,7 +136,7 @@ def test_snapshot_stamp_does_not_mutate_internal_bucket():
     egs_approved["approved_findings"] = {"f_drone1_005": "approved"}
     agg.update_egs_state(egs_approved)
     snap1 = agg.snapshot(timestamp_iso="2026-05-11T00:00:02.000Z")
-    assert snap1["active_findings"][0]["approved"] is True
+    assert snap1["active_findings"][0]["operator_status"] == "approved"
     egs_clear = deepcopy(_SEED["egs_state"])
     egs_clear["approved_findings"] = {}
     agg.update_egs_state(egs_clear)

@@ -104,15 +104,22 @@ class StateAggregator:
         LDD-2 (2026-05-11 finding-approval plan): joins Qasim's PR #45 field
         ``egs_state.approved_findings`` (a ``{finding_id: "approved"|
         "dismissed"}`` map) against the active_findings bucket. Findings whose
-        id appears in the map with value ``"approved"`` get
-        ``approved: True`` + ``operator_status: "approved"`` stamped on the
-        output dict; with value ``"dismissed"`` get ``approved: False`` +
-        ``operator_status: "dismissed"``. Findings absent from the map (or
-        when the entire field is missing/None, which is schema-valid because
-        the field is OPTIONAL) pass through untouched — ``operator_status``
-        stays at whatever the drone published, typically ``"pending"``. The
-        mutation applies only to the deep-copied output; ``self._findings``
-        is never touched.
+        id appears in the map get ``operator_status`` overwritten to the
+        corresponding enum value (``"approved"`` or ``"dismissed"``). Findings
+        absent from the map (or when the entire field is missing/None, which
+        is schema-valid because the field is OPTIONAL) pass through untouched
+        — ``operator_status`` stays at whatever the drone published,
+        typically ``"pending"``. The mutation applies only to the deep-copied
+        output; ``self._findings`` is never touched.
+
+        Stamp is ``operator_status`` only; the boolean ``approved`` form was
+        removed after the Task 6 e2e surfaced that Contract 4
+        (``shared/schemas/finding.json:7`` has ``additionalProperties: false``)
+        forbids any extra property, which made every post-approval envelope
+        fail ``_emit_loop``'s ``websocket_messages`` validation and silently
+        drop the broadcast. The dashboard's Task 5 promotion loop accepts
+        ``operator_status == "approved"`` as a trigger, so dropping the bool
+        does not regress the green-check transition.
 
         Returned dict is independent: caller mutation does not affect internal
         buckets.
@@ -125,10 +132,8 @@ class StateAggregator:
             f = deepcopy(v)
             status = approved_map.get(f.get("finding_id"))
             if status == "approved":
-                f["approved"] = True
                 f["operator_status"] = "approved"
             elif status == "dismissed":
-                f["approved"] = False
                 f["operator_status"] = "dismissed"
             active_findings.append(f)
         return {
