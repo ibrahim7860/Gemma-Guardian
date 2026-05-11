@@ -253,6 +253,35 @@ void main() {
       expect(s.findingState("f_drone1_42"), ApprovalState.confirmed);
     });
 
+    test('applyStateUpdate promotes pending → dismissed when upstream '
+         'operator_status is dismissed (EGS-before-ack)', () {
+      final s = MissionState();
+      final sink = _RecordingSink();
+      s.attachSink(sink);
+      s.setConnectionStatus("connected");
+      // Operator clicked DISMISS — local state is pending. The echo ack has
+      // not yet arrived (e.g., bridge slow, or page refreshed mid-flight).
+      s.markFinding("f_drone1_777", "dismiss");
+      expect(s.findingState("f_drone1_777"), ApprovalState.pending);
+      // EGS confirms via state_update with operator_status=dismissed before
+      // the bridge ack lands. The promotion loop should symmetrically
+      // dismiss the row, mirroring the approved=true → confirmed path.
+      s.applyStateUpdate({
+        "type": "state_update",
+        "timestamp": "2026-05-11T00:00:00.000Z",
+        "contract_version": "1.0.0",
+        "egs_state": <String, dynamic>{},
+        "active_drones": const [],
+        "active_findings": [
+          {
+            "finding_id": "f_drone1_777",
+            "operator_status": "dismissed",
+          }
+        ],
+      });
+      expect(s.findingState("f_drone1_777"), ApprovalState.dismissed);
+    });
+
     test('applyStateUpdate(approved=true) does NOT override dismissed', () {
       final s = MissionState();
       final sink = _RecordingSink();

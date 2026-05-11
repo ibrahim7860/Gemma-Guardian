@@ -539,12 +539,21 @@ class MissionState extends ChangeNotifier {
       if (raw is! Map<String, dynamic>) continue;
       final id = raw["finding_id"] as String?;
       if (id == null) continue;
-      if (raw["approved"] == true) {
-        final cur = _findingActions[id];
+      final cur = _findingActions[id];
+      // Symmetric dismiss path (LDD-3, 2026-05-11 finding-approval plan):
+      // upstream operator_status == "dismissed" promotes to
+      // ApprovalState.dismissed. Forward-compat: also accept the enum form
+      // operator_status == "approved" alongside the bool `approved == true`
+      // since the bridge aggregator stamps both fields.
+      if (raw["approved"] == true || raw["operator_status"] == "approved") {
         if (cur != null &&
             cur != ApprovalState.confirmed &&
             cur != ApprovalState.dismissed) {
           _findingActions[id] = ApprovalState.confirmed;
+        }
+      } else if (raw["operator_status"] == "dismissed") {
+        if (cur != null && cur != ApprovalState.dismissed) {
+          _findingActions[id] = ApprovalState.dismissed;
         }
       }
     }
