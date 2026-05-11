@@ -299,6 +299,7 @@ class EGSStateMessage(_StrictModel):
     findings_count_by_type: _FindingsCountByType
     recent_validation_events: List[_RecentValidationEvent]
     active_zone_ids: List[str]
+    approved_findings: Dict[str, Literal["approved", "dismissed"]] = Field(default_factory=dict)
 
 
 # -- Contract 4: finding ------------------------------------------------------

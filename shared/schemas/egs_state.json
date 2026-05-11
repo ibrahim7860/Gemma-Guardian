@@ -67,6 +67,14 @@
       }
     },
     "active_zone_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "approved_findings": {
+      "description": "Map of finding_id → approval action. Populated by the EGS when it consumes finding_approval actions from egs.operator_actions. The dashboard reads this to promote grey-check (bridge ack) to green-check (EGS confirmed).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["approved", "dismissed"]
+      }
+    },
     "base_image_path": {
       "description": "Optional. Repository-relative path to the static aerial image the Flutter map_panel renders as a background overlay. Set together with base_image_extents (or both omitted). Sourced from the active scenario YAML (see sim/scenarios/disaster_zone_v1.yaml).",
       "oneOf": [

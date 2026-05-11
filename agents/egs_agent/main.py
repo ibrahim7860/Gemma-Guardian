@@ -8,6 +8,7 @@ import redis.asyncio as redis
 from shared.contracts import CONFIG
 from shared.contracts.topics import (
     PER_DRONE_STATE, PER_DRONE_FINDINGS, EGS_STATE,
+    SIM_SCRIPTED_EVENTS,
 )
 from agents.egs_agent.validation import EGSValidationNode
 from agents.egs_agent.coordinator import EGSCoordinator
@@ -134,6 +135,10 @@ async def main():
     # is the existing "egs.replan_events" debug-only channel; we put a
     # structured envelope on it so the main loop can recognize and apply it.
     await pubsub.subscribe("egs.replan_events")
+    # Gate 4: subscribe to scripted events so drone_failure triggers replan
+    # immediately (Gate 4 pass criterion: "EGS replanning successfully
+    # reassigns survey points after scripted drone failure event").
+    await pubsub.subscribe(SIM_SCRIPTED_EVENTS)
     
     validation_node = EGSValidationNode()
     coordinator = EGSCoordinator(validation_node, redis_client=redis_client)
@@ -190,6 +195,23 @@ async def main():
                     # after the LLM returns; we mutate egs_state here.
                     _apply_survey_assignments(state["egs_state"], data.get("assignments", []))
                     state_ref["egs_state"] = state["egs_state"]
+                elif channel == SIM_SCRIPTED_EVENTS:
+                    # Gate 4: react to scripted events. drone_failure injects
+                    # synthetic offline telemetry so the existing
+                    # active → offline replan trigger fires immediately.
+                    event_type = data.get("type")
+                    if event_type == "drone_failure":
+                        drone_id = data.get("drone_id")
+                        if drone_id:
+                            logger.info(
+                                "egs.scripted_event drone_failure drone_id=%s",
+                                drone_id,
+                            )
+                            state["incoming_telemetry"].append({
+                                "drone_id": drone_id,
+                                "agent_status": "offline",
+                                "battery_pct": 0,
+                            })
             
             # Run graph
             # If no incoming items and no trigger_replan, we skip calling graph to save CPU

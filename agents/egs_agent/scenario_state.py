@@ -74,6 +74,7 @@ def build_initial_egs_state(scenario_id: str) -> Dict[str, Any]:
         },
         "recent_validation_events": [],
         "active_zone_ids": [],
+        "approved_findings": {},
     }
     # Pass through scenario.base_image_path / base_image_extents to the
     # Flutter dashboard via egs.state. The Pydantic Scenario validator

@@ -16,14 +16,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **CI:** `.github/workflows/test.yml` `bridge_e2e` job updated to invoke both Playwright test files.
 - **Owner:** Person 4 (closed by this PR).
 
-### EGS subscriber for `egs.operator_actions` — finding_approval variant
-- **Status (2026-05-09, partial):** PR #38 shipped the EGS subscriber on `egs.operator_actions` and it correctly consumes the `operator_command_dispatch` action variant — replan only triggers after the operator confirms via DISPATCH, closing that half of the loop. The `finding_approval` action variant (operator approve/dismiss decisions on findings, published by the bridge) is **STILL NOT consumed** — those payloads land in Redis but the EGS does not yet reflect approved findings into the next `state_update` envelope.
-- **What's left:** Wire the `finding_approval` branch in the EGS `egs.operator_actions` handler so approved findings flow back into `egs.state` and the dashboard's two-stage feedback (grey check = bridge ack, green check = EGS-confirmed) becomes truthful.
-- **Why:** Without the `finding_approval` consumer, the green-check state in the dashboard remains aspirational and multi-operator scenarios will not converge.
-- **Pros:** Closes the remaining half of the loop; green-check-on-confirmed becomes truthful; multi-operator scenarios work correctly.
-- **Cons:** Couples to EGS state shape; may want lightweight replan-on-approve logic.
-- **Context:** Schema at `shared/schemas/operator_actions.json`. Topic constant in `shared/contracts/topics.yaml` and generated `topics.dart`. Bridge stamps `bridge_received_at_iso_ms` before publish; EGS dedupes on `command_id`. The `operator_command_dispatch` handler in PR #38 is a good template for the new `finding_approval` branch.
-- **Owner:** Person 3 (Qasim).
+### CLOSED — EGS subscriber for `egs.operator_actions` — finding_approval variant
+- **Resolution (2026-05-11):** Shipped the `finding_approval` branch in `coordinator.process_actions()`. Three Gate 4 items closed in one PR:
+  1. **finding_approval consumer:** `process_actions` now handles `kind: "finding_approval"` actions — maps `approve`→`"approved"`, `dismiss`→`"dismissed"` into `egs_state.approved_findings` (new Contract 3 field). Deduplicates on `command_id` (same pattern as `operator_command_dispatch`). Dashboard green-check is now truthful.
+  2. **drone_failure scripted event replan:** `main.py` subscribes to `sim.scripted_events`; on `drone_failure`, injects synthetic offline telemetry so the existing `active→offline` replan trigger fires immediately. Gate 4 criterion: "EGS replanning successfully reassigns survey points after scripted drone failure event."
+  3. **Standalone-mode EGS tolerance:** `process_telemetry` now triggers replan on `active→standalone` transition so survey points get redistributed to reachable drones. `replanning.assign_survey_points` already only considers `status=="active"` drones, so standalone drones are excluded from new assignments.
+- **Schema:** `shared/schemas/egs_state.json` — added `approved_findings` (object, values: `"approved"|"dismissed"`). Pydantic mirror in `shared/contracts/models.py:EGSStateMessage`. Initialized as `{}` in `scenario_state.py:build_initial_egs_state()`.
+- **Tests:** 12 new tests in `agents/egs_agent/tests/test_finding_approval.py` covering approve, dismiss, dedup, malformed payload, no-replan, mixed batch, schema validation, standalone transition replan, standalone-to-active no-replan, drone_failure replan, standalone exclusion from assignments, empty dict validation. Full regression: 720 passed (1 pre-existing drone_agent failure unrelated).
+- **Owner:** Person 3 (Qasim), closed 2026-05-11.
 
 ### CLOSED — Static aerial base image for map panel
 - **Resolution:** Shipped Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`. Mississippi post-Katrina FEMA blue-roof aerial wired into `frontend/flutter_dashboard/lib/widgets/map_panel.dart` via `Image.asset` over a 3-layer Stack (procedural grid fallback ← `AnimatedOpacity` aerial overlay at 0.80 ← markers). Bbox locks to `scenario.base_image_extents` (LOCKED DESIGN DECISION D1); off-extents drones render as edge chevrons with tap-to-show distance/cardinal toast. Drone-id labels moved out of the painter into white-pill `Positioned` widgets for legibility against photographic backgrounds (D3); finding circles got a 7px white halo; touch targets bumped 18→24 / 14→24 (48px hit area, meets iOS 44px minimum).
