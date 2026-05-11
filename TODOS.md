@@ -73,10 +73,10 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Note:** the original TODO also asked for `"returning"` (on `return_to_base`) and `"error"` (on max-retries-exhausted) flips. Those remain unimplemented; track separately if/when Beat 4 backup mode needs them.
 - **Owner:** Closed by Ibrahim 2026-05-10.
 
-### Drone-agent Ollama startup healthcheck (delivered, monitor)
-- **What:** Plan ships an httpx `GET /api/tags` healthcheck logging a clear warning if the model isn't pulled or the daemon is down. Track whether the warning is actually surfacing in operator runs.
-- **Why:** The Day 1-7 standalone work assumed Ollama Just Works; partial pulls and daemon-not-running have already cost an integration session.
-- **Owner:** Kaleel (delivered); Ibrahim verifies in demo prep.
+### CLOSED — Drone-agent Ollama startup healthcheck (delivered, monitor)
+- **Resolution (2026-05-11):** Verified live. Daemon-unreachable branch surfaces `[drone_agent] WARNING: ollama healthcheck failed at http://localhost:11434: ` within ~3 s in both the direct boot path (`python -m agents.drone_agent`) and the operator launch path (replicates `scripts/launch_swarm.sh:165` line — `python -m agents.drone_agent ... | tee $LOG_DIR/<drone>.log`). The WARNING reaches the per-drone log file; `flush=True` survives the tee pipeline. Empty exception suffix observed (`httpx.ConnectTimeout` serializes to `""`); WARNING + endpoint remain operator-readable, message-quality polish not pursued. Model-absent and happy-path branches not live-tested on this host (Ollama daemon unresponsive); both remain covered by unit tests at `agents/drone_agent/tests/test_main_ollama_healthcheck.py` (3/3 passing). Call-order invariant (healthcheck awaited before Redis construction) locked by new regression guard `agents/drone_agent/tests/test_main_run_order.py`.
+- **Evidence:** `/tmp/healthcheck_unreachable.log` (direct boot), `/tmp/healthcheck_launch_test/drone1.log` (operator path replica). Regenerate via plan `docs/superpowers/plans/2026-05-11-ollama-healthcheck-verification.md`.
+- **Owner:** Closed by Ibrahim 2026-05-11.
 
 ### CLOSED — Replace `ActionNode._finding_counter` with `MemoryStore.next_finding_id()`
 - **Resolution:** Bundled into Beat 5 Path A-full Component 5 (counter durability) PR. `ActionNode` now takes a `next_id_fn: Callable[[], str]` injected at construction; `runtime.py` and `main.py` pass `memory.next_finding_id` so production paths share a single, durable, per-drone counter source. Regression guard test in `agents/drone_agent/tests/test_action_uses_memory_for_finding_id.py` asserts `ActionNode` no longer exposes `_finding_counter`. Plan ref: `docs/plans/2026-05-10-beat5-path-a-full.md` §4 Component 5.
