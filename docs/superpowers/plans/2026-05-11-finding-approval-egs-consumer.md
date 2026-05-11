@@ -8,12 +8,13 @@
 
 **Tech Stack:** Python 3.11 (FastAPI bridge), Pytest + Playwright e2e, Dart/Flutter dashboard, Redis pub/sub, JSON Schema (draft 2020-12).
 
-**Owner:** Ibrahim (Person 4), driving the frontend/bridge half. Qasim's PR #45 is the upstream we build against. See "Coordination Note for Qasim" at the end of this plan for two drive-by findings on his shipped code (unbounded dedup set, unbounded approval map) that you should flag to him separately.
+**Owner:** Ibrahim (Person 4), driving the frontend/bridge half on top of Qasim's PR #45. PR scope expanded mid-flight to absorb two drive-by fixes on Qasim's just-shipped `agents/egs_agent/coordinator.py` — see "Coordination Note for Qasim" at the end of this plan.
 
 ## Update history
 
 - **2026-05-11 (initial):** Planned the full round trip end-to-end, assuming nothing had shipped. Locked four design decisions (LDD-1 through LDD-4) including a two-array EGS-side registry shape.
 - **2026-05-11 (revision after `/review` of Qasim's PR #45):** Discovered Qasim shipped the EGS backend during this session with a different shape — single `approved_findings` map keyed by `finding_id`, values `"approved"|"dismissed"`. Tasks 1, 2, 3 are now done-equivalent (with shape differences). Tasks 4-9 rewritten against the map shape. LDD-1 superseded; LDD-2/3/4 still apply with small adjustments. The original two-array design lives on in `git log` for archaeological purposes — don't resurrect it.
+- **2026-05-11 (scope expansion after pre-landing `/review` of PR #47):** Two drive-by findings on PR #45 (unbounded `_seen_approval_command_ids` set, unbounded `approved_findings` map) absorbed into this PR per user instruction rather than deferred. Commits `75d7ef5` (bounds) and `56c406a` (defensive test gaps) touch `agents/egs_agent/coordinator.py` and `tests/test_finding_approval.py`. Also addressed `c366af6` — the dashboard reconnect promotion bug that surfaced in the adversarial review (A2) — by dropping the `cur != null` precondition in the `applyStateUpdate` promotion loop. All three commits are documented in the Coordination Note for Qasim below.
 
 ---
 
@@ -1020,22 +1021,26 @@ EOF
 
 This section is the one-stop briefing for Qasim. **If you are Qasim and only have time to read one paragraph, read this one.**
 
-I (Ibrahim, Person 4) am shipping the frontend/bridge/docs half of TODO #1. **None of your code is being modified** — `agents/egs_agent/*` is read-only on this branch. This PR builds **on top of** your PR #45.
+I (Ibrahim, Person 4) shipped the frontend/bridge/docs half of TODO #1 on top of your PR #45. The PR scope **expanded mid-flight** to absorb two drive-by fixes on your `coordinator.py` (your file, your domain) — flagged here so you're not surprised by the EGS-side diff.
 
-**What this PR adds:**
-1. **Bridge aggregator** (`frontend/ws_bridge/aggregator.py`): on every `snapshot()`, reads `egs_state.approved_findings` (your map) and stamps both `approved: bool` and `operator_status: enum` onto matching findings in the outbound `state_update`. Defensive `.get("approved_findings") or {}` because your schema field is optional.
-2. **Dashboard** (`frontend/flutter_dashboard/lib/state/mission_state.dart`): extends `applyStateUpdate` promotion loop with a dismiss arm. The existing approve arm already worked, it just had no upstream feeding it — the bridge stamp from (1) fixes that.
+**What this PR adds (frontend/bridge half — the original plan scope):**
+1. **Bridge aggregator** (`frontend/ws_bridge/aggregator.py`): on every `snapshot()`, reads `egs_state.approved_findings` (your map) and stamps `operator_status: enum` onto matching findings in the outbound `state_update`. Defensive `.get("approved_findings") or {}` because your schema field is optional. (Originally also stamped `approved: bool`, but commit `f0bf8a8` dropped that — `shared/schemas/finding.json` has `additionalProperties: false` so the bool form was silently failing envelope validation. The dashboard's `mission_state.dart:548` accepts the enum form via its OR clause.)
+2. **Dashboard** (`frontend/flutter_dashboard/lib/state/mission_state.dart`): extends `applyStateUpdate` promotion loop with a dismiss arm and (commit `c366af6`) drops the `cur != null` precondition so a fresh dashboard reload correctly promotes findings from upstream `operator_status` instead of stranding them in pending.
 3. **Contract 3 prose** (`docs/20-integration-contracts.md`): catches the doc up to your schema change. Your PR added `approved_findings` to the JSON Schema and Pydantic mirror but didn't touch the Markdown contract doc; this PR fills that gap.
 4. **`docs/07-operator-interface.md`**: one line noting the round trip is live end-to-end.
 5. **Playwright e2e** parametrized on approve+dismiss, exercising the full pipeline including your real `EGSCoordinator` subprocess. Uses a new `scripts/dev_fake_producers.py --emit=mesh-heartbeat` mode so your `_await_mesh_sim` healthcheck passes without a real mesh_simulator. Your `main.py` is unmodified — no production safety bypass.
-6. **CI** updated to include the new e2e in the `bridge_e2e` job.
+6. **CI** updated to include the new e2e in the `bridge_e2e` job (and the `bridge_e2e` job's `uv sync` extras grew to include `egs`/`sim`/`mesh` so the EGS subprocess actually starts in CI — caught by the first failed CI run).
 
-**Two drive-by findings on PR #45** — informational, no action requested in this PR. Both are real long-run footguns that don't bite the May 18 demo (small N keeps them bounded):
+**Scope expansion — two drive-by fixes on your `coordinator.py` (commits `75d7ef5` + `56c406a`):**
 
-- **`_seen_approval_command_ids: set[str]` is unbounded** (`coordinator.py:62`). The existing `_seen_finding_ids` next to it uses a deque + 5-min TTL eviction (lines 52-53) — the same pattern would work here. ~10 lines to add post-submission.
-- **`egs_state.approved_findings` map is unbounded.** Every operator click adds an entry permanently. At 1 Hz publish rate, every `state_update` envelope ships the full map. For a 5-minute demo with ~20 approvals it's nothing; for a long capture or looped scenario, it grows without bound.
+You asked Ibrahim to "just do it" rather than wait for a separate PR. Both fixes are surgical, mirror your existing patterns one-for-one, and your 12 PR #45 tests still pass unchanged:
 
-Happy to file these as new TODOs after this PR lands if you want, or leave it to you — your call.
+- **`_seen_approval_command_ids` is now a bounded `Deque[Tuple[str, float]]` + parallel `set[str]`**, with TTL eviction using your existing `SEEN_FINDING_ID_TTL_S = 300.0` constant. Exact mirror of the `_seen_finding_ids` pattern at `coordinator.py:52-58`. The eviction loop runs at the top of the `finding_approval` branch, same shape as the one in `process_findings`.
+- **`egs_state.approved_findings` is FIFO-capped at `MAX_APPROVED_FINDINGS = 1000`** (new constant next to `SEEN_FINDING_ID_TTL_S`). Eviction uses `next(iter(approved))` for oldest-insertion-order. Crucially, the cap only triggers on **new** finding_ids — rewrites and flips preserve their slot (no eviction churn when an operator flips a previously-approved finding to dismissed). Logged as `egs.finding_approval cap evicted oldest finding_id=...` when it fires.
+
+**5 new tests** in `agents/egs_agent/tests/test_finding_approval.py` (after our two `/review` rounds): TTL eviction, single FIFO eviction, no-evict-on-rewrite (flip), multi-eviction FIFO order under sustained pressure, no-evict-on-idempotent-same-action. Full suite: 17/17 pass.
+
+If any of the shape choices don't match what you would have done (e.g., you'd prefer a TTL on the map instead of FIFO, or a different cap value), flag it in PR review — happy to adjust.
 
 **LDD recap** (decisions from the original plan, now mostly resolved by your PR):
 - **LDD-1 (shape):** SUPERSEDED by your PR #45 — single `approved_findings` map, not the two-array shape originally planned. We adopted your shape.
@@ -1052,9 +1057,9 @@ If anything about the bridge stamp, the docs, or the e2e harness doesn't match w
 Explicitly deferred or considered-and-rejected items, with one-line rationale each:
 
 - **Replan-on-approve (LDD-4).** An approved victim does not trigger an `investigate_finding` task. Approval is informational. Qasim's PR #45 made the same call. If Beat 6 demands it, separate plan.
-- **Modifying any file under `agents/egs_agent/`.** PR #45 already shipped that code. This plan builds on top of it and treats the EGS backend as read-only.
-- **TTL on `_seen_approval_command_ids` (drive-by finding on PR #45).** Real issue but not this PR's job. Flagged to Qasim in the Coordination Note for post-submission follow-up.
-- **Cap on `egs_state.approved_findings` map (drive-by finding on PR #45).** Real issue, not this PR's job. Same disposition as above.
+- **~~Modifying any file under `agents/egs_agent/`.~~ — SUPERSEDED 2026-05-11 (PR #47 review).** Originally out of scope; absorbed two drive-by fixes on `coordinator.py` (commits `75d7ef5`, `56c406a`) per user instruction. See update history entry 3 and Coordination Note.
+- **~~TTL on `_seen_approval_command_ids`.~~ — DONE 2026-05-11 in commit `75d7ef5`.** Deque + set + 5-min TTL eviction, mirrors the existing `_seen_finding_ids` pattern.
+- **~~Cap on `egs_state.approved_findings` map.~~ — DONE 2026-05-11 in commit `75d7ef5`.** FIFO cap at `MAX_APPROVED_FINDINGS = 1000` entries.
 - **Per-finding state machine in EGS.** EGS uses a single `approved_findings: {id: "approved"|"dismissed"}` map (Qasim's choice in PR #45). No per-finding records. We adopt this shape and don't push for a different one.
 - **Schema additions to `finding.json`.** `operator_status` already exists in Contract 4 since Day 1; no new fields on the finding object. The `approved: bool` field added by the bridge stamp travels outbound only and relies on `additionalProperties: false` being absent from `finding.json` (verified 2026-05-11).
 - **EGS replay-from-disk after coordinator restart.** The approval map lives in `egs_state` in-memory. A coordinator restart loses prior approvals. Demo never restarts mid-run.

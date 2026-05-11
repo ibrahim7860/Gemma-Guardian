@@ -167,9 +167,13 @@ WARNING and dropped without altering the map.
 
 Approval does NOT trigger replan in v1 — approval is informational. If a future beat
 needs "approved victim → auto-dispatch investigate_finding," that lands in a separate
-plan. Known long-run footguns: the map itself is unbounded today (no cap or TTL),
-and the coordinator's `_seen_approval_command_ids` set is also unbounded — both
-acceptable for demo length, both worth addressing post-submission.
+plan. **Bounded collections (added 2026-05-11, PR #47 follow-up):** the map is
+FIFO-capped at `MAX_APPROVED_FINDINGS = 1000` entries (oldest dict-insertion-order
+key evicts on overflow, rewrites/flips do not count as new entries), and the
+coordinator's `_seen_approval_command_ids` deque uses the same 5-minute
+`SEEN_FINDING_ID_TTL_S` window as the existing `_seen_finding_ids` dedup — both
+defend against long-running missions where operators accumulate hundreds of
+decisions across replays or looped scenarios.
 
 ## Contract 4: Findings Schema
 
