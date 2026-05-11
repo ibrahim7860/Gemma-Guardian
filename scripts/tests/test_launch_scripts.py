@@ -228,6 +228,42 @@ def test_launch_swarm_bridge_invocation_uses_uvicorn():
         )
 
 
+def test_launch_swarm_egs_invocation_uses_module_mode():
+    """Regression: the EGS window must invoke `python3 -m agents.egs_agent.main`,
+    not `python3 agents/egs_agent/main.py`. The bare-script form fails at
+    import time with `ModuleNotFoundError: No module named 'shared'` because
+    `agents/egs_agent/main.py` uses absolute imports (e.g. `from shared.contracts
+    import CONFIG`, `from agents.egs_agent.validation import ...`). Module mode
+    sets sys.path to the repo root and resolves the imports cleanly. Same form
+    used by scripts/run_beat5_capture.sh and the drone-agent emit on the next
+    line."""
+    script = SCRIPTS_DIR / "launch_swarm.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env={**os.environ, "GG_NO_TMUX": "1"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    egs_lines = [ln for ln in result.stdout.splitlines() if "egs_agent" in ln]
+    assert egs_lines, f"no egs_agent plan line; stdout was:\n{result.stdout}"
+    runtime_lines = [ln for ln in egs_lines if "python3" in ln or "python " in ln]
+    assert runtime_lines, (
+        f"no runtime invocation among egs lines: {egs_lines!r}"
+    )
+    for ln in runtime_lines:
+        assert "-m agents.egs_agent.main" in ln, (
+            f"EGS invocation must use module mode (`python3 -m agents.egs_agent.main`); "
+            f"saw: {ln!r}"
+        )
+        # The dead bare-script form must be gone.
+        assert "python3 agents/egs_agent/main.py" not in ln, (
+            f"EGS still invokes the bare-script form which fails with "
+            f"ModuleNotFoundError: {ln!r}"
+        )
+
+
 def test_launch_swarm_default_no_duration_flag_anywhere():
     """When --duration is omitted, no runner should get a --duration flag."""
     script = SCRIPTS_DIR / "launch_swarm.sh"

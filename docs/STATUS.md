@@ -17,9 +17,11 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Done:** Sim foundation (`sim/waypoint_runner.py`, `sim/frame_server.py`, `agents/mesh_simulator/main.py`), scenarios (`disaster_zone_v1`, `single_drone_smoke`, `resilience_v1`), launch infra (`scripts/launch_swarm.sh`, `run_full_demo.sh`, `run_resilience_scenario.sh`, `stop_demo.sh`), uv migration with role-scoped extras + `sim_mesh` CI job, `sim/manual_pilot.py` REPL with `agents/drone_agent/validation.ValidationNode` semantic rules layered onto the JSON-Schema floor (battery / GPS-in-zone / duplicate-finding / severity↔confidence / coverage-monotonic — no second source of truth), JPEG sanity tests on every fixture frame, Phase G v1 cold-start reproduction guide at [`docs/sim-reproduction.md`](sim-reproduction.md) linked from `docs/13-runtime-setup.md`. Roadmap: [`sim/ROADMAP.md`](../sim/ROADMAP.md). PRs: #11, #12, #13, #14, #17, #18, #26, #27.
 
-**Left:** Phase B integration with Kaleel (sim publishing stable while Kaleel iterates on Gemma 4 perception); Phase D mesh-dropout tuning live on the swarm; Phase F demo capture stability; Phase G outside-tester cold run of `docs/sim-reproduction.md` (with Thayyil) and follow-up fixes; Phase H submission on-call.
+**Left:** Phase D mesh-dropout tuning live on the swarm (re-run the resilience scenario now that the EGS seed bugs surfaced in our 2026-05-07 run have been fixed in main); Phase F demo capture stability; Phase G outside-tester cold run of `docs/sim-reproduction.md` (with Thayyil) and follow-up fixes; Phase H submission on-call.
 
-**Blocked on:** Kaleel publishing real findings on `drones.<id>.findings`; Qasim consuming them. (Thayyil's frame-swap closed 2026-05-08 PR #35.)
+**Blocked on:** nothing internal. Phase B (Kaleel real findings) and the EGS-side consumer (Qasim) both shipped via PR #25 / PR #34 / PR #45; Thayyil's frame-swap closed 2026-05-08 PR #35. Only external dependency remaining is Phase G's outside-tester cold run.
+
+**Risk to monitor:** GH #32 (`agents/egs_agent/replanning.py:129-131` re-raises `httpx` errors instead of falling back to deterministic round-robin) — surfaced in our 2026-05-07 run; not Hazim-scope to patch but blocks `drone_failure → drones.<id>.tasks` if Ollama times out. Re-run on 2026-05-11 will confirm whether it still reproduces with both Gemma 4 tags pre-warmed.
 
 ### Kaleel — Per-Drone Agent + ML
 

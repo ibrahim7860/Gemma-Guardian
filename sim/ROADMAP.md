@@ -59,10 +59,12 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 - I report the gate trajectory at standup.
 
 ### Phase D — Mesh dropout live on the swarm
-- `agents/mesh_simulator/main.py` already runs against fakeredis in tests. Phase D is wiring it into the integrated stack and tuning `range_meters` / `egs_link_range_meters` in `shared/config.yaml` until resilience scenario 1 (drone_failure → EGS replan) fires correctly.
+- **Sim-side: ✅ green** as of 2026-05-11. `agents/mesh_simulator/main.py` running in the integrated stack on `resilience_v1`; mesh adjacency dynamics match the scenario's authored geometry without tuning (`range_meters=200`, `egs_link_range_meters=500`). 180s end-to-end run captured in [`docs/sim-resilience-run-notes.md`](../docs/sim-resilience-run-notes.md) "2026-05-11 re-run" section.
+- **`drone_failure → drones.<id>.tasks` chain: ❌ still blocked**, now on a *new* EGS-side bug (in-flight replan guard never clears under VRAM pressure; see notes-doc "Bug 3" and GH #32 comment). The original Bug 1 (egs_state schema seed) closed via PR #34/#45 commit `9cda8cb` — verified live (0 schema errors vs 268 on 2026-05-07).
 
 ### Phase E — Gate 4 (multi-drone coordination)
-- 2–3 drones coordinating; scripted resilience events fire on schedule; mesh dropout produces the right adjacency dynamics.
+- **Sim-side: ✅ green** as of 2026-05-11. 2–3 drones coordinating; scripted resilience events (drone_failure, fire_spread, egs_link_drop, egs_link_restore, mission_complete) fire on schedule; mesh dropout produces the right adjacency dynamics. `drone_agent` GATE 2 wiring (PR #25) + EGS GATE 4 wiring (PR #45) both consume the sim's output cleanly.
+- **EGS-side replan publishing: ❌** — same blocker as Phase D's last criterion. Not Hazim-scope to fix.
 
 ### Phase F — Demo capture
 - Stable, jitter-free sim runs for video capture. Fix any flakiness Ibrahim surfaces during recording.
@@ -84,9 +86,11 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 
 | Blocker | Owner | What unblocks me |
 |---|---|---|
-| Real xBD frames in `sim/fixtures/frames/` | Thayyil | Drop real JPEGs in place of placeholders (filenames preserved). |
-| `drone_agent` consuming `drones.<id>.camera` + writing merged state | Kaleel | First end-to-end Gemma 4 run on my sim's frames. |
-| `egs_agent` consuming `drones.<id>.findings`, issuing `drones.<id>.tasks` | Qasim | Multi-drone replan exercise. |
+| ~~Real xBD frames in `sim/fixtures/frames/`~~ | ~~Thayyil~~ | **Closed 2026-05-08 (PR #35)** — real public-domain FEMA/USFWS aerials swapped in via `scripts/fetch_disaster_fixtures.py`. |
+| ~~`drone_agent` consuming `drones.<id>.camera` + writing merged state~~ | ~~Kaleel~~ | **Closed 2026-05-06 (PR #25)** — drone agent subscribes/publishes per Contract 4, 11. Live-verified on the 2026-05-11 resilience run. |
+| ~~`egs_agent` consuming `drones.<id>.findings`, issuing `drones.<id>.tasks`~~ | ~~Qasim~~ | **Partially closed 2026-05-09–11 (PRs #34, #45)** — EGS subscribes to findings, scripted-event drone_failure handling, schema-aligned `egs_state` publishes. Outstanding: `drones.<id>.tasks` not yet published end-to-end because the EGS coordinator's `_replan_in_flight` guard never clears when Ollama is slow under 8GB-VRAM eviction pressure (see GH #32 comment + `docs/sim-resilience-run-notes.md` "Bug 3"). |
+
+Nothing on this table currently blocks Hazim from advancing Phase F (demo capture). The remaining `drone_failure → drones.<id>.tasks` link is Qasim-scope.
 
 ## Polish queue (unblocked, opportunistic)
 
