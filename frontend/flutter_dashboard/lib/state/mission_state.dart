@@ -535,6 +535,12 @@ class MissionState extends ChangeNotifier {
     // bridge ack (or after a `failed` state from a transient error),
     // we still recognize the finding as confirmed instead of stranding
     // the row in pending/failed forever.
+    //
+    // Also handles the dashboard reconnect case: if egs.state carries an
+    // operator decision from a prior session but _findingActions[id] is
+    // null (empty local state), we still promote. The Dart `null != X`
+    // comparison is true for any non-null enum value, so the remaining
+    // guards (`cur != confirmed/dismissed`) work cleanly with null too.
     for (final raw in activeFindings) {
       if (raw is! Map<String, dynamic>) continue;
       final id = raw["finding_id"] as String?;
@@ -549,13 +555,12 @@ class MissionState extends ChangeNotifier {
       // here as defensive forward-compat for any non-bridge producer that
       // sets the bool form directly; the bridge itself no longer does.
       if (raw["approved"] == true || raw["operator_status"] == "approved") {
-        if (cur != null &&
-            cur != ApprovalState.confirmed &&
+        if (cur != ApprovalState.confirmed &&
             cur != ApprovalState.dismissed) {
           _findingActions[id] = ApprovalState.confirmed;
         }
       } else if (raw["operator_status"] == "dismissed") {
-        if (cur != null && cur != ApprovalState.dismissed) {
+        if (cur != ApprovalState.dismissed) {
           _findingActions[id] = ApprovalState.dismissed;
         }
       }
