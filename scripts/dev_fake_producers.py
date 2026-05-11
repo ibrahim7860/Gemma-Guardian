@@ -82,6 +82,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from shared.contracts import validate  # noqa: E402  (post-sys.path)
 from shared.contracts.topics import (  # noqa: E402
     EGS_STATE,
+    MESH_ADJACENCY,
     per_drone_findings_channel,
     per_drone_findings_delivered_channel,
     per_drone_state_channel,
@@ -104,13 +105,6 @@ _FINDING_TYPE_ROTATION: List[str] = [
 # (all three) keeps backwards compatibility with existing dev workflows
 # that did not pass --emit.
 _EMIT_CHANNEL_TOKENS: List[str] = ["state", "egs", "findings", "mesh-heartbeat"]
-
-
-# Channel that the EGS coordinator subscribes to for its mesh-sim healthcheck
-# (see agents/egs_agent/main.py::_await_mesh_sim). Hardcoded here rather than
-# imported from shared.contracts.topics because the heartbeat-emit mode is a
-# dev-only escape hatch for tests, not a contract-level publisher.
-_MESH_ADJACENCY_CHANNEL: str = "mesh.adjacency_matrix"
 
 
 # Default schema-valid drone_id for the dev producer. See module docstring
@@ -265,10 +259,11 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Dev-only Redis fake-producer for the Phase 2 WS bridge. "
-            "Emits contract-valid egs.state, drones.<id>.state, and "
-            "drones.<id>.findings messages so Ibrahim can develop and "
-            "Playwright-test the dashboard before Hazim and Qasim ship "
-            "their real producers. NOT for production use."
+            "Emits contract-valid egs.state, drones.<id>.state, "
+            "drones.<id>.findings, and a mesh.adjacency_matrix heartbeat "
+            "(the latter is a stand-in for agents.mesh_simulator used "
+            "by the finding-approval e2e — see module docstring). "
+            "NOT for production use."
         ),
     )
     parser.add_argument(
@@ -310,8 +305,11 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             "Comma-separated subset of channel families to emit. "
             "Tokens: state (drones.<id>.state, every tick), "
             "egs (egs.state, every 2 ticks), "
-            "findings (drones.<id>.findings, every 8 ticks). "
-            "Default: all three. Hybrid demo mode runs one --emit=state "
+            "findings (drones.<id>.findings, every 8 ticks), "
+            "mesh-heartbeat (mesh.adjacency_matrix, every tick — "
+            "EGS mesh-sim healthcheck stand-in; pairs with findings "
+            "to also mirror onto .delivered). "
+            "Default: all four. Hybrid demo mode runs one --emit=state "
             "instance disabled (sim owns it) and one --emit=egs,findings "
             "instance enabled until Qasim/Kaleel ship real producers."
         ),
@@ -368,9 +366,9 @@ def _run(args: argparse.Namespace) -> int:
             if emit_mesh_heartbeat:
                 mh_payload = _build_mesh_heartbeat(drone_id)
                 # Heartbeat payload has no locked schema; skip validation.
-                _publish(client, _MESH_ADJACENCY_CHANNEL, mh_payload)
+                _publish(client, MESH_ADJACENCY, mh_payload)
                 print(
-                    f"[fake_producer] tick={tick} channel={_MESH_ADJACENCY_CHANNEL} "
+                    f"[fake_producer] tick={tick} channel={MESH_ADJACENCY} "
                     f"source=dev_fake_producers"
                 )
 

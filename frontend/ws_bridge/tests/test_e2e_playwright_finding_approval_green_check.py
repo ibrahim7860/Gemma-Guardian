@@ -314,21 +314,11 @@ def green_check_pipeline(tmp_path) -> Iterator[Dict[str, Any]]:
             assert _wait_for_port(bridge_port, 15), "bridge did not come up"
             assert _wait_for_port(flutter_port, 10), "flutter static did not come up"
 
-            # Surface early EGS failure: if it crashed during
-            # _await_mesh_sim or coordinator init, the test would
-            # otherwise wait the full 15s click-deadline before
-            # failing with a confusing button-not-found error.
-            time.sleep(2.0)
-            if egs_proc.poll() is not None:
-                tail = b""
-                try:
-                    tail = egs_log.read_bytes()
-                except Exception:
-                    tail = b""
-                raise AssertionError(
-                    "EGS agent exited prematurely "
-                    f"(rc={egs_proc.returncode}); tail={tail[-1500:]!r}"
-                )
+            # Note: a previous draft slept 2s here to surface a crashed
+            # EGS early. Dropped — the subsequent
+            # ``btn.wait_for(timeout=30_000)`` already catches stalls
+            # with a clear error, and the fixed sleep was fragile under
+            # load (slow CI runners would still race the readiness).
 
             yield {
                 "bridge_ws_url": f"ws://127.0.0.1:{bridge_port}/",

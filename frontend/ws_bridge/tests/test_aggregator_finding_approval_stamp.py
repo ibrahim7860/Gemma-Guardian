@@ -2,9 +2,16 @@
 
 The bridge aggregator joins `egs_state.approved_findings` (a {finding_id: "approved"|
 "dismissed"} map shipped by Qasim's PR #45) against active_findings[] at snapshot time
-and stamps `approved` (bool, what the dashboard reads at mission_state.dart:542) and
-`operator_status` (enum, matches Contract 4 _common.json#/$defs/operator_status) onto
-matching findings WITHOUT mutating the internal _findings bucket.
+and overwrites `operator_status` (enum, matches Contract 4
+_common.json#/$defs/operator_status) on matching findings WITHOUT mutating the
+internal _findings bucket. The dashboard's Task 5 promotion loop accepts
+`operator_status == "approved"` / `"dismissed"` as its trigger.
+
+The earlier draft also stamped `approved: bool`; that branch was removed (commit
+f0bf8a8) after the Task 6 e2e surfaced that Contract 4
+(`shared/schemas/finding.json:7`) sets `additionalProperties: false`, so any
+extra property fails the bridge's `websocket_messages` self-validation in
+`_emit_loop` and silently drops every broadcast.
 
 See docs/superpowers/plans/2026-05-11-finding-approval-egs-consumer.md LDD-2.
 """
