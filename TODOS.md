@@ -16,14 +16,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **CI:** `.github/workflows/test.yml` `bridge_e2e` job updated to invoke both Playwright test files.
 - **Owner:** Person 4 (closed by this PR).
 
-### EGS subscriber for `egs.operator_actions` — finding_approval variant
-- **Status (2026-05-09, partial):** PR #38 shipped the EGS subscriber on `egs.operator_actions` and it correctly consumes the `operator_command_dispatch` action variant — replan only triggers after the operator confirms via DISPATCH, closing that half of the loop. The `finding_approval` action variant (operator approve/dismiss decisions on findings, published by the bridge) is **STILL NOT consumed** — those payloads land in Redis but the EGS does not yet reflect approved findings into the next `state_update` envelope.
-- **What's left:** Wire the `finding_approval` branch in the EGS `egs.operator_actions` handler so approved findings flow back into `egs.state` and the dashboard's two-stage feedback (grey check = bridge ack, green check = EGS-confirmed) becomes truthful.
-- **Why:** Without the `finding_approval` consumer, the green-check state in the dashboard remains aspirational and multi-operator scenarios will not converge.
-- **Pros:** Closes the remaining half of the loop; green-check-on-confirmed becomes truthful; multi-operator scenarios work correctly.
-- **Cons:** Couples to EGS state shape; may want lightweight replan-on-approve logic.
-- **Context:** Schema at `shared/schemas/operator_actions.json`. Topic constant in `shared/contracts/topics.yaml` and generated `topics.dart`. Bridge stamps `bridge_received_at_iso_ms` before publish; EGS dedupes on `command_id`. The `operator_command_dispatch` handler in PR #38 is a good template for the new `finding_approval` branch.
-- **Owner:** Person 3 (Qasim).
+### CLOSED — EGS subscriber for `egs.operator_actions` — finding_approval variant
+- **Resolution (2026-05-11):** Shipped the `finding_approval` branch in `coordinator.process_actions()`. Three Gate 4 items closed in one PR:
+  1. **finding_approval consumer:** `process_actions` now handles `kind: "finding_approval"` actions — maps `approve`→`"approved"`, `dismiss`→`"dismissed"` into `egs_state.approved_findings` (new Contract 3 field). Deduplicates on `command_id` (same pattern as `operator_command_dispatch`). Dashboard green-check is now truthful.
+  2. **drone_failure scripted event replan:** `main.py` subscribes to `sim.scripted_events`; on `drone_failure`, injects synthetic offline telemetry so the existing `active→offline` replan trigger fires immediately. Gate 4 criterion: "EGS replanning successfully reassigns survey points after scripted drone failure event."
+  3. **Standalone-mode EGS tolerance:** `process_telemetry` now triggers replan on `active→standalone` transition so survey points get redistributed to reachable drones. `replanning.assign_survey_points` already only considers `status=="active"` drones, so standalone drones are excluded from new assignments.
+- **Schema:** `shared/schemas/egs_state.json` — added `approved_findings` (object, values: `"approved"|"dismissed"`). Pydantic mirror in `shared/contracts/models.py:EGSStateMessage`. Initialized as `{}` in `scenario_state.py:build_initial_egs_state()`.
+- **Tests:** 12 new tests in `agents/egs_agent/tests/test_finding_approval.py` covering approve, dismiss, dedup, malformed payload, no-replan, mixed batch, schema validation, standalone transition replan, standalone-to-active no-replan, drone_failure replan, standalone exclusion from assignments, empty dict validation. Full regression: 720 passed (1 pre-existing drone_agent failure unrelated).
+- **Owner:** Person 3 (Qasim), closed 2026-05-11.
 
 ### CLOSED — Static aerial base image for map panel
 - **Resolution:** Shipped Task 8 of `docs/plans/2026-05-08-thayyil-fixtures-swap.md`. Mississippi post-Katrina FEMA blue-roof aerial wired into `frontend/flutter_dashboard/lib/widgets/map_panel.dart` via `Image.asset` over a 3-layer Stack (procedural grid fallback ← `AnimatedOpacity` aerial overlay at 0.80 ← markers). Bbox locks to `scenario.base_image_extents` (LOCKED DESIGN DECISION D1); off-extents drones render as edge chevrons with tap-to-show distance/cardinal toast. Drone-id labels moved out of the painter into white-pill `Positioned` widgets for legibility against photographic backgrounds (D3); finding circles got a 7px white halo; touch targets bumped 18→24 / 14→24 (48px hit area, meets iOS 44px minimum).
@@ -51,13 +51,11 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## Mesh Simulator Follow-ups
 
-### Derive EGS lat/lon from active scenario YAML
-- **What:** Teach `agents/mesh_simulator/main.py` to accept `--scenario <name>` (mirroring `sim/waypoint_runner.py`), load it via `sim/scenario.py:load_scenario`, and pull `origin.lat` / `origin.lon` as the EGS position. Keep `--egs-lat` / `--egs-lon` as an explicit override for tests that need a custom position. Then strip the redundant `--egs-lat`/`--egs-lon` flags from `scripts/launch_swarm.sh`, `scripts/run_beat5_capture.sh`, and the 6 e2e fixtures that hardcode them today.
-- **Why:** `MeshSimulator.forward_finding` silently returns 0 when `egs_pos is None`, dropping every finding. PRs #42 and #43 papered over this in 7 callers by hardcoding scenario-origin coords; that's the same value duplicated 7 times. A scenario change would silently desync them. Single source of truth fixes the trap permanently.
-- **Pros:** One source of truth for scenario coords; no per-caller hardcoding; new scenarios automatically work; CI traps stay caught at the schema layer.
-- **Cons:** Couples mesh sim startup to scenario YAML loading (already a `sim` extra, so no new dep); needs a sensible fallback when `--scenario` is omitted (current behavior: no EGS, drop everything — surprising but explicit).
-- **Context:** Bug surfaced 2026-05-10 as 6 CI Playwright failures after PR #41 made the mesh sim the required findings gateway (bridge subscribes to `.findings.delivered`). Hardcoded callers today: `scripts/launch_swarm.sh:146`, `scripts/run_beat5_capture.sh:188`, `frontend/ws_bridge/tests/test_e2e_playwright.py`, `test_e2e_playwright_multi_drone.py`, `test_e2e_phase3.py`, `test_e2e_playwright_dom_render.py`, `test_e2e_playwright_real_drone_findings.py`, `test_e2e_playwright_egs_findings.py`. All three shipped scenarios (`disaster_zone_v1`, `resilience_v1`, `single_drone_smoke`) use `origin: {lat: 34.0000, lon: -118.5000}`.
-- **Owner:** Unassigned (post-submission cleanup; current workaround works for demo capture).
+### CLOSED — Derive EGS lat/lon from active scenario YAML
+- **Resolution (2026-05-11):** Shipped per `docs/plans/2026-05-11-mesh-sim-scenario-derived-egs.md`. `agents/mesh_simulator/main.py` accepts `--scenario <name>` and reads `origin.lat/.lon` via the new shared `sim/scenario.py:resolve_scenario_path()` helper (also adopted by `sim/list_drones.py` — DRY). Precedence: explicit `--egs-lat/--egs-lon` wins with a stderr `WARN`; else scenario origin; else **exit 2** with a clear stderr `ERROR` so the silent-zero-findings bug class (PR #41/#42/#43) cannot recur.
+- **Callers migrated to `--scenario`:** `scripts/launch_swarm.sh`, `scripts/run_beat5_capture.sh`, `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`, `test_e2e_playwright_real_drone_findings.py`. The 4 synthetic-position e2e tests (`test_e2e_phase3`, `test_e2e_playwright`, `test_e2e_playwright_multi_drone`, `test_e2e_playwright_egs_findings`) keep explicit flags because their positions don't match any real scenario.
+- **Tests:** 5 new CLI tests in `agents/mesh_simulator/tests/test_cli_scenario.py` (scenario-by-id, scenario-by-path, unknown-id error, explicit-override WARN, no-flags ERROR + exit 2). Regression guard rewritten as `test_shell_launcher_passes_egs_config_to_mesh_simulator` — parametrized over `scripts/*.sh` that launch the mesh sim, asserts EITHER `--scenario` OR both `--egs-lat/--egs-lon` on every invocation. Picks up future launchers automatically. Two Playwright e2e tests migrated and green (DOM-render + real-drone-findings).
+- **Owner:** Closed by Ibrahim 2026-05-11.
 
 ## Drone-Agent Follow-ups
 
@@ -75,10 +73,10 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Note:** the original TODO also asked for `"returning"` (on `return_to_base`) and `"error"` (on max-retries-exhausted) flips. Those remain unimplemented; track separately if/when Beat 4 backup mode needs them.
 - **Owner:** Closed by Ibrahim 2026-05-10.
 
-### Drone-agent Ollama startup healthcheck (delivered, monitor)
-- **What:** Plan ships an httpx `GET /api/tags` healthcheck logging a clear warning if the model isn't pulled or the daemon is down. Track whether the warning is actually surfacing in operator runs.
-- **Why:** The Day 1-7 standalone work assumed Ollama Just Works; partial pulls and daemon-not-running have already cost an integration session.
-- **Owner:** Kaleel (delivered); Ibrahim verifies in demo prep.
+### CLOSED — Drone-agent Ollama startup healthcheck (delivered, monitor)
+- **Resolution (2026-05-11):** Verified live. Daemon-unreachable branch surfaces `[drone_agent] WARNING: ollama healthcheck failed at http://localhost:11434: ` within ~3 s in both the direct boot path (`python -m agents.drone_agent`) and the operator launch path (replicates `scripts/launch_swarm.sh:165` line — `python -m agents.drone_agent ... | tee $LOG_DIR/<drone>.log`). The WARNING reaches the per-drone log file; `flush=True` survives the tee pipeline. Empty exception suffix observed (`httpx.ConnectTimeout` serializes to `""`); WARNING + endpoint remain operator-readable, message-quality polish not pursued. Model-absent and happy-path branches not live-tested on this host (Ollama daemon unresponsive); both remain covered by unit tests at `agents/drone_agent/tests/test_main_ollama_healthcheck.py` (3/3 passing). Call-order invariant (healthcheck awaited before Redis construction) locked by new regression guard `agents/drone_agent/tests/test_main_run_order.py`.
+- **Evidence:** `/tmp/healthcheck_unreachable.log` (direct boot), `/tmp/healthcheck_launch_test/drone1.log` (operator path replica). Regenerate via plan `docs/superpowers/plans/2026-05-11-ollama-healthcheck-verification.md`.
+- **Owner:** Closed by Ibrahim 2026-05-11.
 
 ### CLOSED — Replace `ActionNode._finding_counter` with `MemoryStore.next_finding_id()`
 - **Resolution:** Bundled into Beat 5 Path A-full Component 5 (counter durability) PR. `ActionNode` now takes a `next_id_fn: Callable[[], str]` injected at construction; `runtime.py` and `main.py` pass `memory.next_finding_id` so production paths share a single, durable, per-drone counter source. Regression guard test in `agents/drone_agent/tests/test_action_uses_memory_for_finding_id.py` asserts `ActionNode` no longer exposes `_finding_counter`. Plan ref: `docs/plans/2026-05-10-beat5-path-a-full.md` §4 Component 5.

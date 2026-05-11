@@ -120,13 +120,15 @@ def test_finding_renders_in_flutter_semantics_tree(tmp_path, flutter_static_serv
             ), _spawn(
                 # PR1: bridge subscribes to drones.*.findings.delivered, so
                 # the mesh simulator must run as the passthrough between the
-                # drone agent and the bridge. EGS lat/lon match the
-                # disaster_zone_v1 scenario origin; without these flags
-                # `forward_finding` silently drops every payload because
-                # `egs_pos is None`.
+                # drone agent and the bridge. --scenario derives EGS
+                # lat/lon from the scenario's origin (single source of truth,
+                # 2026-05-11 cleanup). Without an EGS position
+                # `forward_finding` would silently drop every payload — the
+                # mesh sim now exits 2 with a clear error if neither
+                # --scenario nor explicit --egs-lat/--egs-lon are passed.
                 [sys.executable, "-m", "agents.mesh_simulator.main",
                  "--redis-url", redis_url,
-                 "--egs-lat", "34.0000", "--egs-lon", "-118.5000"],
+                 "--scenario", scenario],
                 name="mesh-sim",
             ), _spawn(
                 [sys.executable, "-m", "agents.drone_agent",

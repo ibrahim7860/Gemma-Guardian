@@ -257,3 +257,27 @@ def load_scenario(path: Path) -> Scenario:
 def load_groundtruth(path: Path) -> GroundTruth:
     raw = json.loads(Path(path).read_text())
     return GroundTruth.model_validate(raw)
+
+
+_SCENARIOS_DIR = Path(__file__).resolve().parent / "scenarios"
+
+
+def resolve_scenario_path(arg: str) -> Path:
+    """Resolve a scenario_id or path to an absolute scenario YAML path.
+
+    Accepts either an existing path (returned as-is) or a scenario_id that
+    resolves to ``sim/scenarios/<id>.yaml``. Raises FileNotFoundError with
+    the path it tried when neither form matches.
+
+    Shared by ``sim/list_drones.py`` and ``agents/mesh_simulator/main.py`` so
+    every scenario-aware tool has one resolution rule.
+    """
+    p = Path(arg)
+    if p.exists():
+        return p
+    candidate = _SCENARIOS_DIR / f"{arg}.yaml"
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(
+        f"scenario not found: {arg!r} (also looked at {candidate})"
+    )

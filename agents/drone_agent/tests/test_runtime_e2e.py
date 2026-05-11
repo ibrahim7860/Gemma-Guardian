@@ -18,6 +18,8 @@ from agents.drone_agent.runtime import DroneRuntime
 from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
 from sim.scenario import load_scenario
 from shared.contracts import validate
+from shared.contracts.logging import now_iso_ms
+from shared.contracts.topics import MESH_LINK_STATUS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -104,6 +106,13 @@ async def test_state_plus_frame_yields_finding_on_findings_channel(
         sync_client=fake_sync_redis,
         async_client=fake_async_redis,
         agent_step_period_s=0.05,
+        # Isolate the FindingBuffer's disk path (`<log_dir>/drone1_findings_queue.jsonl`)
+        # from sibling tests. Without this, earlier tests can leave buffered
+        # entries in the default `/tmp/gemma_guardian_logs/` path; the runtime
+        # then rehydrates them at __init__ and calls `set_standalone(True)`,
+        # which races our `mesh.link_status` priming below and causes the
+        # finding to land in the buffer instead of on `drones.drone1.findings`.
+        log_dir=tmp_path / "agent_logs",
     )
     runtime.agent.reasoning.call = AsyncMock(return_value=canned_response)
 
@@ -114,6 +123,21 @@ async def test_state_plus_frame_yields_finding_on_findings_channel(
     runtime_task = asyncio.create_task(runtime.run())
     try:
         await asyncio.sleep(0.1)
+        # PR #41 (Beat 5 Path A-full) made LinkStateMonitor's defensive
+        # default `is_standalone() == True` until the first `link="up"` event
+        # arrives. Without priming, the BufferedPublisher buffers the
+        # finding to disk instead of publishing it to redis, and this test
+        # never sees the message on `drones.drone1.findings`. Publish an
+        # initial `link="up"` event so the publisher exits standalone before
+        # the agent step loop runs.
+        await fake_async_redis.publish(MESH_LINK_STATUS, json.dumps({
+            "drone_id": "drone1",
+            "link": "up",
+            "t": 0,
+            "wall_clock_iso_ms": now_iso_ms(),
+            "reason": "geometric",
+        }))
+        await asyncio.sleep(0.1)  # let LinkStatusSubscriber consume + propagate
         await fake_async_redis.publish("drones.drone1.state", json.dumps(_state_payload()))
         await fake_async_redis.publish("drones.drone1.camera", _make_jpeg())
 

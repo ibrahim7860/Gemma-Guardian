@@ -573,52 +573,76 @@ def test_disaster_zone_v1_roster_matches_hybrid_test_assumptions():
     )
 
 
-def test_launch_swarm_passes_egs_coords_to_mesh_simulator():
-    """Regression guard for the silent-drop bug fixed in PR #42 / PR #43.
+def _shell_launchers_that_invoke_mesh_sim() -> list[str]:
+    """Find every `scripts/*.sh` that *launches* the mesh simulator.
+
+    Distinguishes launchers (python ... mesh_simulator) from controllers
+    (e.g., stop_demo.sh's `pkill -f agents/mesh_simulator/main.py`), which
+    reference the path but don't pass CLI flags. Returned as bare filenames
+    so they read clearly in pytest parametrize ids. Any future launcher that
+    adds a mesh sim invocation is picked up automatically.
+    """
+    launchers: list[str] = []
+    for sh in sorted(SCRIPTS_DIR.glob("*.sh")):
+        for line in sh.read_text().splitlines():
+            if "mesh_simulator" not in line:
+                continue
+            if "python3" in line or "python " in line or "-m agents.mesh_simulator" in line:
+                launchers.append(sh.name)
+                break
+    return launchers
+
+
+@pytest.mark.parametrize("script_name", _shell_launchers_that_invoke_mesh_sim())
+def test_shell_launcher_passes_egs_config_to_mesh_simulator(script_name: str):
+    """Regression guard against the silent-zero-findings bug class.
 
     PR #41 made `agents/mesh_simulator/main.py` the required gateway for
     findings (the bridge subscribes to `drones.<id>.findings.delivered`,
     which only the mesh sim publishes). `MeshSimulator.forward_finding`
-    returns 0 (drops the payload) when `egs_pos is None`. If `launch_swarm.sh`
-    ever loses its `--egs-lat`/`--egs-lon` flags, every demo and capture run
-    would silently show zero findings on the dashboard with no error.
+    returns 0 (drops the payload) when `egs_pos is None`. PRs #42 / #43
+    papered over this by hardcoding `--egs-lat 34.0000 --egs-lon -118.5000`
+    in callers. The 2026-05-11 cleanup made `--scenario <name>` the single
+    source of truth, reading `origin.lat/.lon` from the scenario YAML.
 
-    This test fails fast with one clear message if the flags drop out.
-
-    When `agents/mesh_simulator` learns to derive the EGS lat/lon from the
-    active scenario YAML (TODOS.md "Derive EGS lat/lon from active scenario
-    YAML"), this guard can be relaxed to assert `--scenario` is passed
-    instead.
+    This guard walks every `scripts/*.sh` that references the mesh sim and
+    asserts each mesh sim invocation passes EITHER `--scenario` OR both
+    `--egs-lat` AND `--egs-lon`. Any future launcher that drops both forms
+    triggers a fast, loud failure.
     """
-    script = SCRIPTS_DIR / "launch_swarm.sh"
+    script = SCRIPTS_DIR / script_name
+    # All shell launchers should support `--dry-run`. If a future script
+    # diverges, we'll need a per-script invocation strategy — flag it
+    # explicitly rather than letting the test silently no-op.
     result = subprocess.run(
         ["bash", str(script), "--dry-run"],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=30,
         env={**os.environ, "GG_NO_TMUX": "1"},
     )
-    assert result.returncode == 0, f"dry-run failed: stderr={result.stderr}"
-    # The mesh sim invocation must include both EGS-position flags. We don't
-    # assert the exact numeric values because a scenario change is a valid
-    # reason to update them — but BOTH flags must be present together so
-    # `forward_finding` doesn't hit the `egs_pos is None` early-out.
+    assert result.returncode == 0, (
+        f"{script_name} --dry-run failed (rc={result.returncode}); "
+        f"stderr={result.stderr!r}"
+    )
     mesh_lines = [
         line for line in result.stdout.splitlines()
-        if "mesh_simulator/main.py" in line
+        if "mesh_simulator" in line and ("python3" in line or "python " in line)
     ]
     assert mesh_lines, (
-        "launch_swarm.sh dry-run did not emit a mesh_simulator invocation"
+        f"{script_name} --dry-run did not emit a mesh_simulator invocation "
+        f"(the grep in _shell_launchers_that_invoke_mesh_sim matched the file "
+        f"but no runtime invocation appeared in dry-run output — check the "
+        f"script's emit/echo behavior)."
     )
     for line in mesh_lines:
-        assert "--egs-lat" in line, (
-            f"mesh_simulator invocation missing --egs-lat: {line!r}. "
-            "Without this flag, MeshSimulator.forward_finding silently "
+        has_scenario = "--scenario" in line
+        has_explicit = "--egs-lat" in line and "--egs-lon" in line
+        assert has_scenario or has_explicit, (
+            f"{script_name} mesh_simulator invocation passes neither "
+            f"--scenario nor both --egs-lat AND --egs-lon: {line!r}. "
+            "Without an EGS source, MeshSimulator.forward_finding silently "
             "drops every finding (PR #41 made mesh sim the findings "
-            "gateway). Re-pin scenario-origin coords or implement the "
-            "scenario-derived EGS-position follow-up in TODOS.md."
-        )
-        assert "--egs-lon" in line, (
-            f"mesh_simulator invocation missing --egs-lon: {line!r}. "
-            "See the --egs-lat assertion above for context."
+            "gateway). Pass `--scenario $SCENARIO` (preferred) or both "
+            "--egs-lat/--egs-lon."
         )
