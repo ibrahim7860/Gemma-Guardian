@@ -21,12 +21,17 @@ async def test_run_calls_healthcheck_before_redis(monkeypatch):
     async def fake_healthcheck(endpoint: str, model: str) -> None:
         calls.append("healthcheck")
 
-    def fake_redis_from_url(*_args, **_kwargs):
+    def fake_redis_sync_from_url(*_args, **_kwargs):
         calls.append("redis_sync")
         raise RuntimeError("stop here — we only care about ordering")
 
+    def fake_redis_async_from_url(*_args, **_kwargs):
+        calls.append("redis_async")
+        raise RuntimeError("stop here — we only care about ordering")
+
     monkeypatch.setattr(drone_main, "_ollama_healthcheck", fake_healthcheck)
-    monkeypatch.setattr(drone_main._redis_sync.Redis, "from_url", staticmethod(fake_redis_from_url))
+    monkeypatch.setattr(drone_main._redis_sync.Redis, "from_url", staticmethod(fake_redis_sync_from_url))
+    monkeypatch.setattr(drone_main._redis_async, "from_url", fake_redis_async_from_url)
 
     args = drone_main.build_parser().parse_args([
         "--drone-id", "drone1",
@@ -37,6 +42,7 @@ async def test_run_calls_healthcheck_before_redis(monkeypatch):
     with pytest.raises(RuntimeError, match="stop here"):
         await drone_main._run(args)
 
-    assert calls == ["healthcheck", "redis_sync"], (
-        f"healthcheck must run before redis construction; got {calls}"
+    assert calls, "no calls recorded — neither healthcheck nor redis ran"
+    assert calls[0] == "healthcheck", (
+        f"healthcheck must run before ANY redis construction (sync or async); got {calls}"
     )

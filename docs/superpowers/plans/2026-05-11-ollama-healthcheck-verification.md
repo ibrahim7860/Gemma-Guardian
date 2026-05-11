@@ -17,7 +17,7 @@
 - `agents/drone_agent/__main__.py:99-144` — `_run`, where the healthcheck is invoked (line 106) before `DroneRuntime.run()`
 - `agents/drone_agent/tests/test_main_ollama_healthcheck.py` — 3 unit tests (present / absent / unreachable)
 - `shared/config.yaml` — defaults: `ollama_drone_endpoint=http://localhost:11434`, `drone_model=gemma4:e2b`
-- `scripts/launch_swarm.sh:161` — production launch command pattern
+- `scripts/launch_swarm.sh:165` — production launch command pattern
 
 **Modified:**
 - `TODOS.md` — flip the TODO #5 entry from open to `CLOSED — verified` (or document the gap)
@@ -126,10 +126,10 @@ attached (do not try to fix in this plan).
 
 ## Task 2b: Live verification via the operator launch script (the real path)
 
-Direct boot via `python -m agents.drone_agent` proves the function prints to stdout. It does NOT prove the warning makes it into the log file the operator actually reads on demo day, because the production launch paths (`scripts/launch_swarm.sh:161` and `scripts/run_beat5_capture.sh:202`) pipe stdout through `tee $LOG_DIR/<id>.log`. When stdout is a pipe rather than a TTY, Python's line buffering changes — `flush=True` should make this a non-issue, but the only way to know is to actually run it.
+Direct boot via `python -m agents.drone_agent` proves the function prints to stdout. It does NOT prove the warning makes it into the log file the operator actually reads on demo day, because the production launch paths (`scripts/launch_swarm.sh:165` and `scripts/run_beat5_capture.sh:202`) pipe stdout through `tee $LOG_DIR/<id>.log`. When stdout is a pipe rather than a TTY, Python's line buffering changes — `flush=True` should make this a non-issue, but the only way to know is to actually run it.
 
 **Files:**
-- Read-only: `scripts/launch_swarm.sh:161` — the line that runs `python -m agents.drone_agent ... 2>&1 | tee $LOG_DIR/$ID.log`
+- Read-only: `scripts/launch_swarm.sh:165` — the line that runs `python -m agents.drone_agent ... 2>&1 | tee $LOG_DIR/$ID.log`
 
 - [ ] **Step 1: Confirm preconditions still hold**
 
