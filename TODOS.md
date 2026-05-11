@@ -56,6 +56,7 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Pros:** Closes the post-restart silent-pending failure mode. Mirrors the symmetry of the new approve/dismiss e2e for the reconnect axis. ~30 min of test work + a fresh CI green sweep.
 - **Cons:** Adds ~30s to the `bridge_e2e` CI job. Subprocess restart timing is the flakiest e2e shape we have (cf. the 2s `time.sleep` we removed during /review of Task 6).
 - **Context:** Deferred in commit `2b2408e` and noted in plan `docs/superpowers/plans/2026-05-11-finding-approval-egs-consumer.md` (Task 6 sub-deliverable C disposition). The stub at `test_e2e_phase3.py:274` is the canonical location; the fixture pattern from `test_e2e_playwright_finding_approval_green_check.py` (real-EGS subprocess + WS frame capture) is the template to copy.
+- **Partial mitigation already in place (2026-05-11):** `test_aggregator_finding_approval_stamp.py::test_snapshot_uses_seed_envelope_state_before_first_egs_update` is a unit-level test that pins the post-restart-window behavior (aggregator snapshots safely using only the seed envelope's egs_state when no `update_egs_state` has happened yet). Closes most of the regression class this TODO targets — what remains is just the subprocess-restart integration smoke test, which is the flaky part and the reason this TODO stays open.
 - **Owner:** Unassigned (post-submission; the new e2e covers the happy path so the May 18 demo isn't blocked on this).
 
 ## Mesh Simulator Follow-ups

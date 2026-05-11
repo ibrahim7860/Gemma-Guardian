@@ -177,3 +177,41 @@ def test_snapshot_flips_operator_status_when_egs_state_flips():
     agg.update_egs_state(egs_a2)
     snap3 = agg.snapshot(timestamp_iso="2026-05-11T00:00:04.000Z")
     assert snap3["active_findings"][0]["operator_status"] == "approved"
+
+
+def test_snapshot_uses_seed_envelope_state_before_first_egs_update():
+    """Bridge-restart regression: a freshly-constructed aggregator that has
+    received findings from Redis but NOT YET received an `egs.state`
+    publish must safely snapshot using only the seed envelope's
+    `egs_state`. This pins the ~1-second post-restart window where the
+    bridge has a hot findings bucket but a cold egs bucket.
+
+    Without this test, a future refactor that adds a "first egs.state
+    required" gate (or changes the seed envelope's shape) could silently
+    drop state_update publishes during the restart window, which would
+    manifest as a 1-2s pending-flicker on dashboard reconnect.
+
+    Defensive coverage for the regression class originally targeted by
+    Task 6 sub-deliverable C (deferred — the live reconnect e2e is still
+    open as a TODO under "Demo Capture Follow-ups", post-submission).
+    """
+    agg = StateAggregator(max_findings=10, seed_envelope=deepcopy(_SEED))
+    # Add a finding BEFORE any update_egs_state call — simulates the
+    # post-restart window where findings come in from Redis (the bridge's
+    # findings.delivered subscription wakes up fast) before the next 1Hz
+    # egs.state publish arrives.
+    agg.add_finding(_finding("f_drone1_postrestart"))
+    snap = agg.snapshot(timestamp_iso="2026-05-11T00:00:02.000Z")
+    # The finding surfaces — the findings bucket is not gated on egs state.
+    assert len(snap["active_findings"]) == 1
+    [f] = snap["active_findings"]
+    assert f["finding_id"] == "f_drone1_postrestart"
+    # operator_status falls through from the drone-published value
+    # (typically "pending") because the seed envelope's approved_findings
+    # is the default empty dict. No `approved` stamp.
+    assert f["operator_status"] == "pending"
+    assert "approved" not in f
+    # The envelope's egs_state is exactly what the seed carries — this is
+    # the canonical post-restart shape until the first real egs.state
+    # publish arrives (1 Hz, so typically <1s).
+    assert snap["egs_state"]["approved_findings"] == {}
