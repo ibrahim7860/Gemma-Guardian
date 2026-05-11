@@ -101,10 +101,18 @@ _FINDING_TYPE_ROTATION: List[str] = [
 ]
 
 
-# Allowed tokens for --emit. Each value enables one channel family. Default
-# (all three) keeps backwards compatibility with existing dev workflows
-# that did not pass --emit.
+# Allowed tokens for --emit (validation set). Each value enables one channel
+# family. `mesh-heartbeat` is opt-in only — it's the dev-only EGS mesh-sim
+# healthcheck stand-in and would pollute the `mesh.adjacency_matrix` channel
+# during normal demo workflows that don't need it.
 _EMIT_CHANNEL_TOKENS: List[str] = ["state", "egs", "findings", "mesh-heartbeat"]
+
+# Default `--emit` set (when no --emit flag is passed). Excludes
+# `mesh-heartbeat` so pre-existing dev workflows behave unchanged. The new
+# Playwright e2e (2026-05-11 finding-approval plan) passes
+# `--emit=state,findings,mesh-heartbeat` explicitly when it needs the
+# heartbeat to satisfy the real EGS coordinator's startup healthcheck.
+_EMIT_DEFAULT_TOKENS: List[str] = ["state", "egs", "findings"]
 
 
 # Default schema-valid drone_id for the dev producer. See module docstring
@@ -300,7 +308,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--emit",
         type=_parse_emit_csv,
-        default=list(_EMIT_CHANNEL_TOKENS),
+        default=list(_EMIT_DEFAULT_TOKENS),
         help=(
             "Comma-separated subset of channel families to emit. "
             "Tokens: state (drones.<id>.state, every tick), "

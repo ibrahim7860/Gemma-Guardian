@@ -542,9 +542,12 @@ class MissionState extends ChangeNotifier {
       final cur = _findingActions[id];
       // Symmetric dismiss path (LDD-3, 2026-05-11 finding-approval plan):
       // upstream operator_status == "dismissed" promotes to
-      // ApprovalState.dismissed. Forward-compat: also accept the enum form
-      // operator_status == "approved" alongside the bool `approved == true`
-      // since the bridge aggregator stamps both fields.
+      // ApprovalState.dismissed. The bridge aggregator stamps only the enum
+      // form (operator_status) — the bool `approved` field was removed in
+      // commit f0bf8a8 because Contract 4's finding.json has
+      // additionalProperties: false. We keep the `approved == true` check
+      // here as defensive forward-compat for any non-bridge producer that
+      // sets the bool form directly; the bridge itself no longer does.
       if (raw["approved"] == true || raw["operator_status"] == "approved") {
         if (cur != null &&
             cur != ApprovalState.confirmed &&

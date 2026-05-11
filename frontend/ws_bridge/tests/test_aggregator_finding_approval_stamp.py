@@ -150,3 +150,30 @@ def test_snapshot_stamp_does_not_mutate_internal_bucket():
     snap2 = agg.snapshot(timestamp_iso="2026-05-11T00:00:03.000Z")
     assert "approved" not in snap2["active_findings"][0]
     assert snap2["active_findings"][0]["operator_status"] == "pending"
+
+
+def test_snapshot_flips_operator_status_when_egs_state_flips():
+    """Operator misclick path: a finding approved in one tick and dismissed
+    in the next must reflect the new state, not the old one. Mirrors the
+    dashboard's symmetric promotion test from Task 5 of the
+    2026-05-11 plan."""
+    agg = StateAggregator(max_findings=10, seed_envelope=deepcopy(_SEED))
+    agg.add_finding(_finding("f_drone1_006"))
+    # First tick: approved.
+    egs_a = deepcopy(_SEED["egs_state"])
+    egs_a["approved_findings"] = {"f_drone1_006": "approved"}
+    agg.update_egs_state(egs_a)
+    snap1 = agg.snapshot(timestamp_iso="2026-05-11T00:00:02.000Z")
+    assert snap1["active_findings"][0]["operator_status"] == "approved"
+    # Second tick: dismissed (operator flipped the decision).
+    egs_d = deepcopy(_SEED["egs_state"])
+    egs_d["approved_findings"] = {"f_drone1_006": "dismissed"}
+    agg.update_egs_state(egs_d)
+    snap2 = agg.snapshot(timestamp_iso="2026-05-11T00:00:03.000Z")
+    assert snap2["active_findings"][0]["operator_status"] == "dismissed"
+    # And back to approved (operator flipped again).
+    egs_a2 = deepcopy(_SEED["egs_state"])
+    egs_a2["approved_findings"] = {"f_drone1_006": "approved"}
+    agg.update_egs_state(egs_a2)
+    snap3 = agg.snapshot(timestamp_iso="2026-05-11T00:00:04.000Z")
+    assert snap3["active_findings"][0]["operator_status"] == "approved"
