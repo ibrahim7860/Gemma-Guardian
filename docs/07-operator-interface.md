@@ -98,7 +98,7 @@ Newest findings on top. Each entry:
 
 Below the threshold (e.g., confidence < 0.6), findings are shown but flagged as "needs review."
 
-When a finding is approved, the icon on the map changes color and an ALL_DRONES broadcast is sent (e.g., "victim confirmed, dispatch en route").
+When a finding is approved, the icon on the map changes color and an ALL_DRONES broadcast is sent (e.g., "victim confirmed, dispatch en route"). (As of 2026-05-11 the approval round trip is live end-to-end: dashboard click → bridge ack (grey check, <500ms) → EGS confirmation via `egs.state.approved_findings` → bridge stamp on outbound `state_update` → dashboard promotion to green check, typically <3s. Backend half landed in PR #45; bridge + dashboard half in the PR for this plan.)
 
 ## Panel 4: Command Box
 
