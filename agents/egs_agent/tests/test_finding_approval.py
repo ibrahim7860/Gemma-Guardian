@@ -430,3 +430,79 @@ def test_approved_findings_cap_does_not_evict_on_rewrite(
         "f_drone1_A", "f_drone1_B",
     }
     assert state["egs_state"]["approved_findings"]["f_drone1_A"] == "dismissed"
+
+
+# ---------------------------------------------------------------------------
+# 16. approved_findings cap evicts FIFO order under sustained pressure
+# ---------------------------------------------------------------------------
+
+def test_approved_findings_cap_evicts_in_fifo_order_under_sustained_pressure(
+    coordinator, monkeypatch,
+):
+    """Multi-eviction regression: cap=3, then add 5 unique findings one at a
+    time. After each add past the cap, the OLDEST surviving entry must
+    evict next — not a random or stack-order victim. Asserts the
+    `next(iter(approved))` insertion-order guarantee holds across
+    multiple evictions, not just one."""
+    from agents.egs_agent import coordinator as coord_mod
+    monkeypatch.setattr(coord_mod, "MAX_APPROVED_FINDINGS", 3)
+    state = _base_state()
+    expected_after = [
+        # After adding f_drone1_000: {000}
+        {"f_drone1_000"},
+        # After adding f_drone1_001: {000, 001}
+        {"f_drone1_000", "f_drone1_001"},
+        # After adding f_drone1_002: {000, 001, 002} (cap reached)
+        {"f_drone1_000", "f_drone1_001", "f_drone1_002"},
+        # After adding f_drone1_003: 000 evicts → {001, 002, 003}
+        {"f_drone1_001", "f_drone1_002", "f_drone1_003"},
+        # After adding f_drone1_004: 001 evicts → {002, 003, 004}
+        {"f_drone1_002", "f_drone1_003", "f_drone1_004"},
+    ]
+    for i, expected in enumerate(expected_after):
+        state["incoming_actions"] = [
+            {"kind": "finding_approval", "command_id": f"c-{i}",
+             "finding_id": f"f_drone1_{i:03d}", "action": "approve"},
+        ]
+        coordinator.process_actions(state)
+        assert set(state["egs_state"]["approved_findings"].keys()) == expected, (
+            f"after add #{i} expected {expected} got "
+            f"{set(state['egs_state']['approved_findings'].keys())}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 17. approved_findings cap does NOT evict on idempotent same-action re-approve
+# ---------------------------------------------------------------------------
+
+def test_approved_findings_cap_does_not_evict_on_idempotent_same_action(
+    coordinator, monkeypatch,
+):
+    """Idempotency under cap pressure: cap=2, fill it, then re-approve an
+    already-approved finding with a fresh command_id. The cap must not
+    fire (no new entry is being added), and the older non-rewritten
+    finding must remain in the map. Symmetric counterpart to
+    `test_approved_findings_cap_does_not_evict_on_rewrite` which covers
+    approve↔dismiss flips."""
+    from agents.egs_agent import coordinator as coord_mod
+    monkeypatch.setattr(coord_mod, "MAX_APPROVED_FINDINGS", 2)
+    state = _base_state()
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c-x",
+         "finding_id": "f_drone1_X", "action": "approve"},
+        {"kind": "finding_approval", "command_id": "c-y",
+         "finding_id": "f_drone1_Y", "action": "approve"},
+    ]
+    coordinator.process_actions(state)
+    # Re-approve X with a fresh cmd_id. Should be a no-op write (idempotent),
+    # NOT trigger eviction of Y.
+    state["incoming_actions"] = [
+        {"kind": "finding_approval", "command_id": "c-x2",
+         "finding_id": "f_drone1_X", "action": "approve"},
+    ]
+    coordinator.process_actions(state)
+    assert set(state["egs_state"]["approved_findings"].keys()) == {
+        "f_drone1_X", "f_drone1_Y",
+    }
+    assert state["egs_state"]["approved_findings"]["f_drone1_X"] == "approved"
+    assert state["egs_state"]["approved_findings"]["f_drone1_Y"] == "approved"
