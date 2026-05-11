@@ -155,8 +155,13 @@ emit_if_exists mesh "agents/mesh_simulator/main.py" \
   "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
 
 # --- EGS (Qasim) ----------------------------------------------------------
+# Module-mode invocation: agents/egs_agent/main.py uses absolute imports
+# (`from agents.egs_agent.validation import ...`) which fail with
+# ModuleNotFoundError under the bare-script form. Mirrors the drone agent's
+# `python3 -m agents.drone_agent` pattern on line 165 and the working EGS
+# invocation in scripts/run_beat5_capture.sh.
 emit_if_exists egs "agents/egs_agent/main.py" \
-  "cd $REPO_ROOT && python3 agents/egs_agent/main.py 2>&1 | tee $LOG_DIR/egs.log"
+  "cd $REPO_ROOT && python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
 
 # --- Drone agents (Kaleel) -------------------------------------------------
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
