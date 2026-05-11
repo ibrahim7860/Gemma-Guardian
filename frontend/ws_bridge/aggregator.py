@@ -101,16 +101,41 @@ class StateAggregator:
         of truth at runtime — seeding it here keeps the aggregator output
         schema-valid in isolation (regression-tested in ``test_aggregator``).
 
+        LDD-2 (2026-05-11 finding-approval plan): joins Qasim's PR #45 field
+        ``egs_state.approved_findings`` (a ``{finding_id: "approved"|
+        "dismissed"}`` map) against the active_findings bucket. Findings whose
+        id appears in the map with value ``"approved"`` get
+        ``approved: True`` + ``operator_status: "approved"`` stamped on the
+        output dict; with value ``"dismissed"`` get ``approved: False`` +
+        ``operator_status: "dismissed"``. Findings absent from the map (or
+        when the entire field is missing/None, which is schema-valid because
+        the field is OPTIONAL) pass through untouched — ``operator_status``
+        stays at whatever the drone published, typically ``"pending"``. The
+        mutation applies only to the deep-copied output; ``self._findings``
+        is never touched.
+
         Returned dict is independent: caller mutation does not affect internal
         buckets.
         """
         egs_copy = deepcopy(self._egs)
         egs_copy["timestamp"] = timestamp_iso
+        approved_map = egs_copy.get("approved_findings") or {}
+        active_findings = []
+        for v in self._findings.values():
+            f = deepcopy(v)
+            status = approved_map.get(f.get("finding_id"))
+            if status == "approved":
+                f["approved"] = True
+                f["operator_status"] = "approved"
+            elif status == "dismissed":
+                f["approved"] = False
+                f["operator_status"] = "dismissed"
+            active_findings.append(f)
         return {
             "type": "state_update",
             "timestamp": timestamp_iso,
             "contract_version": VERSION,
             "egs_state": egs_copy,
-            "active_findings": [deepcopy(v) for v in self._findings.values()],
+            "active_findings": active_findings,
             "active_drones": [deepcopy(v) for v in self._drones.values()],
         }
