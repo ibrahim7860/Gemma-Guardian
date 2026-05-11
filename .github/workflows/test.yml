@@ -88,8 +88,11 @@ jobs:
           cache: true
       - name: Install redis-server
         run: sudo apt-get update && sudo apt-get install -y redis-server
-      - name: Sync ws_bridge + dev extras (locked)
-        run: uv sync --extra ws_bridge --extra dev --frozen
+      - name: Sync ws_bridge + egs + sim + mesh + dev extras (locked)
+        # The finding-approval green-check e2e launches a real EGS coordinator
+        # subprocess (needs egs extra for langgraph) plus dev_fake_producers
+        # with --emit=mesh-heartbeat (needs sim/mesh for scenario+fakeredis).
+        run: uv sync --extra ws_bridge --extra egs --extra sim --extra mesh --extra dev --frozen
       - name: Install Playwright chromium
         run: uv run --no-sync python -m playwright install --with-deps chromium
       - name: Generate topic constants
