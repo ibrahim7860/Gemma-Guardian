@@ -122,6 +122,10 @@ Validation code in Python imports these schemas. Frontend imports them too.
     }
   ],
   "active_zone_ids": ["zone_a", "zone_b"],
+  "approved_findings": {
+    "f_drone1_042": "approved",
+    "f_drone2_007": "dismissed"
+  },
   "base_image_path": "sim/fixtures/base_images/disaster_zone_v1_base.jpg",
   "base_image_extents": {
     "lat_min": 33.9990,
@@ -137,6 +141,35 @@ Validation code in Python imports these schemas. Frontend imports them too.
 `base_image_path` and `base_image_extents` are optional. They flow `disaster_zone_v1.yaml` → `agents/egs_agent/scenario_state.build_initial_egs_state` → `egs.state` → bridge → Flutter `MissionState`, where the dashboard's `map_panel.dart` renders the aerial as a 0.80-opacity overlay above its procedural-grid fallback (locked design decisions D1/D2/D3 in the plan). Either both fields are present, or both are omitted (both-or-neither validator on the Pydantic side at `sim/scenario.py:Scenario._base_image_path_and_extents_paired`). Scenarios without an aerial (currently `single_drone_smoke`, `resilience_v1`) omit both and the dashboard falls back to the grid.
 
 **Wire-path semantics:** `base_image_path` is repo-rooted (e.g. `sim/fixtures/base_images/...`). The dashboard maps this to its Flutter asset bundle namespace (`assets/base_images/...`) at the rendering boundary via `frontend/flutter_dashboard/lib/widgets/map_panel.dart:_resolveAssetPath`. The two on-disk copies are kept byte-identical by `scripts/sync_flutter_base_images.py` and locked down in CI by `scripts/tests/test_flutter_asset_sync.py`. Don't change the wire format to the Flutter-relative path — the repo-rooted form is what's self-documenting in scenario YAMLs and debug logs.
+
+**Approval registry (added 2026-05-11, Qasim's PR #45 + the bridge stamp in this PR):**
+
+`approved_findings` is an **optional** map of `finding_id → "approved" | "dismissed"`.
+It is populated by the EGS coordinator's `process_actions` finding_approval branch
+(`agents/egs_agent/coordinator.py:248-281`) as the operator clicks APPROVE or DISMISS
+on findings in the dashboard. Initial state seeds the field to `{}`
+(`agents/egs_agent/scenario_state.py:77`), so consumers should treat absent, `None`,
+and empty-dict identically — the schema field is not in `required`.
+
+This map is the source of truth for the operator's approval decisions. The WS
+bridge aggregator (`frontend/ws_bridge/aggregator.py` `snapshot()`) joins it against
+`active_findings[]` at snapshot time and stamps `operator_status: "approved"`
+(or `"dismissed"`) onto matching finding objects in the outbound `state_update`
+envelope — this is what drives the dashboard's grey → green check transition.
+Findings not present in the map pass through with whatever `operator_status` the
+drone originally published (typically `"pending"`).
+
+Dedup is keyed on `command_id` inside the EGS coordinator (`_seen_approval_command_ids`
+set in `EGSCoordinator.__init__`); replayed actions are logged as
+`egs.finding_approval duplicate dropped command_id=...` and skipped. Malformed
+payloads (missing `finding_id`, action outside `{approve, dismiss}`) are logged at
+WARNING and dropped without altering the map.
+
+Approval does NOT trigger replan in v1 — approval is informational. If a future beat
+needs "approved victim → auto-dispatch investigate_finding," that lands in a separate
+plan. Known long-run footguns: the map itself is unbounded today (no cap or TTL),
+and the coordinator's `_seen_approval_command_ids` set is also unbounded — both
+acceptable for demo length, both worth addressing post-submission.
 
 ## Contract 4: Findings Schema
 
@@ -161,7 +194,13 @@ Validation code in Python imports these schemas. Frontend imports them too.
 }
 ```
 
-`operator_status` ∈ {`pending`, `approved`, `dismissed`}
+`operator_status` ∈ {`pending`, `approved`, `dismissed`}. As of 2026-05-11, the
+drone-published value (typically `"pending"`) is the initial state, but the WS
+bridge aggregator overwrites this field on outbound `state_update` frames based on
+the EGS-side `egs_state.approved_findings` map in Contract 3 — the operator's
+decisions take precedence downstream. The bridge stamps only the enum form;
+Contract 4's `additionalProperties: false` means there is no companion `approved: bool`
+field on the finding object. Dashboard consumers should read `operator_status`.
 
 ## Contract 5: Task Assignment Schema
 
