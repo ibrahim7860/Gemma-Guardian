@@ -57,6 +57,10 @@ class EGSCoordinator:
         # "egs.findings_consumed total=N" so a broken migration or mesh-sim
         # crash mid-run becomes observable instead of silent.
         self._findings_accepted_total = 0
+        # Gate 4: finding_approval dedup. Same pattern as operator_command_dispatch:
+        # the bridge stamps each action with a unique command_id; we remember
+        # which ones we've processed so replayed messages are harmless.
+        self._seen_approval_command_ids: set[str] = set()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -108,6 +112,13 @@ class EGSCoordinator:
 
             # If drone went offline, replan!
             if prev_status == "active" and new_status == "offline":
+                trigger_replan = True
+
+            # Gate 4 (standalone tolerance): if a drone transitions from
+            # active to standalone it can no longer receive Redis task
+            # messages, so its assigned survey points must be
+            # redistributed to reachable drones.
+            if prev_status == "active" and new_status == "standalone":
                 trigger_replan = True
 
             # First time we see this drone *and* it's reporting "active": initial replan.
@@ -237,6 +248,38 @@ class EGSCoordinator:
                     cmd_name = cmd.get("command")
                     if cmd_name in ["restrict_zone", "exclude_zone", "recall_drone"]:
                         trigger_replan = True
+            elif kind == "finding_approval":
+                # Gate 4 (TODOS.md:19): consume finding_approval actions so
+                # approved findings flow back into egs.state and the
+                # dashboard's green-check becomes truthful.
+                cmd_id = action.get("command_id")
+                if cmd_id and cmd_id in self._seen_approval_command_ids:
+                    logger.info(
+                        "egs.finding_approval duplicate dropped command_id=%s",
+                        cmd_id,
+                    )
+                    continue
+                finding_id = action.get("finding_id")
+                approval_action = action.get("action")  # "approve" or "dismiss"
+                if finding_id and approval_action in ("approve", "dismiss"):
+                    approved = egs_state.setdefault("approved_findings", {})
+                    # Map the operator_actions schema value to the egs_state
+                    # schema value ("approve" → "approved", "dismiss" → "dismissed").
+                    status = "approved" if approval_action == "approve" else "dismissed"
+                    approved[finding_id] = status
+                    if cmd_id:
+                        self._seen_approval_command_ids.add(cmd_id)
+                    logger.info(
+                        "egs.finding_approval confirmed finding_id=%s action=%s",
+                        finding_id,
+                        status,
+                    )
+                else:
+                    logger.warning(
+                        "egs.finding_approval malformed: finding_id=%s action=%s",
+                        finding_id,
+                        approval_action,
+                    )
 
         return {**state, "egs_state": egs_state, "trigger_replan": trigger_replan, "incoming_actions": []}
 
