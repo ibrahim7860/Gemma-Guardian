@@ -8,9 +8,27 @@ keeps emitting ``egs.state`` and per-drone ``findings`` until Qasim
 (EGS) and Kaleel (drone agent) ship their real publishers.
 
 Channel families (gated by --emit):
-    state       drones.<drone_id>.state         (every tick, schema: drone_state)
-    egs         egs.state                       (every 2 ticks, schema: egs_state)
-    findings    drones.<drone_id>.findings      (every 8 ticks, schema: finding)
+    state           drones.<drone_id>.state         (every tick, schema: drone_state)
+    egs             egs.state                       (every 2 ticks, schema: egs_state)
+    findings        drones.<drone_id>.findings      (every 8 ticks, schema: finding)
+    mesh-heartbeat  mesh.adjacency_matrix           (every tick, placeholder)
+
+The ``mesh-heartbeat`` mode exists to satisfy the EGS coordinator's
+``_await_mesh_sim`` startup healthcheck (see agents/egs_agent/main.py)
+without paying the cost of spawning the full ``agents.mesh_simulator``
+subprocess in finding-approval e2e tests. The healthcheck blocks until
+any message arrives on ``mesh.adjacency_matrix`` and does not validate
+payload contents, so a minimal contract-shaped placeholder is enough.
+
+When BOTH ``findings`` and ``mesh-heartbeat`` are in --emit, this
+script additionally mirrors each finding onto
+``drones.<id>.findings.delivered``. The real ``agents.mesh_simulator``
+performs that raw→delivered relay (with range gating) in production;
+in the mesh-heartbeat test escape hatch, we collapse the two roles into
+this single script so the EGS coordinator's findings subscription
+(``drones.*.findings.delivered`` since PR1) actually receives payloads.
+This is dev-only behavior — production keeps raw publish and the mesh
+range gate cleanly separated.
 
 WARNING: Still dev-only scaffolding. Channel and schema bindings come from
 shared.contracts.topics and shared.contracts.validate; do not hardcode
@@ -65,6 +83,7 @@ from shared.contracts import validate  # noqa: E402  (post-sys.path)
 from shared.contracts.topics import (  # noqa: E402
     EGS_STATE,
     per_drone_findings_channel,
+    per_drone_findings_delivered_channel,
     per_drone_state_channel,
 )
 
@@ -84,7 +103,14 @@ _FINDING_TYPE_ROTATION: List[str] = [
 # Allowed tokens for --emit. Each value enables one channel family. Default
 # (all three) keeps backwards compatibility with existing dev workflows
 # that did not pass --emit.
-_EMIT_CHANNEL_TOKENS: List[str] = ["state", "egs", "findings"]
+_EMIT_CHANNEL_TOKENS: List[str] = ["state", "egs", "findings", "mesh-heartbeat"]
+
+
+# Channel that the EGS coordinator subscribes to for its mesh-sim healthcheck
+# (see agents/egs_agent/main.py::_await_mesh_sim). Hardcoded here rather than
+# imported from shared.contracts.topics because the heartbeat-emit mode is a
+# dev-only escape hatch for tests, not a contract-level publisher.
+_MESH_ADJACENCY_CHANNEL: str = "mesh.adjacency_matrix"
 
 
 # Default schema-valid drone_id for the dev producer. See module docstring
@@ -173,6 +199,30 @@ def _build_finding(drone_id: str, counter: int) -> Dict[str, Any]:
     payload["validation_retries"] = 0
     payload["operator_status"] = "pending"
     return payload
+
+
+def _build_mesh_heartbeat(drone_id: str) -> Dict[str, Any]:
+    """Build a minimal ``mesh.adjacency_matrix`` heartbeat payload.
+
+    Used by the finding-approval e2e (Task 6 of the 2026-05-11 plan) so the
+    real EGS coordinator's mesh-sim healthcheck (``_await_mesh_sim`` in
+    ``agents/egs_agent/main.py``) passes without launching a full
+    ``agents.mesh_simulator`` subprocess. The coordinator only blocks until
+    the first message arrives on this channel — payload contents are not
+    validated by the healthcheck — so we emit a stable, contract-shaped
+    placeholder.
+
+    Deliberately NOT validated against any locked schema. The real
+    ``agents.mesh_simulator`` owns ``mesh.adjacency_matrix``; this emitter
+    is a dev-only stand-in to unblock e2e tests that don't need the full
+    mesh range-gate simulation. Marked plainly via the ``source`` field
+    so anyone reading Redis traffic can tell this isn't the real producer.
+    """
+    return {
+        "timestamp_iso_ms": _now_iso_ms(),
+        "adjacency": {drone_id: {}},
+        "source": "dev_fake_producers",
+    }
 
 
 def _validate_or_die(schema_name: str, payload: Dict[str, Any]) -> None:
@@ -300,6 +350,7 @@ def _run(args: argparse.Namespace) -> int:
 
     drone_state_channel: str = per_drone_state_channel(drone_id)
     finding_channel: str = per_drone_findings_channel(drone_id)
+    finding_delivered_channel: str = per_drone_findings_delivered_channel(drone_id)
 
     tick: int = 0
     finding_counter: int = 0
@@ -308,7 +359,21 @@ def _run(args: argparse.Namespace) -> int:
         emit_state: bool = "state" in args.emit
         emit_egs: bool = "egs" in args.emit
         emit_findings: bool = "findings" in args.emit
+        emit_mesh_heartbeat: bool = "mesh-heartbeat" in args.emit
         while True:
+            # Mesh-sim healthcheck heartbeat: every tick. Skipped unless
+            # --emit explicitly includes "mesh-heartbeat" — this mode is
+            # only intended for e2e tests that exercise the real EGS
+            # coordinator without spinning up agents.mesh_simulator.
+            if emit_mesh_heartbeat:
+                mh_payload = _build_mesh_heartbeat(drone_id)
+                # Heartbeat payload has no locked schema; skip validation.
+                _publish(client, _MESH_ADJACENCY_CHANNEL, mh_payload)
+                print(
+                    f"[fake_producer] tick={tick} channel={_MESH_ADJACENCY_CHANNEL} "
+                    f"source=dev_fake_producers"
+                )
+
             # Drone state: every tick. Skipped when --emit excludes "state"
             # (hybrid mode: sim/waypoint_runner.py owns drones.<id>.state).
             if emit_state:
@@ -347,6 +412,21 @@ def _run(args: argparse.Namespace) -> int:
                     f"finding_id={finding_payload['finding_id']} "
                     f"type={finding_payload['type']}"
                 )
+                # When the mesh-heartbeat escape hatch is active, also
+                # mirror the finding onto the .delivered channel that
+                # agents.egs_agent subscribes to (since PR1). The real
+                # mesh simulator performs that relay with range gating;
+                # we collapse the roles here so e2e tests don't have to
+                # spawn the full mesh sim alongside the heartbeat
+                # placeholder. See module docstring.
+                if emit_mesh_heartbeat:
+                    _publish(client, finding_delivered_channel, finding_payload)
+                    print(
+                        f"[fake_producer] tick={tick} "
+                        f"channel={finding_delivered_channel} "
+                        f"finding_id={finding_payload['finding_id']} "
+                        f"(mesh-sim passthrough)"
+                    )
                 finding_counter += 1
 
             tick += 1

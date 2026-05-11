@@ -20,7 +20,11 @@ from scripts import dev_fake_producers as dfp  # noqa: E402
 
 def test_parser_default_emits_all_channels():
     args = dfp._parse_args([])
-    assert args.emit == ["state", "egs", "findings"]
+    # mesh-heartbeat was added to the default set when the EGS-coordinator
+    # finding-approval e2e (Task 6 of the 2026-05-11 plan) needed a stand-in
+    # for agents.mesh_simulator. See scripts/dev_fake_producers.py module
+    # docstring for the rationale.
+    assert args.emit == ["state", "egs", "findings", "mesh-heartbeat"]
 
 
 def test_parser_emit_csv_subset():
