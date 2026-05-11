@@ -20,21 +20,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from sim.scenario import load_scenario
-
-
-def _resolve_scenario_path(arg: str) -> Path:
-    p = Path(arg)
-    if p.exists():
-        return p
-    candidate = _PROJECT_ROOT / "sim" / "scenarios" / f"{arg}.yaml"
-    if candidate.exists():
-        return candidate
-    raise FileNotFoundError(f"scenario not found: {arg!r} (also looked at {candidate})")
+from sim.scenario import load_scenario, resolve_scenario_path
 
 
 def list_drone_ids(scenario_arg: str) -> list[str]:
-    scenario = load_scenario(_resolve_scenario_path(scenario_arg))
+    scenario = load_scenario(resolve_scenario_path(scenario_arg))
     return [d.drone_id for d in scenario.drones]
 
 

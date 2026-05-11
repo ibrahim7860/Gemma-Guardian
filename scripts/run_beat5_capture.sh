@@ -186,7 +186,7 @@ fi
 # 5. Component launch order: mesh_sim, EGS (waits for mesh adjacency),
 #    sim, drone agents, bridge, flutter http server.
 # ---------------------------------------------------------------------------
-emit mesh "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 -m agents.mesh_simulator --redis-url $REDIS_URL --egs-lat 34.0000 --egs-lon -118.5000 2>&1 | tee $LOG_DIR/mesh.log"
+emit mesh "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 -m agents.mesh_simulator --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
 
 emit egs "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
 

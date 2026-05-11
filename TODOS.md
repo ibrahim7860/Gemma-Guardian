@@ -51,13 +51,11 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## Mesh Simulator Follow-ups
 
-### Derive EGS lat/lon from active scenario YAML
-- **What:** Teach `agents/mesh_simulator/main.py` to accept `--scenario <name>` (mirroring `sim/waypoint_runner.py`), load it via `sim/scenario.py:load_scenario`, and pull `origin.lat` / `origin.lon` as the EGS position. Keep `--egs-lat` / `--egs-lon` as an explicit override for tests that need a custom position. Then strip the redundant `--egs-lat`/`--egs-lon` flags from `scripts/launch_swarm.sh`, `scripts/run_beat5_capture.sh`, and the 6 e2e fixtures that hardcode them today.
-- **Why:** `MeshSimulator.forward_finding` silently returns 0 when `egs_pos is None`, dropping every finding. PRs #42 and #43 papered over this in 7 callers by hardcoding scenario-origin coords; that's the same value duplicated 7 times. A scenario change would silently desync them. Single source of truth fixes the trap permanently.
-- **Pros:** One source of truth for scenario coords; no per-caller hardcoding; new scenarios automatically work; CI traps stay caught at the schema layer.
-- **Cons:** Couples mesh sim startup to scenario YAML loading (already a `sim` extra, so no new dep); needs a sensible fallback when `--scenario` is omitted (current behavior: no EGS, drop everything — surprising but explicit).
-- **Context:** Bug surfaced 2026-05-10 as 6 CI Playwright failures after PR #41 made the mesh sim the required findings gateway (bridge subscribes to `.findings.delivered`). Hardcoded callers today: `scripts/launch_swarm.sh:146`, `scripts/run_beat5_capture.sh:188`, `frontend/ws_bridge/tests/test_e2e_playwright.py`, `test_e2e_playwright_multi_drone.py`, `test_e2e_phase3.py`, `test_e2e_playwright_dom_render.py`, `test_e2e_playwright_real_drone_findings.py`, `test_e2e_playwright_egs_findings.py`. All three shipped scenarios (`disaster_zone_v1`, `resilience_v1`, `single_drone_smoke`) use `origin: {lat: 34.0000, lon: -118.5000}`.
-- **Owner:** Unassigned (post-submission cleanup; current workaround works for demo capture).
+### CLOSED — Derive EGS lat/lon from active scenario YAML
+- **Resolution (2026-05-11):** Shipped per `docs/plans/2026-05-11-mesh-sim-scenario-derived-egs.md`. `agents/mesh_simulator/main.py` accepts `--scenario <name>` and reads `origin.lat/.lon` via the new shared `sim/scenario.py:resolve_scenario_path()` helper (also adopted by `sim/list_drones.py` — DRY). Precedence: explicit `--egs-lat/--egs-lon` wins with a stderr `WARN`; else scenario origin; else **exit 2** with a clear stderr `ERROR` so the silent-zero-findings bug class (PR #41/#42/#43) cannot recur.
+- **Callers migrated to `--scenario`:** `scripts/launch_swarm.sh`, `scripts/run_beat5_capture.sh`, `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py`, `test_e2e_playwright_real_drone_findings.py`. The 4 synthetic-position e2e tests (`test_e2e_phase3`, `test_e2e_playwright`, `test_e2e_playwright_multi_drone`, `test_e2e_playwright_egs_findings`) keep explicit flags because their positions don't match any real scenario.
+- **Tests:** 5 new CLI tests in `agents/mesh_simulator/tests/test_cli_scenario.py` (scenario-by-id, scenario-by-path, unknown-id error, explicit-override WARN, no-flags ERROR + exit 2). Regression guard rewritten as `test_shell_launcher_passes_egs_config_to_mesh_simulator` — parametrized over `scripts/*.sh` that launch the mesh sim, asserts EITHER `--scenario` OR both `--egs-lat/--egs-lon` on every invocation. Picks up future launchers automatically. Two Playwright e2e tests migrated and green (DOM-render + real-drone-findings).
+- **Owner:** Closed by Ibrahim 2026-05-11.
 
 ## Drone-Agent Follow-ups
 

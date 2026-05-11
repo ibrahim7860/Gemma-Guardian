@@ -61,6 +61,7 @@ from agents.mesh_simulator.range_filter import (
     is_drone_in_egs_link_range,
 )
 from shared.contracts.config import CONFIG
+from sim.scenario import load_scenario, resolve_scenario_path
 from shared.contracts.logging import now_iso_ms
 from shared.contracts.schemas import validate_or_raise
 from shared.contracts.topics import (
@@ -465,7 +466,18 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument("--redis-url", default=CONFIG.transport.redis_url)
     parser.add_argument("--range-meters", type=float, default=200.0)
     parser.add_argument("--egs-link-range-meters", type=float, default=500.0)
-    parser.add_argument("--egs-lat", type=float, default=None, help="EGS latitude (defaults to omitted = no EGS)")
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Scenario id or path. EGS position is read from origin.lat/.lon.",
+    )
+    parser.add_argument(
+        "--egs-lat",
+        type=float,
+        default=None,
+        help="EGS latitude (explicit override; wins over --scenario with a warning).",
+    )
     parser.add_argument("--egs-lon", type=float, default=None)
     parser.add_argument("--adjacency-hz", type=float, default=1.0)
     return parser.parse_args(list(argv) if argv is not None else None)
@@ -473,17 +485,52 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
     args = _parse_args(argv)
+    # EGS position precedence (Plan 2026-05-11-mesh-sim-scenario-derived-egs):
+    #   1. Explicit --egs-lat/--egs-lon wins (warn if --scenario is also set).
+    #   2. Else --scenario → origin.lat/.lon from the scenario YAML.
+    #   3. Else exit 2 with a clear error so the silent-zero-findings bug
+    #      class (PR #41/#42/#43) cannot recur.
+    explicit = args.egs_lat is not None and args.egs_lon is not None
+    if explicit:
+        if args.scenario is not None:
+            print(
+                "[mesh_simulator] WARN: --egs-lat/--egs-lon override --scenario origin",
+                file=sys.stderr,
+                flush=True,
+            )
+        egs_lat, egs_lon = args.egs_lat, args.egs_lon
+    elif args.scenario is not None:
+        try:
+            scenario = load_scenario(resolve_scenario_path(args.scenario))
+        except FileNotFoundError as e:
+            # Consistent with the no-flags ERROR path below and the clean
+            # error in sim/list_drones.py:38-40 — a scenario typo should not
+            # dump a stack trace to the operator.
+            print(
+                f"[mesh_simulator] ERROR: scenario not found — {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
+        egs_lat, egs_lon = scenario.origin.lat, scenario.origin.lon
+    else:
+        print(
+            "[mesh_simulator] ERROR: no EGS configured — pass --scenario or both --egs-lat/--egs-lon",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
+
     redis_client = redis.Redis.from_url(args.redis_url)
     sim = MeshSimulator(
         redis_client,
         range_m=args.range_meters,
         egs_link_range_m=args.egs_link_range_meters,
     )
-    if args.egs_lat is not None and args.egs_lon is not None:
-        sim.set_egs_position(args.egs_lat, args.egs_lon)
+    sim.set_egs_position(egs_lat, egs_lon)
     print(
         f"[mesh_simulator] range_m={args.range_meters} egs_link_range_m={args.egs_link_range_meters} "
-        f"redis={args.redis_url}",
+        f"redis={args.redis_url} egs=({egs_lat},{egs_lon})",
         flush=True,
     )
     sim.run_forever(adjacency_hz=args.adjacency_hz)

@@ -106,12 +106,13 @@ def test_real_drone_finding_renders_in_dashboard(tmp_path):
                 # PR1: bridge subscribes to drones.*.findings.delivered, so the
                 # mesh simulator must run as the passthrough between the drone
                 # agent's drones.<id>.findings publish and the bridge.
-                # EGS lat/lon match the disaster_zone_v1 scenario origin so
-                # `forward_finding` doesn't drop every payload on the
-                # `egs_pos is None` early-out.
+                # --scenario derives EGS lat/lon from the scenario's origin
+                # (single source of truth, 2026-05-11 cleanup). The mesh sim
+                # exits 2 with a clear error if no EGS source is passed, so
+                # the silent-drop bug class cannot regress here.
                 [sys.executable, "-m", "agents.mesh_simulator.main",
                  "--redis-url", redis_url,
-                 "--egs-lat", "34.0000", "--egs-lon", "-118.5000"],
+                 "--scenario", scenario],
                 name="mesh-sim",
             ), _spawn(
                 [sys.executable, "-m", "agents.drone_agent",
