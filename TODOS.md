@@ -52,6 +52,14 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## Demo Capture Follow-ups
 
+### GATE 4 wow moment Phase 5 — live eval + capture
+- **What:** Implementation shipped 2026-05-12 in commit `3b86d9a` (storyboard Sub-beat 3c). Phase 5 is the human-in-the-loop close-out: (1) `uv run python ml/evaluation/eval_wow_moment_trigger.py --runs 20` on the demo box; paste pass/fail + per-run rule_ids into the plan. (2) `uv run python scripts/measure_e4b_replan_latency.py`; paste p50/p95 into the plan to decide single-take vs jump-cut capture. (3) `bash scripts/check_wow_moment.sh` immediately before the capture session — exit 0 greenlights, exit 1 aborts. (4) Capture `docs_assets/dashboard-validation-wow-{failed,passed}.png`. (5) If eval reports <12/20 triggers, ship Phase 3c debug-injection fallback (`--inject-overcount-once` flag on `agents/egs_agent/main.py`) with one-paragraph writeup §4.3 disclosure.
+- **Why:** Phase 1–4 (code + tests + iron-rule contract regression) is done; Phase 5 is the demo-day verification + asset capture that the storyboard depends on. Without live numbers in the plan, we can't decide the capture cadence.
+- **Pros:** Closes the storyboard's load-bearing technical-innovation moment.
+- **Cons:** Burns ~30–60 min of demo-box time. Slight risk that Gemma 4 E4B doesn't naturally over-count, triggering Phase 3c.
+- **Context:** Plan: `docs/plans/2026-05-12-gate4-wow-moment.md`. Backend ships per-attempt validation events on `validation_events.jsonl` AND a transient `replan_in_flight_attempt_log` on the EGS state envelope. Dashboard banner mounts under `EgsLinkSeveredBanner` at `main.dart:156` and renders red→green chips with server-provided corrective text. Phase 4 cross-cutting tests + Playwright E2E green; reference screenshot at `/tmp/gg_wow_moment_capture/wow_moment_passed.png` (59 KB).
+- **Owner:** Ibrahim (Person 4). Sequenceable into the Beat 5 capture window on Day 14 — both use the same demo-box stack.
+
 ### Drone3-specific `report_finding` reliability check
 - **What:** Day-11 pre-flight: run the full `resilience_v1` stack three times in a row and assert that `validation_events.jsonl` contains at least one `report_finding` for drone3 within the standalone window t∈[120,180] on every run. Acceptance: 3/3 hits. Owner runs this before scheduling the Day 12 capture session.
 - **Why:** STATUS.md verifies live Gemma `report_finding` on drone1 (FEMA Katrina image, 5× runs 2026-05-06). drone3 has a different waypoint track in `sim/scenarios/resilience_v1.yaml` and a different frame mapping. If drone3's path doesn't pass over a frame that triggers a victim/damage finding, A2 fails every Beat 5 take. The capture plan (`docs/plans/2026-05-12-beat5-video-capture.md` prereq #10) calls this out and provides the mock-Ollama fallback, but the proactive Day-11 check is what avoids burning a capture afternoon on a broken assumption.
