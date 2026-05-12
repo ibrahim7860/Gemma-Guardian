@@ -12,11 +12,13 @@
 
 ## 1. Project name
 
-`Gemma-Guardian / FieldAgent`
+`FieldAgent`
 
-(README and writeup both use the dual name. Pick the one Kaggle prefers if
-the field allows only one — recommend "FieldAgent" if so, since it's shorter
-and what the writeup leads with.)
+(Decision 2026-05-12: ship as "FieldAgent" alone. Matches the writeup lead,
+operator-facing product name, fits single-name submission fields cleanly.
+The repo stays at `Gemma-Guardian` on GitHub — repo = dev name, submission
+= product name. If Kaggle's form supports a longer subtitle field, use
+"FieldAgent — offline multi-drone disaster response with Gemma 4".)
 
 ## 2. One-line description (≤140 chars)
 
@@ -83,11 +85,20 @@ Paste a 200-400 word excerpt from `WRITEUP.md`. Recommended seed text:
 > Function calling is the agentic backbone: every action-driving output is
 > a structured JSON tool call validated against hard constraints, with a
 > corrective re-prompt loop on failure (Algorithm 1 from the reference paper).
-> 720+ unit + integration tests cover the validation surface. The operator
-> dashboard (Flutter web) talks to the swarm through a FastAPI WebSocket
-> bridge that mirrors Redis channels — multilingual command input,
-> translated by Gemma 4 E4B, previewed in the operator's language before
-> dispatch.
+> Extensive unit + integration test coverage protects the validation surface.
+> The operator dashboard (Flutter web) talks to the swarm through a FastAPI
+> WebSocket bridge that mirrors Redis channels.
+>
+> **Multilingual operator commands** are translated by Gemma 4 E4B on the
+> EGS — a Spanish- or Arabic-speaking volunteer types in their own language,
+> sees a structured-task preview in canonical English, and dispatches with
+> one click. No translation API, so no internet dependency.
+>
+> *(If Unsloth fine-tune ships:)* Per-class building damage classification
+> on the **xBD** post-disaster benchmark via an **Unsloth-trained LoRA**
+> adapter loaded into the drone-side Ollama instance. Adapter weights
+> published to Hugging Face / Kaggle Models; full recipe and per-class
+> F1 numbers in `WRITEUP.md` §7.
 >
 > The included scripts/run_full_demo.sh launches the entire stack end-to-end
 > on a single laptop in under a minute. We've tested cold-start reproduction

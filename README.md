@@ -12,7 +12,7 @@ In post-disaster zones, cell towers fail in the first hour. Drones with cloud-AI
 
 *Submission video link added once the Beat 5 capture is final (target: Day 15, May 17, 2026).* Storyboard and capture rig: [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md), [`scripts/run_beat5_capture.sh`](scripts/run_beat5_capture.sh).
 
-## Quick start (one command)
+## Quick start
 
 ```bash
 git clone https://github.com/ibrahim7860/Gemma-Guardian.git
@@ -21,10 +21,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # one-time, https://docs.astra
 uv sync --all-extras
 ollama pull gemma4:e2b && ollama pull gemma4:e4b   # https://ollama.com/library/gemma4
 brew services start redis    # macOS — see docs/13-runtime-setup.md for Linux/WSL2
+
+# pane 1: full agent stack (sim + drones + EGS + bridge) on :9090
 scripts/run_full_demo.sh disaster_zone_v1 --duration=60
+
+# pane 2: Flutter dashboard dev server on :8000, talks to the bridge above
+scripts/run_dashboard_dev.sh
 ```
 
-Open the dashboard at [`http://localhost:8000/?ws=ws://127.0.0.1:9090/`](http://localhost:8000/?ws=ws://127.0.0.1:9090/) after launching `scripts/run_dashboard_dev.sh` in a second pane (the demo launcher only brings up the bridge on `:9090`). Clean up with `scripts/stop_demo.sh`.
+Open the dashboard at [`http://localhost:8000/?ws=ws://127.0.0.1:9090/`](http://localhost:8000/?ws=ws://127.0.0.1:9090/). Clean up with `scripts/stop_demo.sh`.
 
 For the cold-start path from a fresh box (no prior repo context, no warm uv cache), follow [`docs/sim-reproduction.md`](docs/sim-reproduction.md). It's the doc Phase G is locked to and was cold-tested on M1 macOS on 2026-05-12.
 
@@ -32,7 +37,7 @@ For the cold-start path from a fresh box (no prior repo context, no warm uv cach
 
 Reproduction works on **macOS (Metal), Linux (CPU or CUDA), or Windows 11 (WSL2)**:
 
-- 16 GB RAM minimum (32 GB recommended for running the 3-drone live-Gemma stack concurrently)
+- 16 GB RAM minimum (sufficient on Apple Silicon with the tuning recipe linked below; 32 GB recommended for headroom on Linux/CUDA where Ollama can't lean on Metal unified memory)
 - 50 GB free disk (Gemma 4 E2B is 7.2 GB, E4B is 9.6 GB; `uv` + Flutter deps add ~5 GB)
 - NVIDIA GPU optional — Ollama runs on CPU, Metal, or CUDA. The xBD fine-tune (Kaleel's GATE 3) needs a CUDA GPU; the resulting adapter loads on any Ollama-supported platform.
 

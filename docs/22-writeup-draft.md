@@ -354,9 +354,9 @@ and `test_replanning.py`.)
 
 ### 6.6 Empirical catch rate
 
-Across N demo runs of the full disaster scenario, the validation loop
-intercepted hallucinations as follows. **(Numbers TBD — populate from
-demo-run telemetry; see Table 2 in §8.)**
+Quantitative breakdown of validator pass-rate per locus (drone agent / EGS
+assignment / operator command) lives in §8 Table 2, populated from
+`validation_event` log telemetry of the demo runs.
 
 ---
 
@@ -396,12 +396,12 @@ live drone footage is future work.
 
 ### 7.B — If the Day-10 gate failed
 
-We attempted the LoRA fine-tune described above. We observed
-**(documented honestly: which step blocked, what numbers we measured, what
-we shipped instead)**. We shipped FieldAgent with base Gemma 4 E2B plus
-structured prompting and the validation loop. The base model's accuracy on
-our scenario fixtures is sufficient for the agentic-coordination claim; the
-fine-tune was an enhancement, not a load-bearing dependency. Honest
+We attempted the LoRA fine-tune described above and documented the
+blocker honestly (specifics filled in at submission time once we have
+final numbers). We shipped FieldAgent with base Gemma 4 E2B plus
+structured prompting and the validation loop. The base model's accuracy
+on our scenario fixtures is sufficient for the agentic-coordination claim;
+the fine-tune was an enhancement, not a load-bearing dependency. Honest
 engineering reporting matters more than a clean win.
 
 ---
@@ -516,15 +516,15 @@ within a 20-day hackathon window. Full rationale per item lives in
   produces a guaranteed assignment artifact even when the perception
   call is non-trivial; (b) a mock-Ollama mode (`scripts/ollama_mock_server.py`)
   is available for capture reproducibility. The fine-tune adapter (§7),
-  if it ships, is the real fix for this gap. Full investigation log:
-  [`plans/2026-05-12-drone3-reliability-capture.md`](plans/2026-05-12-drone3-reliability-capture.md).
+  if it ships, is the real fix for this gap. Full background in the
+  project's design plans directory.
 
 - **~1 Hz perception sampling.** Gemma 4 E2B inference latency on commodity
   GPUs is the bottleneck. Sampling more frequently than 1 Hz starves the
-  reasoning node. Real deployments would run one model per drone and
-  raise the rate. On Apple Silicon, 3 concurrent vision+tools calls
-  serialize on Metal; the tuning recipe in the link above (above) brings
-  this back into a survivable window for laptop demos.
+  reasoning node. Real deployments would run one model per drone and raise
+  the rate. On Apple Silicon, 3 concurrent vision+tools calls serialize on
+  Metal; the tuning recipe cited above brings this back into a survivable
+  window for laptop demos.
 
 - **Resilience scenarios are scripted.** Drone failure, fire spread, and
   EGS link drop are timeline-fired in
@@ -586,6 +586,6 @@ the paper benchmarks against.
 edge-enabled architecture from Nguyen et al. (2026) holds when the cloud
 LLM is replaced with on-device Gemma 4 — the validation loop still catches
 hallucinations, the swarm still coordinates through dropout, the operator
-still drives the system in their own language. 3.6 billion people live in
-climate-vulnerable regions. The first hour of every disaster is the hour
-the cloud is unreachable. **Cell towers fail first. Brains shouldn't.**
+still drives the system in their own language. Billions of people live in
+climate-vulnerable regions, and the first hour of every disaster is the
+hour the cloud is unreachable. **Cell towers fail first. Brains shouldn't.**

@@ -40,6 +40,16 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 (none — see `docs/superpowers/specs/2026-05-02-phase3-dashboard-mvp-design.md` once it lands)
 
+## Submission Follow-ups
+
+### Writeup §7: collapse Fine-Tuning section after GATE 3 decision
+- **What:** `docs/22-writeup-draft.md` §7 currently ships with both 7.A (gate passed — full Unsloth LoRA narrative) and 7.B (gate failed — honest-failure narrative). After Kaleel signals GATE 3 GO/NO-GO (Day 12 / 2026-05-12), delete the non-applicable variant + the conditional banner above §7.A. This is the only mandatory section-collapse left before submission.
+- **Why:** Doc cannot ship with both variants. The conditional shape is a holdover from authoring the writeup before GATE 3 was decided.
+- **Pros:** Mechanical edit once the decision is in — one delete + the variant header re-titled to `## 7. Fine-Tuning` (no `A`/`B`).
+- **Cons:** none — pure cleanup.
+- **Context:** Caught by `/review` of `25b2411`. Project-name decision ("FieldAgent" alone for Kaggle) made in same review. Surrounding submission artifacts (README, Kaggle form, writeup) all reviewed clean except this single deferred item.
+- **Owner:** Ibrahim (frontend/writeup), unblocked by Kaleel's GATE 3 signal.
+
 ## Demo Capture Follow-ups
 
 ### Drone3-specific `report_finding` reliability check
