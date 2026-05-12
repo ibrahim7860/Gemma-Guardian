@@ -66,9 +66,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agents.egs_agent.replanning import assign_survey_points  # noqa: E402
-from agents.egs_agent.validation import EGSValidationNode  # noqa: E402
 from shared.contracts import CONFIG  # noqa: E402
+
+# NOTE: `assign_survey_points` + `EGSValidationNode` are imported LAZILY
+# inside the measurement helpers below (see `_measure_single_attempt`,
+# `_measure_forced_retry`). Top-level import pulls
+# `agents.egs_agent.coordinator` which requires `langgraph`. The CI
+# `sim + mesh + scripts` job intentionally does NOT install the `egs`
+# extra, so a top-level egs_agent import here would break `--dry-run`
+# (which doesn't need the LLM at all) and the helper-only unit tests
+# (`_p50_p95`, `render_markdown`, markdown-shape checks). Real
+# measurement is the only path that requires the egs extras — that's
+# correct because you can't measure latency without the actual function
+# under test.
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +141,13 @@ def _overcount_assignment(point_ids: Sequence[str], drone_ids: Sequence[str]) ->
 # ---------------------------------------------------------------------------
 
 async def _measure_single_attempt(egs_state: Dict[str, Any]) -> float:
-    """One real call into ``assign_survey_points`` (live LLM). Returns ms."""
+    """One real call into ``assign_survey_points`` (live LLM). Returns ms.
+
+    Imports are local so the surrounding module is importable without the
+    `egs` extra (langgraph). See module docstring for the rationale.
+    """
+    from agents.egs_agent.replanning import assign_survey_points
+    from agents.egs_agent.validation import EGSValidationNode
     node = EGSValidationNode()
     t0 = time.perf_counter()
     await assign_survey_points(egs_state, node)
@@ -149,7 +165,11 @@ async def _measure_forced_retry(egs_state: Dict[str, Any]) -> float:
     invocation #1, so this measures (1× corrective re-prompt overhead +
     1× real LLM call). Caller is expected to NOT combine this with
     ``--dry-run``.
+
+    Imports are local — see ``_measure_single_attempt`` for rationale.
     """
+    from agents.egs_agent.replanning import assign_survey_points
+    from agents.egs_agent.validation import EGSValidationNode
     node = EGSValidationNode()
     point_ids = [p["id"] for p in egs_state["survey_points"]]
     bad = _overcount_assignment(point_ids, DRONE_IDS)

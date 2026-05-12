@@ -97,6 +97,10 @@ def test_dry_run_with_force_one_retry_mentions_corrective_reprompt():
 
 
 def test_p50_and_p95_match_known_latencies():
+    # Exercises `_measure_single_attempt`, which lazy-imports the egs_agent
+    # path (langgraph). Skip cleanly in CI jobs that don't sync the `egs`
+    # extra (e.g. `sim + mesh + scripts`).
+    pytest.importorskip("langgraph")
     """Feed deterministic latencies 100, 200, ..., 1000 ms into the
     measurement loop via a sleeping mock. With 10 evenly-spaced samples
     the script should compute p50 ≈ 550 ms and p95 ≈ 950 ms.
