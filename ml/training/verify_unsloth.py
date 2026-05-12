@@ -95,15 +95,24 @@ def make_toy_lora_check(state: dict):
         FastVisionModel.for_training(model)
 
         img = Image.new("RGB", (224, 224), color=(128, 128, 128))
-        # Direct processor call without apply_chat_template — Unsloth's Gemma 4 processor
-        # in transformers 5.5.0 doesn't expose a chat_template attribute, so we bypass
-        # it and rely on the processor's built-in image-token insertion. For training
-        # this just needs valid input_ids + pixel_values + attention_mask shapes.
-        inputs = tokenizer(
-            text="Classify the damage to the building in this image.",
-            images=img,
-            return_tensors="pt",
-        ).to(model.device)
+        # Gemma 4 processor requires an explicit image token in the text or the
+        # forward fails with "Image features and image tokens do not match, tokens: 0,
+        # features: 256". Try apply_chat_template first (proper path), fall back to
+        # the processor's image_token attribute, fall back to a literal "<image>"
+        # marker which most multimodal processors recognize.
+        text = None
+        try:
+            messages = [{"role": "user", "content": [
+                {"type": "image"},
+                {"type": "text", "text": "Classify the damage to the building."},
+            ]}]
+            text = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=False, tokenize=False
+            )
+        except (ValueError, AttributeError, NotImplementedError):
+            tok = getattr(tokenizer, "image_token", None) or "<start_of_image>"
+            text = f"{tok}\nClassify the damage to the building."
+        inputs = tokenizer(text=text, images=img, return_tensors="pt").to(model.device)
         # Label the last 3 tokens so loss has signal but stays cheap.
         labels = torch.full_like(inputs["input_ids"], -100)
         if labels.shape[1] >= 3:
