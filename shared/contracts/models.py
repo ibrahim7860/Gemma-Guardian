@@ -289,6 +289,40 @@ class _RecentValidationEvent(_StrictModel):
     issue: Optional[str] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{2,}$")
 
 
+class ReplanAttempt(_StrictModel):
+    """Per-attempt record for the in-flight EGS replan retry loop.
+
+    Populated only while a replan is mid-flight; cleared 3 seconds after the
+    replan completes. Powers the dashboard "wow moment" banner that shows
+    Algorithm 1 hallucination correction live. Distinct from
+    `_RecentValidationEvent` (Contract 11 audit tail) — that is a terminal
+    historical record; this is a transient per-attempt stream.
+
+    Fields:
+        timestamp: ISO 8601 UTC with millisecond precision (matches the
+            existing iso_timestamp_utc_ms shape used everywhere else in
+            Contract 3).
+        attempt_n: 1-indexed attempt number within the retry loop.
+        valid: True iff the attempt passed validation; False on rule-id
+            violations.
+        rule_id: Optional violation id (Layer 2 EGS rules:
+            ASSIGNMENT_TOTAL_MISMATCH, ASSIGNMENT_DUPLICATE_POINT, etc.).
+            None on valid attempts.
+        corrective_text: Optional rendered corrective prompt — the literal
+            string the loop appends to the LLM conversation. Sourced from
+            `RULE_REGISTRY[rule_id].corrective_template.format(...)` so the
+            dashboard renders the exact same text the model just saw.
+        details: Free-form per-rule extra context (assigned count, duplicate
+            point id, etc.) used only for debugging; not surfaced on camera.
+    """
+    timestamp: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+    attempt_n: int = Field(ge=1)
+    valid: bool
+    rule_id: Optional[str] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{2,}$")
+    corrective_text: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
 class EGSStateMessage(_StrictModel):
     mission_id: str = Field(min_length=1)
     mission_status: MissionStatus
@@ -300,6 +334,7 @@ class EGSStateMessage(_StrictModel):
     recent_validation_events: List[_RecentValidationEvent]
     active_zone_ids: List[str]
     approved_findings: Dict[str, Literal["approved", "dismissed"]] = Field(default_factory=dict)
+    replan_in_flight_attempt_log: List[ReplanAttempt] = Field(default_factory=list)
 
 
 # -- Contract 4: finding ------------------------------------------------------

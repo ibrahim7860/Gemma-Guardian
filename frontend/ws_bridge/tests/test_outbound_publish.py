@@ -131,7 +131,11 @@ def test_valid_finding_approval_publishes_and_acks(client, fake_client):
     assert payload["command_id"] == envelope["command_id"]
     assert payload["finding_id"] == envelope["finding_id"]
     assert payload["action"] == "approve"
-    assert payload["contract_version"] == "1.0.0"
+    # Tracks the live contract VERSION (bumped on every schema change) so
+    # this assertion doesn't have to be edited every time. The bridge stamps
+    # shared.contracts.VERSION on outbound payloads.
+    from shared.contracts import VERSION
+    assert payload["contract_version"] == VERSION
     # bridge stamps timestamp
     assert payload["bridge_received_at_iso_ms"].endswith("Z")
 

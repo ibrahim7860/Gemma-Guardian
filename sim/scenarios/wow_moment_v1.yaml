@@ -1,0 +1,89 @@
+# Wow-moment scenario v1 — 25 survey points across 3 drones, deliberately
+# clustered so Gemma 4 E4B is tempted to over-count when assigning them.
+#
+# Storyboard target: docs/21-demo-storyboard.md Sub-beat 3c (0:55 – 1:05) and
+# docs/plans/2026-05-12-gate4-wow-moment.md Phase 3b.
+#
+# The geometry is intentionally awkward — drone1 has 8 tightly-clustered
+# points in the NE plus one outlier; drone2 has 8 scattered along the west
+# edge; drone3 has 8 chaotically scattered through the south, some near
+# drone1 territory and some near drone2. The 25 ids are sp_001..sp_025
+# sequentially (NOT partitioned by drone — the storyboard contract is that
+# the LLM has to do the partitioning itself given just the flat list).
+#
+# Format documented in docs/14-disaster-scene-design.md (lines 30–68);
+# loaded via sim/scenario.py. Frame mappings all reuse
+# placeholder_intact_01.jpg because the wow moment is on the dashboard
+# banner, not the camera feed. No scripted_events — the replan is
+# triggered manually / by the operator during capture.
+scenario_id: wow_moment_v1
+origin: {lat: 34.0000, lon: -118.5000}
+area_m: 300
+
+# Reuse the existing static aerial from disaster_zone_v1. base_image_path +
+# base_image_extents must be set together (sim/scenario.py validator) — the
+# extents here match disaster_zone_v1_groundtruth.json so the existing
+# byte-synced asset under sim/fixtures/base_images/ is correct.
+base_image_path: sim/fixtures/base_images/disaster_zone_v1_base.jpg
+base_image_extents:
+  lat_min: 33.9990
+  lat_max: 34.0010
+  lon_min: -118.5010
+  lon_max: -118.4990
+
+drones:
+  - drone_id: drone1
+    # Tightly-clustered NE quadrant (8 within ~30m radius) + 1 outlier.
+    home: {lat: 34.0005, lon: -118.4995, alt: 0}
+    waypoints:
+      - {id: sp_001, lat: 34.00060, lon: -118.49940, alt: 25}
+      - {id: sp_002, lat: 34.00062, lon: -118.49938, alt: 25}
+      - {id: sp_003, lat: 34.00064, lon: -118.49942, alt: 25}
+      - {id: sp_004, lat: 34.00059, lon: -118.49936, alt: 25}
+      - {id: sp_005, lat: 34.00063, lon: -118.49934, alt: 25}
+      - {id: sp_006, lat: 34.00057, lon: -118.49941, alt: 25}
+      - {id: sp_007, lat: 34.00061, lon: -118.49945, alt: 25}
+      - {id: sp_008, lat: 34.00065, lon: -118.49939, alt: 25}
+      - {id: sp_009, lat: 34.00095, lon: -118.49920, alt: 25}   # outlier ~40m NE of cluster
+    speed_mps: 5
+
+  - drone_id: drone2
+    # West-edge scatter, 8 points roughly along the lon~-118.5008..-118.5005 strip.
+    home: {lat: 34.0000, lon: -118.5008, alt: 0}
+    waypoints:
+      - {id: sp_010, lat: 34.00080, lon: -118.50080, alt: 25}
+      - {id: sp_011, lat: 34.00050, lon: -118.50075, alt: 25}
+      - {id: sp_012, lat: 34.00020, lon: -118.50070, alt: 25}
+      - {id: sp_013, lat: 33.99990, lon: -118.50080, alt: 25}
+      - {id: sp_014, lat: 33.99960, lon: -118.50065, alt: 25}
+      - {id: sp_015, lat: 33.99930, lon: -118.50078, alt: 25}
+      - {id: sp_016, lat: 33.99900, lon: -118.50072, alt: 25}
+      - {id: sp_017, lat: 33.99870, lon: -118.50068, alt: 25}
+    speed_mps: 5
+
+  - drone_id: drone3
+    # Chaotic south quadrant — some points overlap drone1 territory (NE),
+    # some near drone2 (W edge). 8 points total.
+    home: {lat: 33.9995, lon: -118.5000, alt: 0}
+    waypoints:
+      - {id: sp_018, lat: 33.99940, lon: -118.49980, alt: 25}
+      - {id: sp_019, lat: 33.99910, lon: -118.49950, alt: 25}
+      - {id: sp_020, lat: 33.99880, lon: -118.49995, alt: 25}
+      - {id: sp_021, lat: 33.99860, lon: -118.50020, alt: 25}   # near drone2 W edge
+      - {id: sp_022, lat: 33.99845, lon: -118.49940, alt: 25}
+      - {id: sp_023, lat: 33.99905, lon: -118.49910, alt: 25}   # near drone1 NE territory
+      - {id: sp_024, lat: 33.99870, lon: -118.49965, alt: 25}
+      - {id: sp_025, lat: 33.99820, lon: -118.49985, alt: 25}
+    speed_mps: 5
+
+frame_mappings:
+  drone1:
+    - {tick_range: [0, 240], frame_file: placeholder_intact_01.jpg}
+  drone2:
+    - {tick_range: [0, 240], frame_file: placeholder_intact_01.jpg}
+  drone3:
+    - {tick_range: [0, 240], frame_file: placeholder_intact_01.jpg}
+
+# No scripted_events: the wow moment is replan-triggered (by operator action
+# during capture) rather than driven by a scripted_event from the runner.
+scripted_events: []
