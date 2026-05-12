@@ -37,6 +37,17 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${GG_LOG_DIR:-/tmp/gemma_guardian_logs}"
 REDIS_URL="${GG_REDIS_URL:-redis://localhost:6379/0}"
 
+# F4 (Phase G cold-run 2026-05-12): same venv-activation pattern as
+# scripts/launch_swarm.sh. tmux new-window subshells lose VIRTUAL_ENV, so
+# every emit'd python3 call must explicitly source the venv. See that
+# script's F4 comment for the full rationale.
+ACTIVATE=""
+if [ -f "$REPO_ROOT/.venv/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.venv/bin/activate"
+  ACTIVATE="source $REPO_ROOT/.venv/bin/activate && "
+fi
+
 DRY_RUN=0
 SCENARIO="disaster_zone_v1"
 DURATION=""
@@ -105,12 +116,12 @@ if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
 fi
 
 # --- Real sim (Hazim) — owns drones.<id>.state -----------------------------
-emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
-emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
+emit waypoint "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
+emit frames   "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
 
 # --- Fake EGS state (default ON; pass --no-fake-egs once Qasim ships) ----
 if [ "$FAKE_EGS" -eq 1 ]; then
-  emit egs_fake "cd $REPO_ROOT && python3 scripts/dev_fake_producers.py --emit=egs --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/egs_fake.log"
+  emit egs_fake "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 scripts/dev_fake_producers.py --emit=egs --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/egs_fake.log"
 else
   echo "[skip] egs_fake — --no-fake-egs set (Qasim's EGS owns egs.state)"
 fi
@@ -119,7 +130,7 @@ fi
 if [ "$FAKE_FINDINGS" -eq 1 ]; then
   IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
   for ID in "${DRONE_ARRAY[@]}"; do
-    emit "findings_$ID" "cd $REPO_ROOT && python3 scripts/dev_fake_producers.py --emit=findings --drone-id $ID --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/findings_${ID}_fake.log"
+    emit "findings_$ID" "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 scripts/dev_fake_producers.py --emit=findings --drone-id $ID --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/findings_${ID}_fake.log"
   done
 else
   echo "[skip] findings_* — --no-fake-findings set (drone agent owns drones.<id>.findings)"
@@ -130,7 +141,7 @@ fi
 # FastAPI app and exits (the module's `app = create_app()` returns immediately
 # with no server attached). `launch_swarm.sh` has the same bug; flagged as a
 # follow-up. The hybrid orchestrator gets the right invocation directly.
-emit ws_bridge "cd $REPO_ROOT && python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
+emit ws_bridge "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   tmux kill-window -t hybrid_demo:placeholder 2>/dev/null || true

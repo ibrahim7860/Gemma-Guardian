@@ -51,6 +51,15 @@ OLLAMA_URL="${GG_OLLAMA_URL:-http://127.0.0.1:11434}"
 SCENARIO="resilience_v1"
 SESSION="beat5_capture"
 
+# F4 (Phase G cold-run 2026-05-12): same venv-activation pattern as
+# scripts/launch_swarm.sh. See that script's F4 comment for rationale.
+ACTIVATE=""
+if [ -f "$REPO_ROOT/.venv/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.venv/bin/activate"
+  ACTIVATE="source $REPO_ROOT/.venv/bin/activate && "
+fi
+
 DRY_RUN=0
 PREWARM=1
 TEARDOWN=0
@@ -186,12 +195,12 @@ fi
 # 5. Component launch order: mesh_sim, EGS (waits for mesh adjacency),
 #    sim, drone agents, bridge, flutter http server.
 # ---------------------------------------------------------------------------
-emit mesh "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 -m agents.mesh_simulator --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
+emit mesh "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 -m agents.mesh_simulator --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
 
-emit egs "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
+emit egs "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL ${ACTIVATE}python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
 
-emit waypoint "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/waypoint_runner.log"
-emit frames "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 sim/frame_server.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/frame_server.log"
+emit waypoint "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/waypoint_runner.log"
+emit frames "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 sim/frame_server.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/frame_server.log"
 
 # Drone roster — locked to resilience_v1 scenario (drone1, drone2, drone3).
 # Hard-coded rather than derived via sim/list_drones.py so this script
@@ -199,14 +208,14 @@ emit frames "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 sim/frame_server.py --
 # scenario itself is locked at the top of this script (SCENARIO=...).
 DRONE_ARRAY=("drone1" "drone2" "drone3")
 for ID in "${DRONE_ARRAY[@]}"; do
-  emit "$ID" "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 -m agents.drone_agent --drone-id $ID --scenario $SCENARIO --redis-url $REDIS_URL --ollama-endpoint $OLLAMA_URL 2>&1 | tee $LOG_DIR/$ID.log"
+  emit "$ID" "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 -m agents.drone_agent --drone-id $ID --scenario $SCENARIO --redis-url $REDIS_URL --ollama-endpoint $OLLAMA_URL 2>&1 | tee $LOG_DIR/$ID.log"
 done
 
-emit ws_bridge "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL python3 -m uvicorn frontend.ws_bridge.main:app --host 127.0.0.1 --port $BRIDGE_PORT --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
+emit ws_bridge "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL ${ACTIVATE}python3 -m uvicorn frontend.ws_bridge.main:app --host 127.0.0.1 --port $BRIDGE_PORT --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
-emit ws_recorder "cd $REPO_ROOT && GG_LOG_DIR=$LOG_DIR python3 scripts/ws_recorder.py --bridge-url ws://127.0.0.1:$BRIDGE_PORT --out $LOG_DIR/ws_frames.jsonl --deadline-s 300 2>&1 | tee $LOG_DIR/ws_recorder.log"
+emit ws_recorder "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 scripts/ws_recorder.py --bridge-url ws://127.0.0.1:$BRIDGE_PORT --out $LOG_DIR/ws_frames.jsonl --deadline-s 300 2>&1 | tee $LOG_DIR/ws_recorder.log"
 
-emit flutter "cd $REPO_ROOT/frontend/flutter_dashboard/build/web && python3 -m http.server $FLUTTER_PORT --bind 127.0.0.1 2>&1 | tee $LOG_DIR/flutter.log"
+emit flutter "cd \"$REPO_ROOT\"/frontend/flutter_dashboard/build/web && ${ACTIVATE}python3 -m http.server $FLUTTER_PORT --bind 127.0.0.1 2>&1 | tee $LOG_DIR/flutter.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   tmux kill-window -t "${SESSION}:placeholder" 2>/dev/null || true

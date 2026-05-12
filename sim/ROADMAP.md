@@ -71,7 +71,8 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 
 ### Phase G — Lock + reproduction docs
 - v1 draft of [`docs/sim-reproduction.md`](../docs/sim-reproduction.md) shipped on `sim/phase-g-reproduction-docs` (cross-platform prereqs, uv install, `pytest sim/ agents/mesh_simulator/ scripts/tests/`, the three escalating one-command demos, per-layer health checks, common-failures section drawn from `sim-live-run-notes.md` + `scripts/tests/`). Linked from `docs/13-runtime-setup.md`.
-- Remaining: co-write follow-ups with Thayyil, then have an outside tester run cold from scratch on a fresh box and fix everything that breaks the cold run.
+- **Pre-Thayyil cold run (Ibrahim, M1 16GB, 2026-05-12):** Walked §1–§8 literally from a fresh `git clone`. 9 findings, all shipped in one PR. Script fixes with regression guards: F1 `run_drone3_reliability.sh --dry-run`; F4 `launch_swarm.sh` + `run_hybrid_demo.sh` + `run_beat5_capture.sh` `ACTIVATE` venv prefix (tmux subshells lose VIRTUAL_ENV); F8 escape inner quotes around `$REPO_ROOT` (spaces in path silently broke `cd`). Doc-edits to `sim-reproduction.md`: F7 Python 3.14, F2 `deactivate` note, F3 full-build §4a list, F5 Apple-Silicon Ollama tuning, F9 `drone_count` reconcile. Verified end-to-end from `env -i` shell. Full notes: [`docs/plans/2026-05-12-phase-g-cold-run-findings.md`](../docs/plans/2026-05-12-phase-g-cold-run-findings.md).
+- **Remaining:** Thayyil's Days-15–16 Linux/WSL2 fresh-machine cold-run is what formally closes Phase G. Surface should be minimal — every finding from the M1 pass is already addressed.
 
 ### Phase H — Submission
 - Final repro-doc fixes from cold-tester feedback. Backup of the demo box. On-call for any submission-time sim issue.

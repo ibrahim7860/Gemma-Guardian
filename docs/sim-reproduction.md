@@ -18,7 +18,7 @@ Redis. See [`CLAUDE.md`](../CLAUDE.md) for the full cross-platform stance.
 
 | Component | Version | Notes |
 |---|---|---|
-| Python | 3.11+ | 3.13 also works (Hazim's WSL2 box is 3.13.5 via pyenv) |
+| Python | 3.11+ | 3.13 / 3.14 also work (uv picks the latest available on your box; Hazim's WSL2 box is 3.13.5 via pyenv, Ibrahim's M1 cold-run was 3.14.4) |
 | Redis | 7+ | `brew install redis` / `apt install redis-server` |
 | Ollama | latest | https://ollama.com/download |
 | tmux | any | required by `scripts/launch_swarm.sh` (or use `--dry-run`) |
@@ -69,6 +69,18 @@ Activate the venv directly if you prefer not to prefix everything with
 source .venv/bin/activate          # macOS / Linux / WSL2
 # .venv\Scripts\activate            # Windows PowerShell
 ```
+
+If your shell already has another project's `.venv` activated, run
+`deactivate` first — `uv sync` prints a confusing
+`VIRTUAL_ENV=... does not match the project environment path .venv`
+warning otherwise and falls back to the on-disk venv path (correct, but
+unsettling).
+
+You don't strictly need to activate before running the `scripts/*.sh`
+launchers in §4 — those auto-detect `.venv/bin/activate` and source it
+inside the tmux subshells they spawn. Activating in your shell is still
+useful for running individual commands like `pytest` or `ruff` without
+the `uv run` prefix.
 
 ## 3. First-run validation: pytest
 
@@ -125,6 +137,19 @@ What this exercises:
   EGS) are logged as `[skip] <window> — <path> not present yet` rather than
   failing the launch. That's intentional and is what lets the sim run before
   the rest of the stack is wired.
+- **On a fully-built repo** (`uv sync --all-extras` already run), this ALSO
+  launches `agents/egs_agent/main.py`, the per-drone `agents/drone_agent`,
+  and the `ws_bridge` uvicorn server. Each will attempt to connect to
+  Ollama for Gemma 4 — pull `gemma4:e2b` and `gemma4:e4b` first (see
+  "Gemma 4 model tags" above in §1) or agent boot logs a clear Ollama
+  healthcheck warning and the run still proceeds, just without
+  perception output.
+- **`shared/config.yaml` `mission.drone_count` must match the scenario's
+  drone count.** The default `drone_count: 3` aligns with
+  `disaster_zone_v1` / `resilience_v1`. Before running
+  `single_drone_smoke` (1 drone), edit `mission.drone_count: 1` in
+  `shared/config.yaml` or `waypoint_runner` will exit with a clear
+  reconcile-the-two error.
 
 After the runners self-terminate, tear down with:
 
@@ -349,6 +374,17 @@ curl -s -X POST http://127.0.0.1:11434/api/chat \
 ```
 
 Once the model is warm, subsequent calls land in 30–45 s on CPU.
+
+**Apple Silicon (M1/M2/M3) + 3-drone concurrent vision+tools:** the text
+warm above is INSUFFICIENT. Metal serializes inference across drones at
+the daemon level; the warm-up has to mirror the real call shape (image
+bytes + the `report_finding` tool definition) and the agent's httpx
+timeout has to be raised. The reproducible recipe (tested on M1 16GB):
+`OLLAMA_NUM_PARALLEL=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`,
+`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KEEP_ALIVE=30m`, vision+tools
+pre-warm via `scripts/run_drone3_reliability.sh:70-87`, and
+`DRONE_AGENT_OLLAMA_TIMEOUT_S=240`. Full tuning table + rationale:
+[`plans/2026-05-12-drone3-reliability-capture.md`](plans/2026-05-12-drone3-reliability-capture.md).
 
 ### Mesh adjacency is full-mesh in `disaster_zone_v1`
 

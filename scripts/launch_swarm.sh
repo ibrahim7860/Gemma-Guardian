@@ -30,6 +30,25 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${GG_LOG_DIR:-/tmp/gemma_guardian_logs}"
 REDIS_URL="${GG_REDIS_URL:-redis://localhost:6379/0}"
 
+# F4 (Phase G cold-run 2026-05-12): tmux `new-window` spawns a fresh shell that
+# doesn't inherit VIRTUAL_ENV from the caller, so every emit'd `python3 ...`
+# resolves to *system* python in the tmux pane — which lacks the project's
+# deps and crashes with ModuleNotFoundError. Compute an ACTIVATE prefix here
+# and prepend it to every emit'd command. Also source it into this script's
+# own shell so the list_drones.py call below uses the venv python too.
+# Regression guard: scripts/tests/test_launch_scripts.py::
+# test_launch_swarm_emits_venv_activation_when_present.
+ACTIVATE=""
+if [ -f "$REPO_ROOT/.venv/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.venv/bin/activate"
+  # Quote the path so it survives REPO_ROOTs that contain spaces (e.g.
+  # "/Users/.../CS Work/Repos/Gemma-Guardian"). Without quoting, `source`
+  # only reads the first word and fails with "is a directory". Caught
+  # during F4 fix verification on a dev clone with a space in the path.
+  ACTIVATE="source \"$REPO_ROOT/.venv/bin/activate\" && "
+fi
+
 DRY_RUN=0
 SCENARIO="disaster_zone_v1"
 DRONES="auto"
@@ -140,8 +159,8 @@ if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
 fi
 
 # --- Sim components (Hazim — always present) ------------------------------
-emit waypoint "cd $REPO_ROOT && python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
-emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
+emit waypoint "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/waypoint_runner.log"
+emit frames   "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 sim/frame_server.py    --scenario $SCENARIO --redis-url $REDIS_URL $DURATION_ARG 2>&1 | tee $LOG_DIR/frame_server.log"
 # EGS position is derived from the active scenario's `origin` via --scenario
 # (single source of truth — `agents/mesh_simulator/main.py` calls
 # `sim.scenario.resolve_scenario_path` and reads `origin.lat/.lon`).
@@ -152,7 +171,7 @@ emit frames   "cd $REPO_ROOT && python3 sim/frame_server.py    --scenario $SCENA
 # neither --scenario nor both --egs-lat/--egs-lon are passed, so this trap
 # cannot regress silently.
 emit_if_exists mesh "agents/mesh_simulator/main.py" \
-  "cd $REPO_ROOT && python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
+  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 agents/mesh_simulator/main.py --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
 
 # --- EGS (Qasim) ----------------------------------------------------------
 # Module-mode invocation: agents/egs_agent/main.py uses absolute imports
@@ -161,13 +180,13 @@ emit_if_exists mesh "agents/mesh_simulator/main.py" \
 # `python3 -m agents.drone_agent` pattern on line 165 and the working EGS
 # invocation in scripts/run_beat5_capture.sh.
 emit_if_exists egs "agents/egs_agent/main.py" \
-  "cd $REPO_ROOT && python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
+  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
 
 # --- Drone agents (Kaleel) -------------------------------------------------
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
 for ID in "${DRONE_ARRAY[@]}"; do
   emit_if_exists "$ID" "agents/drone_agent/__main__.py" \
-    "cd $REPO_ROOT && python3 -m agents.drone_agent --drone-id $ID --scenario $SCENARIO 2>&1 | tee $LOG_DIR/$ID.log"
+    "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m agents.drone_agent --drone-id $ID --scenario $SCENARIO 2>&1 | tee $LOG_DIR/$ID.log"
 done
 
 # --- WebSocket bridge (Ibrahim) ---------------------------------------------
@@ -175,7 +194,7 @@ done
 # app and exits if invoked as a script (no embedded server). Same form used by
 # scripts/run_hybrid_demo.sh and scripts/launch_dashboard_dev.sh.
 emit_if_exists ws_bridge "frontend/ws_bridge/main.py" \
-  "cd $REPO_ROOT && python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
+  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   # Drop the placeholder window now that real ones exist.
