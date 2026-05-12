@@ -45,8 +45,10 @@ def main():
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--grad-accum", type=int, default=4)
     ap.add_argument("--lr", type=float, default=2e-4)
-    ap.add_argument("--lora-rank", type=int, default=16)
+    ap.add_argument("--lora-rank", type=int, default=32, help="docs/12: r=32 default for vision LoRA (alpha matches r).")
     ap.add_argument("--lora-alpha", type=int, default=32)
+    ap.add_argument("--target-modules", default="all-linear", help='docs/12: Unsloth current default for vision.')
+    ap.add_argument("--finetune-vision-layers", action="store_true", help="docs/12: start with this OFF; flip on only if a language-only run plateaus.")
     ap.add_argument("--max-hours", type=float, default=24 * 7)
     args = ap.parse_args()
 
@@ -59,16 +61,18 @@ def main():
     )
     model = FastVisionModel.get_peft_model(
         model,
-        finetune_vision_layers=True,
+        finetune_vision_layers=args.finetune_vision_layers,
         finetune_language_layers=True,
         finetune_attention_modules=True,
         finetune_mlp_modules=True,
+        target_modules=args.target_modules,
         r=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=0.0,
         bias="none",
         random_state=42,
         use_rslora=False,
+        use_gradient_checkpointing="unsloth",
     )
     FastVisionModel.for_training(model)
 
@@ -85,6 +89,8 @@ def main():
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
         bf16=True,
+        optim="adamw_8bit",
+        lr_scheduler_type="cosine",
         logging_steps=20,
         save_strategy="epoch",
         eval_strategy="epoch",

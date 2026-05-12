@@ -9,9 +9,14 @@ venv/
 # ML artifacts (large; kept out of git)
 ml/data/xbd*/
 ml/data/raw/
+ml/data/patches/
+ml/data/manifest.json
 ml/adapters/*/
 !ml/adapters/.gitkeep
 !ml/data/.gitkeep
+
+# xBD raw tarballs (downloaded locally; never committed)
+xbd_data/
 
 # Logs
 /tmp/fieldagent_logs/

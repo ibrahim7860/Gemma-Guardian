@@ -54,7 +54,11 @@ def load_check():
 
 
 def toy_lora_check():
-    """One LoRA forward+backward on a synthetic patch — shape compatibility, no convergence claim."""
+    """One LoRA forward+backward on a synthetic patch — shape compatibility, no convergence claim.
+
+    Uses the same toggles as finetune_lora.py defaults (docs/12 §Training):
+    vision_layers=False, language+attention+mlp=True, target_modules='all-linear', r=32.
+    """
     import torch
     from unsloth import FastVisionModel  # type: ignore
 
@@ -64,12 +68,14 @@ def toy_lora_check():
     )
     model = FastVisionModel.get_peft_model(
         model,
-        finetune_vision_layers=True,
-        finetune_language_layers=False,
+        finetune_vision_layers=False,
+        finetune_language_layers=True,
         finetune_attention_modules=True,
-        finetune_mlp_modules=False,
-        r=8, lora_alpha=16, lora_dropout=0.0,
+        finetune_mlp_modules=True,
+        target_modules="all-linear",
+        r=32, lora_alpha=32, lora_dropout=0.0,
         bias="none", random_state=0, use_rslora=False, loftq_config=None,
+        use_gradient_checkpointing="unsloth",
     )
     FastVisionModel.for_training(model)
 
@@ -82,11 +88,47 @@ def toy_lora_check():
     out.loss.backward()
 
 
+def gguf_export_check():
+    """docs/12 Day-2 step 5: GGUF export of merged vision tower must work end-to-end.
+
+    Saves merged 16-bit safetensors, converts to GGUF q4_k_m, asserts files exist.
+    The Ollama-load sub-step is left to the operator (requires daemon); this checks
+    that Unsloth's export pipeline produces the artifacts at all.
+    """
+    import tempfile
+    from pathlib import Path
+    from unsloth import FastVisionModel  # type: ignore
+
+    model, tokenizer = FastVisionModel.from_pretrained(
+        model_name="unsloth/gemma-4-e2b",
+        load_in_4bit=True,
+    )
+    model = FastVisionModel.get_peft_model(
+        model,
+        finetune_vision_layers=False,
+        finetune_language_layers=True,
+        finetune_attention_modules=True,
+        finetune_mlp_modules=True,
+        target_modules="all-linear",
+        r=8, lora_alpha=8, lora_dropout=0.0,
+        bias="none", random_state=0, use_rslora=False, loftq_config=None,
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        merged = Path(tmp) / "merged"
+        gguf = Path(tmp) / "gguf"
+        model.save_pretrained_merged(str(merged), tokenizer, save_method="merged_16bit")
+        assert merged.exists() and any(merged.iterdir()), f"merged export empty: {merged}"
+        model.save_pretrained_gguf(str(gguf), tokenizer, quantization_method="q4_k_m")
+        gguf_files = list(gguf.rglob("*.gguf"))
+        assert gguf_files, f"no .gguf produced under {gguf}; saw {list(gguf.rglob('*'))}"
+
+
 def main():
     results = {
         "import": check("import", import_check),
         "load_gemma_4_e2b_4bit": check("load_gemma_4_e2b_4bit", load_check),
         "toy_lora_forward_backward": check("toy_lora_forward_backward", toy_lora_check),
+        "gguf_export_merged_vision": check("gguf_export_merged_vision", gguf_export_check),
     }
     print("\n=== Day-2 Unsloth Verification ===")
     print(json.dumps(results, indent=2))
