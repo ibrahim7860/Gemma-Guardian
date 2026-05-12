@@ -68,9 +68,16 @@ def make_toy_lora_check(state: dict):
     Uses the same toggles as finetune_lora.py defaults (docs/12 §Training):
     vision_layers=False, language+attention+mlp=True, target_modules='all-linear', r=32.
     Mutates `state["model"]` so the GGUF check can reuse the LoRA-wrapped model.
+
+    Input construction follows Unsloth's Gemma 4 vision recipe: apply_chat_template
+    first to materialize the prompt as a string, then call the processor with
+    (text=, images=) keywords. Passing a message list positionally hits
+    `patch_processor_call() got multiple values for argument 'images'` because
+    Unsloth's processor patch re-extracts images from the message content.
     """
     def _run():
         import torch
+        from PIL import Image
         from unsloth import FastVisionModel  # type: ignore
 
         model, tokenizer = state["model"], state["tokenizer"]
@@ -87,36 +94,63 @@ def make_toy_lora_check(state: dict):
         )
         FastVisionModel.for_training(model)
 
-        from PIL import Image
         img = Image.new("RGB", (224, 224), color=(128, 128, 128))
-        msg = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Classify."}]}]
-        inputs = tokenizer(msg, images=[img], return_tensors="pt").to(model.device)
-        target = torch.zeros_like(inputs["input_ids"])
-        out = model(**inputs, labels=target)
+        messages = [{"role": "user", "content": [
+            {"type": "image"},
+            {"type": "text", "text": "Classify the damage to the building."},
+        ]}]
+        text = tokenizer.apply_chat_template(
+            messages, add_generation_prompt=False, tokenize=False
+        )
+        inputs = tokenizer(text=text, images=img, return_tensors="pt").to(model.device)
+        # Label the last 3 tokens so loss has signal but stays cheap.
+        labels = torch.full_like(inputs["input_ids"], -100)
+        if labels.shape[1] >= 3:
+            labels[:, -3:] = inputs["input_ids"][:, -3:]
+        out = model(**inputs, labels=labels)
         out.loss.backward()
-        state["model"] = model  # save LoRA-wrapped for GGUF check
+        state["model"] = model  # save LoRA-wrapped for adapter+GGUF check
         return True
     return _run
 
 
-def make_gguf_export_check(state: dict):
-    """docs/12 Day-2 step 5: GGUF export of merged vision tower must work end-to-end.
+def make_export_check(state: dict):
+    """LoRA adapter save (REQUIRED) + GGUF export (best-effort per docs/12 §271).
 
-    Saves merged 16-bit safetensors, converts to GGUF q4_k_m, asserts files exist.
-    Reuses the LoRA-wrapped model from toy_lora_check.
+    The LoRA adapter save is what training produces and what we deploy. It must work.
+    GGUF export of the merged vision tower is anticipated to be fragile (transformers
+    5.x × Unsloth interaction hits NotImplementedError on revert_weight_conversion);
+    docs/12 §271 documents the vLLM/transformers serving fallback. We try it,
+    record the result for the writeup, and never fail the gate on it alone.
     """
     def _run():
         import tempfile
+        import traceback
         from pathlib import Path
         model, tokenizer = state["model"], state["tokenizer"]
         with tempfile.TemporaryDirectory() as tmp:
-            merged = Path(tmp) / "merged"
-            gguf = Path(tmp) / "gguf"
-            model.save_pretrained_merged(str(merged), tokenizer, save_method="merged_16bit")
-            assert merged.exists() and any(merged.iterdir()), f"merged export empty: {merged}"
-            model.save_pretrained_gguf(str(gguf), tokenizer, quantization_method="q4_k_m")
-            gguf_files = list(gguf.rglob("*.gguf"))
-            assert gguf_files, f"no .gguf produced under {gguf}; saw {list(gguf.rglob('*'))}"
+            adapter = Path(tmp) / "adapter"
+            model.save_pretrained(str(adapter))
+            tokenizer.save_pretrained(str(adapter))
+            assert adapter.exists() and any(adapter.iterdir()), f"LoRA adapter save empty: {adapter}"
+            print(f"  LoRA adapter save: OK ({sum(1 for _ in adapter.rglob('*')) } files)")
+
+            state["gguf_ok"] = False
+            try:
+                merged = Path(tmp) / "merged"
+                gguf = Path(tmp) / "gguf"
+                model.save_pretrained_merged(str(merged), tokenizer, save_method="merged_16bit")
+                model.save_pretrained_gguf(str(gguf), tokenizer, quantization_method="q4_k_m")
+                gguf_files = list(gguf.rglob("*.gguf"))
+                if gguf_files:
+                    state["gguf_ok"] = True
+                    print(f"  GGUF export: OK ({len(gguf_files)} file(s))")
+                else:
+                    print(f"  GGUF export: SOFT-FAIL — no .gguf produced under {gguf}")
+            except Exception as e:
+                print(f"  GGUF export: SOFT-FAIL — {type(e).__name__}: {str(e)[:200]}")
+                print("  (docs/12 §271 fallback: serve merged 16-bit via vLLM / transformers, not Ollama)")
+                traceback.print_exc()
         return True
     return _run
 
@@ -139,19 +173,23 @@ def main():
     results["toy_lora_forward_backward"], _ = check(
         "toy_lora_forward_backward", make_toy_lora_check(state)
     )
-    results["gguf_export_merged_vision"], _ = check(
-        "gguf_export_merged_vision", make_gguf_export_check(state)
+    # adapter_save_required is the hard gate; gguf_export is reported separately as soft signal.
+    results["adapter_save_required"], _ = check(
+        "adapter_save_required", make_export_check(state)
     )
-    _finalize(results)
+    _finalize(results, gguf_ok=state.get("gguf_ok", False))
 
 
-def _finalize(results: dict[str, bool]) -> None:
+def _finalize(results: dict[str, bool], gguf_ok: bool = False) -> None:
     print("\n=== Day-2 Unsloth Verification ===")
-    print(json.dumps(results, indent=2))
+    print(json.dumps({**results, "gguf_export_soft_signal": gguf_ok}, indent=2))
     if not all(results.values()):
         print("\nGATE FAILED — abandon fine-tuning per docs/12.")
         sys.exit(1)
-    print("\nGATE PASSED — proceed with xBD fine-tuning workstream.")
+    if not gguf_ok:
+        print("\nGATE PASSED with GGUF caveat — train adapter, serve via vLLM/transformers per docs/12 §271.")
+    else:
+        print("\nGATE PASSED — proceed with xBD fine-tuning workstream (full Ollama path available).")
     sys.exit(0)
 
 
