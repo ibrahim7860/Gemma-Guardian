@@ -16,9 +16,30 @@
 # Usage:
 #   scripts/run_drone3_reliability.sh                 # one run
 #   for i in 1 2 3; do scripts/run_drone3_reliability.sh || exit 1; done   # 3/3 test
+#   scripts/run_drone3_reliability.sh --dry-run        # print plan, do nothing
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# --dry-run: print the planned mesh-sim/sim/drone-agent invocations and exit 0
+# without touching brew, ollama, redis, or the filesystem. Required by
+# scripts/tests/test_launch_scripts.py::test_shell_launcher_passes_egs_config_to_mesh_simulator
+# which walks every *.sh that launches the mesh sim and asserts each invocation
+# passes either --scenario or both --egs-lat/--egs-lon. Without this branch the
+# test would actually execute brew stop / ollama serve and time out at 30s.
+for _arg in "$@"; do
+  if [ "$_arg" = "--dry-run" ]; then
+    echo "[run_drone3_reliability] --dry-run: planned invocations"
+    echo "  python3 sim/waypoint_runner.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240"
+    echo "  python3 sim/frame_server.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240"
+    echo "  python3 agents/mesh_simulator/main.py --redis-url redis://localhost:6379/0 --scenario resilience_v1"
+    echo "  python3 -m agents.drone_agent --drone-id drone1 --scenario resilience_v1"
+    echo "  python3 -m agents.drone_agent --drone-id drone2 --scenario resilience_v1"
+    echo "  python3 -m agents.drone_agent --drone-id drone3 --scenario resilience_v1"
+    exit 0
+  fi
+done
+
 TS=$(date +%s)
 RUN_LOG_DIR="/tmp/gg_drone3_reliability_${TS}"
 mkdir -p "$RUN_LOG_DIR"
