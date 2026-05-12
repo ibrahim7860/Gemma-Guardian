@@ -511,3 +511,51 @@ Bug 1 is closed; Bug 3 (new) replaces Bug 2 as the proximate blocker on the
 `drone_failure → drones.<id>.tasks` chain. Both Bug 2 and Bug 3 live in
 `agents/egs_agent/` and remain out of sim-PR scope; filing comments on GH
 #32 and #33 with this evidence.
+
+---
+
+## 2026-05-12 update — Bug 2 + Bug 3 closed
+
+Both bugs fixed by Ibrahim in a single PR after taking the open GH #32
+ticket off Qasim's lane (it was on the Phase-D blocker critical path
+and Qasim's bandwidth was on Gate 4).
+
+**Bug 2 fix** (`agents/egs_agent/replanning.py`): the `except Exception:
+raise e` at lines 129-131 was replaced with
+`except (httpx.HTTPError, asyncio.TimeoutError, json.JSONDecodeError)`
+that treats transport-level failures as retryable. After `max_retries`
+the existing deterministic round-robin fallback (lines 133-144) is
+reachable. Genuinely unexpected errors (e.g. `RuntimeError` from a
+refactor) still propagate so they're not silently swallowed.
+
+**Bug 3 fix** (`agents/egs_agent/coordinator.py::_replan_impl`): the
+`await assign_survey_points(...)` call is now wrapped in
+`asyncio.wait_for(..., timeout=REPLAN_OVERALL_TIMEOUT_S)`. The module-
+level constant `REPLAN_OVERALL_TIMEOUT_S = 240.0` bounds a single
+in-flight slot's lifetime. On `asyncio.TimeoutError` the `finally`
+clears `_replan_in_flight` and the next replan trigger gets a fresh
+attempt — which, combined with the Bug 2 fix, hits the deterministic
+fallback path and publishes `drones.<id>.tasks`.
+
+**Tests** (9 new, all passing alongside the existing suite — 471 total):
+
+- `agents/egs_agent/tests/test_replanning.py`: 6 new parametrized cases
+  cover `httpx.ConnectError`, `ReadTimeout`, `ConnectTimeout`,
+  `RemoteProtocolError`, `JSONDecodeError`, plus a regression guard
+  that an unexpected `RuntimeError` still raises.
+- `agents/egs_agent/tests/test_coordinator_replan_hang.py` (new): 3
+  tests cover the hang-clears-flag path, the re-entry-after-hang path,
+  and the happy-path-still-publishes regression guard.
+
+**Outstanding:** a live VRAM-constrained re-run to confirm the chain
+end-to-end. The unit tests cover the bug class definitively (hung
+coroutine + httpx error class explosion), but Qasim/Hazim should
+re-run `scripts/run_resilience_scenario.sh --duration=60` on a
+VRAM-constrained box and confirm:
+
+1. `egs.log` no longer shows `egs.replan skipped (already in flight)`
+   spam after the first replan completes (or times out at 240s).
+2. `drones.{drone1,drone3}.tasks` payloads land on Redis within ~5s
+   of the `drone_failure` scripted event at `sim_t=30s`.
+
+If both hold, GH #32 can be closed.

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Dict, Any, List
@@ -126,10 +127,31 @@ Rules:
             messages.append({"role": "assistant", "content": "I failed to generate valid json."})
             messages.append({"role": "user", "content": f"Return a proper JSON object. Error: {e}"})
             retries += 1
-        except Exception as e:
-            logger.error(f"Error during replanning: {e}")
-            raise e
-            
+        except (httpx.HTTPError, asyncio.TimeoutError, json.JSONDecodeError) as e:
+            # GH #32 / Bug 2 fix (Phase D resilience-scenario blocker): treat
+            # transport-level failures and malformed JSON as retryable so the
+            # deterministic fallback at the end of this function is reachable.
+            # Pre-fix this was `except Exception: raise e`, which propagated
+            # httpx.ReadTimeout / ConnectError up into _replan_impl, which
+            # combined with Bug 3 (in-flight guard stuck) starved every
+            # drone_failure-triggered replan during 240 s resilience runs.
+            #
+            # We don't append corrective messages here — the LLM didn't fail
+            # to follow instructions, the transport did. Just retry with the
+            # same messages so the LLM sees the same prompt on the retry.
+            # After max_retries, fall through to the deterministic
+            # round-robin fallback below.
+            logger.warning(
+                "Replanning attempt %d/%d failed (%s: %s); will retry or fall back",
+                retries + 1, max_retries + 1, type(e).__name__, e,
+            )
+            retries += 1
+        # Note: no bare `except Exception` here. Genuinely unexpected errors
+        # (e.g. NameError, attribute errors from a refactor) should propagate
+        # to _replan_impl's exception handler so they're not silently
+        # swallowed by the fallback path. Add narrow except clauses above as
+        # new retryable error classes surface.
+
     # Failed after retries - fallback deterministic (round robin)
     logger.error("LLM Replanning failed after retries, using deterministic fallback.")
     fallback_assignments = [{"drone_id": d, "survey_point_ids": []} for d in active_drones]

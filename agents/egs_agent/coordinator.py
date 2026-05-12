@@ -35,6 +35,21 @@ SEEN_FINDING_ID_TTL_S = 300.0
 # realistic demo so the cap is purely defensive.
 MAX_APPROVED_FINDINGS: int = 1000
 
+# GH #32 / Bug 3 fix (Phase D resilience-scenario blocker): outer timeout on
+# the spawned replan task. assign_survey_points has its own internal httpx
+# timeout (180 s) plus a retry budget, but Ollama can *hang* without
+# erroring under VRAM eviction stalls — the await never returns, the
+# `finally` never clears `_replan_in_flight`, and every subsequent replan
+# trigger gets dedup-skipped indefinitely. This outer wait_for() forces a
+# bounded lifetime on the in-flight slot. On TimeoutError the `finally`
+# clears the flag and the next replan trigger gets a fresh attempt (which
+# will hit the deterministic fallback path on second hang).
+#
+# Sized at 240 s = 4 min so a normal multi-retry LLM call (worst case
+# ~3 × ~30-45 s warm vision+tools) completes comfortably, but a true hang
+# is recovered well within a 240 s scenario duration.
+REPLAN_OVERALL_TIMEOUT_S: float = 240.0
+
 
 class EGSState(TypedDict):
     egs_state: Dict[str, Any]
@@ -357,9 +372,28 @@ class EGSCoordinator:
 
         `_replan_in_flight` is set by the caller (`replan`) before this task
         is scheduled; we only clear it here in the `finally` block.
+
+        GH #32 / Bug 3 fix: wrap the assign_survey_points await in
+        `asyncio.wait_for` so a hung Ollama call (VRAM eviction stall, daemon
+        wedge) cannot lock the in-flight slot indefinitely. Without this,
+        every subsequent replan trigger — including drone_failure-triggered
+        replans — gets dedup-skipped forever. See module-level
+        REPLAN_OVERALL_TIMEOUT_S for sizing rationale.
         """
         try:
-            assignment = await assign_survey_points(egs_state_snapshot, self.validation_node)
+            try:
+                assignment = await asyncio.wait_for(
+                    assign_survey_points(egs_state_snapshot, self.validation_node),
+                    timeout=REPLAN_OVERALL_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "egs.replan abandoned after %.0fs (assign_survey_points hung "
+                    "— probably Ollama VRAM eviction stall). In-flight slot will "
+                    "be cleared so the next trigger can run.",
+                    REPLAN_OVERALL_TIMEOUT_S,
+                )
+                return
             if not assignment:
                 return
             if not self.redis_client:
