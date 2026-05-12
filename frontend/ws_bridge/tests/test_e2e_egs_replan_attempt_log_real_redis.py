@@ -43,6 +43,18 @@ from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# This test instantiates a real `EGSCoordinator`, which transitively imports
+# `langgraph`. The `bridge` CI job (`tests.yml::bridge`) deliberately syncs
+# only `--extra ws_bridge --extra dev` — no `egs` extra — so langgraph isn't
+# available there. Without this guard, pytest's collection phase raises
+# `ModuleNotFoundError: No module named 'langgraph'` BEFORE the `pytestmark`
+# below can deselect the file via `-m "not e2e"`. Skipping at module-import
+# time keeps both CI jobs honest:
+#   * `bridge` job: skipped at collection (no langgraph) — exit 0.
+#   * `bridge_e2e` job: real run (egs extra present, `-m e2e` selects).
+pytest.importorskip("langgraph")
+
 from httpx_ws import aconnect_ws
 
 from agents.egs_agent import coordinator as coordinator_mod
@@ -51,6 +63,11 @@ from agents.egs_agent.scenario_state import build_initial_egs_state
 from agents.egs_agent.validation import EGSValidationNode
 from frontend.ws_bridge.tests._helpers import make_test_client
 from shared.contracts.topics import EGS_STATE
+
+# Mark every test in this module as e2e so CI's `bridge` job correctly
+# deselects via `-m "not e2e"` (the function-level `@pytest.mark.timeout(30)`
+# already enforces the per-test bound).
+pytestmark = pytest.mark.e2e
 
 
 # ---- fake LLM helpers ------------------------------------------------------

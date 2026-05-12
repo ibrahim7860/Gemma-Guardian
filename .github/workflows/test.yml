@@ -103,4 +103,9 @@ jobs:
           flutter pub get
           flutter build web --release
       - name: Run bridge e2e Playwright tests
-        run: PYTHONPATH=. uv run --no-sync python -m pytest frontend/ws_bridge/tests/test_e2e_playwright.py frontend/ws_bridge/tests/test_e2e_playwright_multi_drone.py frontend/ws_bridge/tests/test_e2e_playwright_finding_approval_green_check.py -m e2e -v
+        # GATE 4 wow moment additions (2026-05-12, commit 3b86d9a):
+        #   * test_e2e_playwright_validation_wow.py — synth-WS Playwright over
+        #     the new ValidationWowBanner (4 cases, ~30s).
+        #   * test_e2e_egs_replan_attempt_log_real_redis.py — real-fakeredis
+        #     EGSCoordinator→bridge→WS integration of the wow data path.
+        run: PYTHONPATH=. uv run --no-sync python -m pytest frontend/ws_bridge/tests/test_e2e_playwright.py frontend/ws_bridge/tests/test_e2e_playwright_multi_drone.py frontend/ws_bridge/tests/test_e2e_playwright_finding_approval_green_check.py frontend/ws_bridge/tests/test_e2e_playwright_validation_wow.py frontend/ws_bridge/tests/test_e2e_egs_replan_attempt_log_real_redis.py -m e2e -v
