@@ -70,6 +70,7 @@ class DroneRuntime:
         agent_step_period_s: float = 1.0,
         agent_state_publish_period_s: float = 0.5,
         log_dir: Path | None = None,
+        ollama_timeout_s: float | None = None,
     ):
         self.drone_id = drone_id
         self.agent = DroneAgent(
@@ -78,6 +79,7 @@ class DroneRuntime:
             model=model,
             max_retries=max_retries,
             send_image=send_image,
+            ollama_timeout_s=ollama_timeout_s,
         )
         # Beat 5 Component 1: drone-side findings buffer + replay across an
         # EGS link drop. The BufferedPublisher wraps the raw RedisPublisher

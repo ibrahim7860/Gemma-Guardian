@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -108,6 +109,12 @@ async def _run(args: argparse.Namespace) -> int:
     sync_client = _redis_sync.Redis.from_url(args.redis_url)
     async_client = _redis_async.from_url(args.redis_url)
 
+    # Optional override for the reasoning-call httpx timeout. Used by
+    # `scripts/run_drone3_reliability.sh` on M1 16GB where serial 3-drone
+    # inference cycles take ~126s and need >120s of headroom. Default unchanged.
+    timeout_env = os.environ.get("DRONE_AGENT_OLLAMA_TIMEOUT_S")
+    ollama_timeout_s = float(timeout_env) if timeout_env else None
+
     runtime = DroneRuntime(
         drone_id=args.drone_id,
         scenario=scenario,
@@ -118,6 +125,7 @@ async def _run(args: argparse.Namespace) -> int:
         model=args.model,
         max_retries=args.max_retries,
         send_image=not args.text_only,
+        ollama_timeout_s=ollama_timeout_s,
     )
     if args.standalone:
         runtime.buffered_publisher.set_standalone(True)

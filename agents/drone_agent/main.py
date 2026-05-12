@@ -27,10 +27,13 @@ def _safe_fallback() -> dict:
 
 
 class DroneAgent:
-    def __init__(self, drone_id: str, ollama_endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b", max_retries: int = 3, send_image: bool = True, extra_options: dict | None = None):
+    def __init__(self, drone_id: str, ollama_endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b", max_retries: int = 3, send_image: bool = True, extra_options: dict | None = None, ollama_timeout_s: float | None = None):
         self.drone_id = drone_id
         self.perception = PerceptionNode()
-        self.reasoning = ReasoningNode(model=model, endpoint=ollama_endpoint, send_image=send_image, extra_options=extra_options)
+        reasoning_kwargs: dict = {"model": model, "endpoint": ollama_endpoint, "send_image": send_image, "extra_options": extra_options}
+        if ollama_timeout_s is not None:
+            reasoning_kwargs["timeout_s"] = ollama_timeout_s
+        self.reasoning = ReasoningNode(**reasoning_kwargs)
         self.validation = ValidationNode()
         self.memory = MemoryStore(drone_id=drone_id)
         # Inject memory.next_finding_id so finding_ids survive process restart
