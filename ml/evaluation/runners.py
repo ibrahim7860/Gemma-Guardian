@@ -25,12 +25,13 @@ from typing import Callable
 
 from PIL import Image
 
-CLASSIFY_PROMPT = "Classify the damage to the building in this image."
+CLASSIFY_PROMPT = (
+    "Classify the damage to the building in this image. "
+    "Reply with JSON only: "
+    "{\"damage_class\": one of [no_damage, minor_damage, major_damage, destroyed], "
+    "\"confidence\": float 0-1, \"visual_evidence\": short string}."
+)
 VALID_CLASSES = {"no_damage", "minor_damage", "major_damage", "destroyed"}
-
-USER_OPEN = "<start_of_turn>user\n"
-MODEL_OPEN = "<start_of_turn>model\n"
-TURN_CLOSE = "<end_of_turn>\n"
 
 
 def _parse_json_envelope(text: str) -> dict:
@@ -48,20 +49,25 @@ def _parse_json_envelope(text: str) -> dict:
     return obj
 
 
-def _build_prompt(image_token: str) -> str:
-    return (
-        f"{USER_OPEN}{image_token}\n{CLASSIFY_PROMPT}{TURN_CLOSE}{MODEL_OPEN}"
-    )
-
-
 def _make_runner(model, processor) -> Callable:
-    image_token = getattr(processor, "image_token", None) or "<|image|>"
-    prompt = _build_prompt(image_token)
-
     def run(img: Image.Image) -> dict:
         import torch
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": CLASSIFY_PROMPT},
+            ],
+        }]
+        # Use the model's own chat template so the prompt format matches what
+        # the model was trained on. For the -it variant this produces the
+        # canonical <bos><start_of_turn>user\n<start_of_image>...<end_of_turn>\n
+        # <start_of_turn>model\n boundary the model actually expects.
+        text = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
         inputs = processor(
-            text=[prompt],
+            text=[text],
             images=[[img]],
             return_tensors="pt",
             padding=False,
@@ -71,13 +77,12 @@ def _make_runner(model, processor) -> Callable:
                 **inputs,
                 max_new_tokens=128,
                 do_sample=False,
-                temperature=1.0,  # ignored when do_sample=False
                 pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id,
             )
-        # Decode only the newly-generated portion
         gen_ids = out[0][inputs["input_ids"].shape[1]:]
-        text = processor.tokenizer.decode(gen_ids, skip_special_tokens=True)
-        return _parse_json_envelope(text)
+        text_out = processor.tokenizer.decode(gen_ids, skip_special_tokens=True)
+        result = _parse_json_envelope(text_out)
+        return result
     return run
 
 

@@ -56,57 +56,58 @@ class XBDPatchDataset:
 
 
 def make_vision_collator(processor, repo_root: Path):
-    """Custom collator for Gemma 4 vision SFT — bypasses missing chat_template.
+    """Custom collator for Gemma 4 vision SFT using processor.apply_chat_template.
+
+    The Gemma-4-E2B-it processor ships with a Jinja chat_template that knows the
+    canonical format Gemma was trained on (including the image-token expansion).
+    Using it directly matches inference-time prompt construction and lets the
+    base model's instruction-following weights stay aligned with our LoRA.
 
     Input batch: list of dicts each shaped {messages: [user, assistant]} where
     user.content is [{type:image,image:<path>}, {type:text,text:str}] and
     assistant.content is a JSON string.
 
     Output: dict with input_ids, attention_mask, pixel_values, labels.
-    We format the chat manually using Gemma's turn markers and the model's
-    image token (<|image|>), then mask labels=-100 on the prompt portion so
-    loss is only computed on the assistant continuation.
+    Labels mask the prompt (everything before <start_of_turn>model\\n) to -100
+    so loss is computed only on the assistant continuation.
     """
     from PIL import Image
     import torch
-    image_token = getattr(processor, "image_token", None) or "<|image|>"
-    # Gemma-family chat markers
-    USER_OPEN = "<start_of_turn>user\n"
-    MODEL_OPEN = "<start_of_turn>model\n"
-    TURN_CLOSE = "<end_of_turn>\n"
 
     def collate(examples: list[dict]) -> dict:
-        prompts: list[str] = []          # everything up to and including MODEL_OPEN
-        full_texts: list[str] = []       # prompt + assistant continuation + TURN_CLOSE
+        prompts: list[str] = []
+        full_texts: list[str] = []
         images: list[Image.Image] = []
 
         for ex in examples:
             user_msg, assistant_msg = ex["messages"][0], ex["messages"][1]
-            user_text = ""
+            assistant_text = assistant_msg["content"]
+            if not isinstance(assistant_text, str):
+                assistant_text = "".join(
+                    p.get("text", "") for p in assistant_text if p.get("type") == "text"
+                )
+
+            # Resolve image path → PIL
             img_path = None
             for part in user_msg["content"]:
                 if part["type"] == "image":
                     img_path = part["image"]
-                elif part["type"] == "text":
-                    user_text = part["text"]
             assert img_path is not None, f"missing image in example: {ex}"
-
             full = (repo_root / img_path) if not Path(img_path).is_absolute() else Path(img_path)
             images.append(Image.open(full).convert("RGB"))
 
-            prompt = f"{USER_OPEN}{image_token}\n{user_text}{TURN_CLOSE}{MODEL_OPEN}"
-            assistant_text = assistant_msg["content"]
-            if not isinstance(assistant_text, str):
-                # safety: if assistant content is a list, join text parts
-                assistant_text = "".join(
-                    p.get("text", "") for p in assistant_text if p.get("type") == "text"
-                )
-            prompts.append(prompt)
-            full_texts.append(prompt + assistant_text + TURN_CLOSE)
+            # apply_chat_template with `add_generation_prompt=True` ends the
+            # string at `<start_of_turn>model\n` — that's our prompt boundary.
+            # Then we append the assistant continuation + the model-turn close.
+            prompt_only = processor.apply_chat_template(
+                [{"role": "user", "content": user_msg["content"]}],
+                add_generation_prompt=True,
+                tokenize=False,
+            )
+            full_text = prompt_only + assistant_text + "<end_of_turn>\n"
+            prompts.append(prompt_only)
+            full_texts.append(full_text)
 
-        # Gemma 4 processor expects images per-example as a nested list
-        # (each example can carry multiple images). A flat list is read as
-        # "one sample with N images" and triggers the size mismatch check.
         batch = processor(
             text=full_texts,
             images=[[im] for im in images],
@@ -115,13 +116,8 @@ def make_vision_collator(processor, repo_root: Path):
         )
         labels = batch["input_ids"].clone()
 
-        # Mask the prompt portion of each row to -100. We tokenize each prompt
-        # separately (matching how the processor would prepend image tokens),
-        # then mask the corresponding number of positions at the start.
+        # Mask the prompt prefix to -100 (compute loss only on assistant continuation).
         for i, prompt in enumerate(prompts):
-            # Tokenize the prompt with the SAME image expansion the full text got.
-            # Easiest path: count prompt tokens by running the processor on the
-            # prompt+image and using the resulting length minus 1 (for safety).
             prompt_ids = processor(
                 text=[prompt], images=[[images[i]]], return_tensors="pt", padding=False
             )["input_ids"][0]
