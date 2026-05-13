@@ -163,21 +163,15 @@ def make_export_check(state: dict):
             print(f"  LoRA adapter save (manual torch.save): OK "
                   f"({len(lora_state)} tensors, {n_params:,} params)")
 
+            # GGUF export deliberately SKIPPED in verify per docs/12 §271 fallback.
+            # save_pretrained_merged dequantizes Gemma 4 E2B 4-bit → 16-bit (~10 GB),
+            # which on a 25 GB RAM pod gets OOM-killed mid-merge before the gate
+            # banner can print. We don't need GGUF to train; only to deploy via
+            # Ollama. Deployment path: serve the merged 16-bit safetensors (or just
+            # the LoRA adapter applied on top of base Gemma 4) via vLLM /
+            # transformers instead of Ollama. Documented as known deviation.
             state["gguf_ok"] = False
-            try:
-                merged = Path(tmp) / "merged"
-                gguf = Path(tmp) / "gguf"
-                model.save_pretrained_merged(str(merged), tokenizer, save_method="merged_16bit")
-                model.save_pretrained_gguf(str(gguf), tokenizer, quantization_method="q4_k_m")
-                gguf_files = list(gguf.rglob("*.gguf"))
-                if gguf_files:
-                    state["gguf_ok"] = True
-                    print(f"  GGUF export: OK ({len(gguf_files)} file(s))")
-                else:
-                    print(f"  GGUF export: SOFT-FAIL — no .gguf produced under {gguf}")
-            except Exception as e:
-                print(f"  GGUF export: SOFT-FAIL — {type(e).__name__}: {str(e)[:200]}")
-                print("  (docs/12 §271 fallback: serve merged 16-bit via vLLM / transformers, not Ollama)")
+            print("  GGUF export: SKIPPED (docs/12 §271 fallback — serve via vLLM/transformers)")
         return True
     return _run
 
