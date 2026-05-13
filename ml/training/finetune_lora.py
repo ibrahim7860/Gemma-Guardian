@@ -37,15 +37,12 @@ if platform.system() == "Darwin":
 
 
 class XBDPatchDataset:
-    """Torch-style Dataset that loads JSONL + lazily resolves image paths to PIL.
+    """Lightweight torch-style dataset reading our format_for_gemma.py JSONL.
 
-    UnslothVisionDataCollator expects each example to be a dict with `messages`
-    where image entries hold a PIL.Image (not a path). We do the PIL load on
-    __getitem__ so 233K examples don't sit in RAM.
+    Each __getitem__ returns the raw {messages: [user, assistant]} dict. PIL
+    loading and processor application happen in the collator.
     """
-    def __init__(self, jsonl_path: Path, repo_root: Path, limit: int | None = None):
-        from PIL import Image  # noqa: F401  (used in __getitem__)
-        self.repo_root = repo_root
+    def __init__(self, jsonl_path: Path, limit: int | None = None):
         with jsonl_path.open() as f:
             self.examples = [json.loads(line) for line in f]
         if limit is not None:
@@ -55,24 +52,82 @@ class XBDPatchDataset:
         return len(self.examples)
 
     def __getitem__(self, idx):
-        from PIL import Image
-        raw = self.examples[idx]
-        messages = []
-        for msg in raw["messages"]:
-            if isinstance(msg["content"], str):
-                messages.append({"role": msg["role"], "content": msg["content"]})
-                continue
-            new_content = []
-            for part in msg["content"]:
+        return self.examples[idx]
+
+
+def make_vision_collator(processor, repo_root: Path):
+    """Custom collator for Gemma 4 vision SFT — bypasses missing chat_template.
+
+    Input batch: list of dicts each shaped {messages: [user, assistant]} where
+    user.content is [{type:image,image:<path>}, {type:text,text:str}] and
+    assistant.content is a JSON string.
+
+    Output: dict with input_ids, attention_mask, pixel_values, labels.
+    We format the chat manually using Gemma's turn markers and the model's
+    image token (<|image|>), then mask labels=-100 on the prompt portion so
+    loss is only computed on the assistant continuation.
+    """
+    from PIL import Image
+    import torch
+    image_token = getattr(processor, "image_token", None) or "<|image|>"
+    # Gemma-family chat markers
+    USER_OPEN = "<start_of_turn>user\n"
+    MODEL_OPEN = "<start_of_turn>model\n"
+    TURN_CLOSE = "<end_of_turn>\n"
+
+    def collate(examples: list[dict]) -> dict:
+        prompts: list[str] = []          # everything up to and including MODEL_OPEN
+        full_texts: list[str] = []       # prompt + assistant continuation + TURN_CLOSE
+        images: list[Image.Image] = []
+
+        for ex in examples:
+            user_msg, assistant_msg = ex["messages"][0], ex["messages"][1]
+            user_text = ""
+            img_path = None
+            for part in user_msg["content"]:
                 if part["type"] == "image":
                     img_path = part["image"]
-                    full = (self.repo_root / img_path) if not Path(img_path).is_absolute() else Path(img_path)
-                    pil = Image.open(full).convert("RGB")
-                    new_content.append({"type": "image", "image": pil})
-                else:
-                    new_content.append(part)
-            messages.append({"role": msg["role"], "content": new_content})
-        return {"messages": messages}
+                elif part["type"] == "text":
+                    user_text = part["text"]
+            assert img_path is not None, f"missing image in example: {ex}"
+
+            full = (repo_root / img_path) if not Path(img_path).is_absolute() else Path(img_path)
+            images.append(Image.open(full).convert("RGB"))
+
+            prompt = f"{USER_OPEN}{image_token}\n{user_text}{TURN_CLOSE}{MODEL_OPEN}"
+            assistant_text = assistant_msg["content"]
+            if not isinstance(assistant_text, str):
+                # safety: if assistant content is a list, join text parts
+                assistant_text = "".join(
+                    p.get("text", "") for p in assistant_text if p.get("type") == "text"
+                )
+            prompts.append(prompt)
+            full_texts.append(prompt + assistant_text + TURN_CLOSE)
+
+        batch = processor(text=full_texts, images=images, return_tensors="pt", padding=True)
+        labels = batch["input_ids"].clone()
+
+        # Mask the prompt portion of each row to -100. We tokenize each prompt
+        # separately (matching how the processor would prepend image tokens),
+        # then mask the corresponding number of positions at the start.
+        for i, prompt in enumerate(prompts):
+            # Tokenize the prompt with the SAME image expansion the full text got.
+            # Easiest path: count prompt tokens by running the processor on the
+            # prompt+image and using the resulting length minus 1 (for safety).
+            prompt_ids = processor(
+                text=prompt, images=images[i], return_tensors="pt", padding=False
+            )["input_ids"][0]
+            n_prompt = min(prompt_ids.shape[0], labels.shape[1])
+            labels[i, :n_prompt] = -100
+
+        pad_id = processor.tokenizer.pad_token_id
+        if pad_id is not None:
+            labels[batch["input_ids"] == pad_id] = -100
+
+        batch["labels"] = labels
+        return batch
+
+    return collate
 
 
 def save_lora_manual(model, tokenizer, out_dir: Path, config: dict) -> None:
@@ -116,8 +171,8 @@ def main():
     ap.add_argument("--max-hours", type=float, default=24 * 7)
     args = ap.parse_args()
 
-    from unsloth import FastVisionModel, UnslothVisionDataCollator  # type: ignore
-    from trl import SFTTrainer, SFTConfig  # type: ignore
+    from unsloth import FastVisionModel  # type: ignore
+    from transformers import Trainer, TrainingArguments  # type: ignore
 
     model, tokenizer = FastVisionModel.from_pretrained(
         model_name="unsloth/gemma-4-e2b",
@@ -141,14 +196,14 @@ def main():
     FastVisionModel.for_training(model)
 
     repo_root = Path(__file__).resolve().parents[2]
-    train = XBDPatchDataset(args.data_dir / "train.jsonl", repo_root, limit=args.train_limit)
-    val = XBDPatchDataset(args.data_dir / "val.jsonl", repo_root, limit=args.val_limit)
+    train = XBDPatchDataset(args.data_dir / "train.jsonl", limit=args.train_limit)
+    val = XBDPatchDataset(args.data_dir / "val.jsonl", limit=args.val_limit)
     print(f"train={len(train)} val={len(val)}")
 
     out_dir = Path(__file__).resolve().parents[1] / "adapters" / args.run_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    config = SFTConfig(
+    config = TrainingArguments(
         output_dir=str(out_dir),
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
@@ -163,12 +218,11 @@ def main():
         eval_strategy="no",   # skip eval to keep this run cheap; eval externally
         report_to="none",
         remove_unused_columns=False,
-        dataset_kwargs={"skip_prepare_dataset": True},
     )
 
-    collator = UnslothVisionDataCollator(model, tokenizer)
+    collator = make_vision_collator(tokenizer, repo_root)
 
-    trainer = SFTTrainer(
+    trainer = Trainer(
         model=model,
         tokenizer=tokenizer,
         train_dataset=train,
