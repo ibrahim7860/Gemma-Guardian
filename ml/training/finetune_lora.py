@@ -36,73 +36,43 @@ if platform.system() == "Darwin":
     sys.exit(2)
 
 
-def load_split(jsonl: Path, limit: int | None = None) -> list[dict]:
-    examples = [json.loads(line) for line in jsonl.read_text().splitlines()]
-    if limit is not None:
-        examples = examples[:limit]
-    return examples
+class XBDPatchDataset:
+    """Torch-style Dataset that loads JSONL + lazily resolves image paths to PIL.
 
-
-def make_vision_collator(processor):
-    """Convert {messages: [...]} JSONL examples to a Gemma 4 vision training batch.
-
-    Each example has one user turn with an image + text and one assistant turn
-    with a JSON string. We:
-      - resolve and PIL-load the image (paths are relative to the repo root)
-      - prepend the processor's image token to the user prompt
-      - call processor(text=, images=) to get input_ids + pixel_values
-      - mask labels=-100 for the user portion so loss is only on assistant tokens
+    UnslothVisionDataCollator expects each example to be a dict with `messages`
+    where image entries hold a PIL.Image (not a path). We do the PIL load on
+    __getitem__ so 233K examples don't sit in RAM.
     """
-    from PIL import Image
-    import torch
-    REPO_ROOT = Path(__file__).resolve().parents[2]
-    image_token = getattr(processor, "image_token", None) or "<start_of_image>"
+    def __init__(self, jsonl_path: Path, repo_root: Path, limit: int | None = None):
+        from PIL import Image  # noqa: F401  (used in __getitem__)
+        self.repo_root = repo_root
+        with jsonl_path.open() as f:
+            self.examples = [json.loads(line) for line in f]
+        if limit is not None:
+            self.examples = self.examples[:limit]
 
-    def collate(examples: list[dict]) -> dict:
-        texts: list[str] = []
-        images: list[Image.Image] = []
-        assistant_strs: list[str] = []
+    def __len__(self):
+        return len(self.examples)
 
-        for ex in examples:
-            user_msg = ex["messages"][0]
-            assistant_msg = ex["messages"][1]
-
-            user_text = ""
-            img_path = None
-            for part in user_msg["content"]:
+    def __getitem__(self, idx):
+        from PIL import Image
+        raw = self.examples[idx]
+        messages = []
+        for msg in raw["messages"]:
+            if isinstance(msg["content"], str):
+                messages.append({"role": msg["role"], "content": msg["content"]})
+                continue
+            new_content = []
+            for part in msg["content"]:
                 if part["type"] == "image":
                     img_path = part["image"]
-                elif part["type"] == "text":
-                    user_text = part["text"]
-            assert img_path is not None, f"missing image in example: {ex}"
-
-            full = (REPO_ROOT / img_path) if not Path(img_path).is_absolute() else Path(img_path)
-            images.append(Image.open(full).convert("RGB"))
-            texts.append(f"{image_token}\n{user_text}\n{assistant_msg['content']}")
-            assistant_strs.append(assistant_msg["content"])
-
-        batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
-        labels = batch["input_ids"].clone()
-        # Mask everything that isn't the assistant continuation. Heuristic: find
-        # the assistant string's length in tokens from the END of each row and
-        # mask the rest to -100. This avoids depending on a chat template.
-        for i, assistant in enumerate(assistant_strs):
-            tail_ids = processor.tokenizer(assistant, add_special_tokens=False)["input_ids"]
-            tail_len = len(tail_ids)
-            if tail_len <= 0:
-                labels[i, :] = -100
-                continue
-            seq_len = labels.shape[1]
-            mask_until = max(0, seq_len - tail_len)
-            labels[i, :mask_until] = -100
-        # Also mask pad tokens
-        pad_id = processor.tokenizer.pad_token_id
-        if pad_id is not None:
-            labels[batch["input_ids"] == pad_id] = -100
-        batch["labels"] = labels
-        return batch
-
-    return collate
+                    full = (self.repo_root / img_path) if not Path(img_path).is_absolute() else Path(img_path)
+                    pil = Image.open(full).convert("RGB")
+                    new_content.append({"type": "image", "image": pil})
+                else:
+                    new_content.append(part)
+            messages.append({"role": msg["role"], "content": new_content})
+        return {"messages": messages}
 
 
 def save_lora_manual(model, tokenizer, out_dir: Path, config: dict) -> None:
@@ -146,7 +116,7 @@ def main():
     ap.add_argument("--max-hours", type=float, default=24 * 7)
     args = ap.parse_args()
 
-    from unsloth import FastVisionModel  # type: ignore
+    from unsloth import FastVisionModel, UnslothVisionDataCollator  # type: ignore
     from trl import SFTTrainer, SFTConfig  # type: ignore
 
     model, tokenizer = FastVisionModel.from_pretrained(
@@ -170,8 +140,9 @@ def main():
     model = FastVisionModel.get_peft_model(model, **lora_config)
     FastVisionModel.for_training(model)
 
-    train = load_split(args.data_dir / "train.jsonl", limit=args.train_limit)
-    val = load_split(args.data_dir / "val.jsonl", limit=args.val_limit)
+    repo_root = Path(__file__).resolve().parents[2]
+    train = XBDPatchDataset(args.data_dir / "train.jsonl", repo_root, limit=args.train_limit)
+    val = XBDPatchDataset(args.data_dir / "val.jsonl", repo_root, limit=args.val_limit)
     print(f"train={len(train)} val={len(val)}")
 
     out_dir = Path(__file__).resolve().parents[1] / "adapters" / args.run_name
@@ -195,7 +166,7 @@ def main():
         dataset_kwargs={"skip_prepare_dataset": True},
     )
 
-    collator = make_vision_collator(tokenizer)
+    collator = UnslothVisionDataCollator(model, tokenizer)
 
     trainer = SFTTrainer(
         model=model,
