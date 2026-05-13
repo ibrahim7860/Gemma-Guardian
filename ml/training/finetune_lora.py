@@ -224,7 +224,7 @@ def main():
 
     trainer = Trainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=train,
         eval_dataset=val,
         args=config,
