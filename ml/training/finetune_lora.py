@@ -104,7 +104,15 @@ def make_vision_collator(processor, repo_root: Path):
             prompts.append(prompt)
             full_texts.append(prompt + assistant_text + TURN_CLOSE)
 
-        batch = processor(text=full_texts, images=images, return_tensors="pt", padding=True)
+        # Gemma 4 processor expects images per-example as a nested list
+        # (each example can carry multiple images). A flat list is read as
+        # "one sample with N images" and triggers the size mismatch check.
+        batch = processor(
+            text=full_texts,
+            images=[[im] for im in images],
+            return_tensors="pt",
+            padding=True,
+        )
         labels = batch["input_ids"].clone()
 
         # Mask the prompt portion of each row to -100. We tokenize each prompt
@@ -115,7 +123,7 @@ def make_vision_collator(processor, repo_root: Path):
             # Easiest path: count prompt tokens by running the processor on the
             # prompt+image and using the resulting length minus 1 (for safety).
             prompt_ids = processor(
-                text=prompt, images=images[i], return_tensors="pt", padding=False
+                text=[prompt], images=[[images[i]]], return_tensors="pt", padding=False
             )["input_ids"][0]
             n_prompt = min(prompt_ids.shape[0], labels.shape[1])
             labels[i, :n_prompt] = -100
