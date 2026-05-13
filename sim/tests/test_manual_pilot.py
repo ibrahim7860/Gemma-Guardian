@@ -585,8 +585,11 @@ class TestSemanticValidationLayer:
 
     def test_pilot_with_scenario_derives_zone_bounds(self, pilot_with_scenario):
         bounds = pilot_with_scenario.zone_bounds
-        for key in ("lat_min", "lat_max", "lon_min", "lon_max"):
-            assert key in bounds
+        assert "polygon" in bounds
+        polygon = bounds["polygon"]
+        assert isinstance(polygon, list) and len(polygon) >= 4
+        for point in polygon:
+            assert isinstance(point, list) and len(point) == 2
 
     # --- battery floor (return_to_base) ----------------------------------
 

@@ -15,16 +15,20 @@ from sim.scenario import load_scenario
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCENARIO = load_scenario(REPO_ROOT / "sim" / "scenarios" / "disaster_zone_v1.yaml")
-# Test-fixture bbox; ZoneProvider's `current()` returns this, used by ValidationNode
-# (mission-wide semantics per the 2026-05-13 zone-from-egs-state migration).
-ZONE_BOUNDS = {"lat_min": 33.99, "lat_max": 34.01,
-               "lon_min": -118.51, "lon_max": -118.49}
+# Test-fixture polygon; ZoneProvider's `current()` returns `{"polygon": ...}`,
+# used by ValidationNode (mission-wide PIP semantics per the 2026-05-13
+# point-in-polygon migration).
+ZONE_POLYGON = [
+    [33.99, -118.51], [33.99, -118.49], [34.01, -118.49],
+    [34.01, -118.51], [33.99, -118.51],
+]
+ZONE_BOUNDS = {"polygon": ZONE_POLYGON}
 
 
-def _make_provider(bbox: dict = ZONE_BOUNDS) -> ZoneProvider:
-    """Construct a ZoneProvider whose `current()` returns `bbox` regardless of scenario."""
+def _make_provider(polygon: list = ZONE_POLYGON) -> ZoneProvider:
+    """Construct a ZoneProvider whose `current()` returns `{"polygon": polygon}`."""
     p = ZoneProvider(SCENARIO)
-    p._bbox = dict(bbox)  # noqa: SLF001 — fixture override
+    p._polygon = [list(point) for point in polygon]  # noqa: SLF001 — fixture override
     return p
 
 

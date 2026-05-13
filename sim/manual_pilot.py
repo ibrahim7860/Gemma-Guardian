@@ -58,7 +58,7 @@ import redis.asyncio as redis_async
 
 from agents.drone_agent.perception import DroneState, PerceptionBundle
 from agents.drone_agent.validation import ValidationNode, ValidationResult
-from shared.contracts.zones import mission_zone_bbox
+from shared.contracts.zones import mission_zone_polygon
 from shared.contracts.config import CONFIG
 from shared.contracts.schemas import StructuralError, validate
 from shared.contracts.topics import (
@@ -375,10 +375,10 @@ class ManualPilot:
         self.validator = ValidationNode()
         # Without a scenario, zone_bounds is empty and the GPS_OUTSIDE_ZONE
         # check short-circuits to valid — the rest of the semantic layer
-        # still runs. With a scenario, use the mission-wide bbox (matches
-        # the runtime's ZoneProvider bootstrap path post-2026-05-13 migration).
+        # still runs. With a scenario, use the mission-wide polygon (matches
+        # the runtime's ZoneProvider shape post-2026-05-13 PIP migration).
         if scenario is not None:
-            self.zone_bounds = mission_zone_bbox(scenario)
+            self.zone_bounds = {"polygon": mission_zone_polygon(scenario)}
         else:
             self.zone_bounds = {}
 

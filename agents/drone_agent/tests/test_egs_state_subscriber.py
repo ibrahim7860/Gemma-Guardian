@@ -64,10 +64,13 @@ async def test_valid_egs_state_updates_zone_provider(fake_async_redis):
         await asyncio.sleep(0.05)
         await fake_async_redis.publish("egs.state", json.dumps(_valid_egs_state()))
         await asyncio.sleep(0.2)
-        new_bbox = provider.current()
-        assert new_bbox != bootstrap, "provider should have updated"
-        assert new_bbox == {
-            "lat_min": 34.0, "lat_max": 34.1, "lon_min": -118.5, "lon_max": -118.4,
+        new_zone = provider.current()
+        assert new_zone != bootstrap, "provider should have updated"
+        assert new_zone == {
+            "polygon": [
+                [34.0, -118.5], [34.0, -118.4], [34.1, -118.4],
+                [34.1, -118.5], [34.0, -118.5],
+            ],
         }
     finally:
         await sub.stop()
@@ -122,13 +125,17 @@ async def test_subsequent_updates_overwrite(fake_async_redis):
         ])
         await fake_async_redis.publish("egs.state", json.dumps(first))
         await asyncio.sleep(0.1)
-        assert provider.current() == {"lat_min": 10.0, "lat_max": 11.0, "lon_min": 20.0, "lon_max": 21.0}
+        assert provider.current() == {"polygon": [
+            [10.0, 20.0], [10.0, 21.0], [11.0, 21.0], [11.0, 20.0], [10.0, 20.0],
+        ]}
         second = _valid_egs_state(zone_polygon=[
             [30.0, 40.0], [30.0, 41.0], [31.0, 41.0], [31.0, 40.0], [30.0, 40.0],
         ])
         await fake_async_redis.publish("egs.state", json.dumps(second))
         await asyncio.sleep(0.2)
-        assert provider.current() == {"lat_min": 30.0, "lat_max": 31.0, "lon_min": 40.0, "lon_max": 41.0}
+        assert provider.current() == {"polygon": [
+            [30.0, 40.0], [30.0, 41.0], [31.0, 41.0], [31.0, 40.0], [30.0, 40.0],
+        ]}
     finally:
         await sub.stop()
         await task
