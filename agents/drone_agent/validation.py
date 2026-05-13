@@ -9,6 +9,7 @@ NO LLM calls in this module.
 """
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import dataclass
@@ -126,8 +127,8 @@ class ValidationNode:
                 valid=False,
                 failure_reason=RuleID.GPS_OUTSIDE_ZONE,
                 corrective_prompt=(
-                    f"You reported a finding at GPS ({lat}, {lon}) but your assigned zone bounds are "
-                    f"{bundle.state.zone_bounds}. The finding must be within your zone. "
+                    f"You reported a finding at GPS ({lat}, {lon}) but the mission zone bounds are "
+                    f"{json.dumps(bundle.state.zone_bounds)}. The finding must be within the mission zone. "
                     "Either correct the coordinates or use continue_mission()."
                 ),
             )

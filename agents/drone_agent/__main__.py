@@ -22,7 +22,7 @@ import redis as _redis_sync
 import redis.asyncio as _redis_async
 
 from agents.drone_agent.runtime import DroneRuntime
-from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
+from agents.drone_agent.zone_provider import ZoneProvider
 from shared.contracts.config import CONFIG
 from shared.contracts.logging import setup_logging
 from sim.scenario import load_scenario
@@ -41,7 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ollama-endpoint", default=CONFIG.inference.ollama_drone_endpoint)
     parser.add_argument("--max-retries", type=int, default=CONFIG.validation.max_retries)
     parser.add_argument("--zone-buffer-m", type=float, default=50.0,
-                        help="metres of slack on the per-drone zone bbox")
+                        help="metres of slack on the bootstrap zone bbox; "
+                             "overridden by EGS once the first egs.state arrives")
     parser.add_argument("--text-only", action="store_true",
                         help="skip image (for text-only Gemma stand-ins during integration)")
     parser.add_argument("--cpu-only", action="store_true",
@@ -100,9 +101,10 @@ async def _ollama_healthcheck(endpoint: str, model: str) -> None:
 async def _run(args: argparse.Namespace) -> int:
     setup_logging(component_name=f"drone_agent_{args.drone_id}")
     scenario = load_scenario(_resolve_scenario_path(args.scenario))
-    zone_bounds = derive_zone_bounds_from_scenario(
-        scenario, args.drone_id, buffer_m=args.zone_buffer_m,
-    )
+    # Bootstrap with the EGS-matching mission-wide bbox so the validator has a
+    # zone before the first egs.state tick arrives. EgsStateSubscriber will
+    # overwrite this within ~1 second of the EGS coming up.
+    zone_provider = ZoneProvider(scenario, buffer_m=args.zone_buffer_m)
 
     await _ollama_healthcheck(args.ollama_endpoint, args.model)
 
@@ -118,7 +120,7 @@ async def _run(args: argparse.Namespace) -> int:
     runtime = DroneRuntime(
         drone_id=args.drone_id,
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
         sync_client=sync_client,
         async_client=async_client,
         ollama_endpoint=args.ollama_endpoint,

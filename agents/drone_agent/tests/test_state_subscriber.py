@@ -9,13 +9,23 @@ import pytest
 import fakeredis.aioredis
 
 from agents.drone_agent.redis_io import StateSubscriber
+from agents.drone_agent.zone_provider import ZoneProvider
 from sim.scenario import load_scenario
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCENARIO = load_scenario(REPO_ROOT / "sim" / "scenarios" / "disaster_zone_v1.yaml")
+# Test-fixture bbox; ZoneProvider's `current()` returns this, used by ValidationNode
+# (mission-wide semantics per the 2026-05-13 zone-from-egs-state migration).
 ZONE_BOUNDS = {"lat_min": 33.99, "lat_max": 34.01,
                "lon_min": -118.51, "lon_max": -118.49}
+
+
+def _make_provider(bbox: dict = ZONE_BOUNDS) -> ZoneProvider:
+    """Construct a ZoneProvider whose `current()` returns `bbox` regardless of scenario."""
+    p = ZoneProvider(SCENARIO)
+    p._bbox = dict(bbox)  # noqa: SLF001 — fixture override
+    return p
 
 
 @pytest.fixture
@@ -48,7 +58,7 @@ def _valid_state(**overrides) -> dict:
 @pytest.mark.asyncio
 async def test_subscriber_translates_valid_state(fake_async_redis):
     sub = StateSubscriber(fake_async_redis, drone_id="drone1",
-                          zone_bounds=ZONE_BOUNDS, scenario=SCENARIO)
+                          zone_provider=_make_provider(), scenario=SCENARIO)
     task = asyncio.create_task(sub.run())
     try:
         await asyncio.sleep(0.05)
@@ -68,7 +78,7 @@ async def test_subscriber_translates_valid_state(fake_async_redis):
 @pytest.mark.asyncio
 async def test_subscriber_drops_malformed_json(fake_async_redis):
     sub = StateSubscriber(fake_async_redis, drone_id="drone1",
-                          zone_bounds=ZONE_BOUNDS, scenario=SCENARIO)
+                          zone_provider=_make_provider(), scenario=SCENARIO)
     task = asyncio.create_task(sub.run())
     try:
         await asyncio.sleep(0.05)
@@ -83,7 +93,7 @@ async def test_subscriber_drops_malformed_json(fake_async_redis):
 @pytest.mark.asyncio
 async def test_subscriber_drops_schema_violating_state(fake_async_redis):
     sub = StateSubscriber(fake_async_redis, drone_id="drone1",
-                          zone_bounds=ZONE_BOUNDS, scenario=SCENARIO)
+                          zone_provider=_make_provider(), scenario=SCENARIO)
     task = asyncio.create_task(sub.run())
     try:
         await asyncio.sleep(0.05)
@@ -102,7 +112,7 @@ async def test_latest_raw_sim_filters_out_agent_republishes(fake_async_redis):
     """latest_raw_sim() must only reflect sim-shaped payloads. Agent republishes
     (last_action != "none" OR findings_count >= 1) must not overwrite the cache."""
     sub = StateSubscriber(fake_async_redis, drone_id="drone1",
-                          zone_bounds=ZONE_BOUNDS, scenario=SCENARIO)
+                          zone_provider=_make_provider(), scenario=SCENARIO)
     task = asyncio.create_task(sub.run())
     try:
         await asyncio.sleep(0.05)

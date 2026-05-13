@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 
 from agents.drone_agent.runtime import DroneRuntime
-from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
+from agents.drone_agent.zone_provider import ZoneProvider
 from sim.scenario import load_scenario
 
 
@@ -106,12 +106,12 @@ def fake_async_redis(shared_server):
 
 
 def _make_runtime(
-    *, log_dir: Path, sync, async_, scenario, zone_bounds, varying: bool = True,
+    *, log_dir: Path, sync, async_, scenario, zone_provider, varying: bool = True,
 ) -> DroneRuntime:
     runtime = DroneRuntime(
         drone_id="drone1",
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
         sync_client=sync,
         async_client=async_,
         agent_step_period_s=0.05,
@@ -153,14 +153,14 @@ async def test_runtime_findings_pass_through_normally(
     )
 
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
 
     runtime = _make_runtime(
         log_dir=tmp_path,
         sync=fake_sync_redis,
         async_=fake_async_redis,
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
     )
     assert runtime.buffered_publisher.is_standalone is False
 
@@ -192,14 +192,14 @@ async def test_runtime_findings_buffer_during_standalone(
     )
 
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
 
     runtime = _make_runtime(
         log_dir=tmp_path,
         sync=fake_sync_redis,
         async_=fake_async_redis,
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
     )
     runtime.buffered_publisher.set_standalone(True)
 
@@ -257,14 +257,14 @@ async def test_runtime_findings_replay_on_link_restore(
     )
 
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
 
     runtime = _make_runtime(
         log_dir=tmp_path,
         sync=fake_sync_redis,
         async_=fake_async_redis,
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
     )
     runtime.buffered_publisher.set_standalone(True)
 
@@ -337,7 +337,7 @@ async def test_runtime_drone_restart_replays_jsonl_without_double_publish(
     )
 
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
 
     # First incarnation — produce 2 findings into the buffer.
     runtime1 = _make_runtime(
@@ -345,7 +345,7 @@ async def test_runtime_drone_restart_replays_jsonl_without_double_publish(
         sync=fake_sync_redis,
         async_=fake_async_redis,
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
     )
     runtime1.buffered_publisher.set_standalone(True)
 
@@ -403,7 +403,7 @@ async def test_runtime_drone_restart_replays_jsonl_without_double_publish(
         sync=fake_sync_redis,
         async_=fake_async_redis,
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
     )
     assert len(runtime2._finding_buffer) == n_buffered, (
         f"fresh runtime should rehydrate exactly the {n_buffered} persisted entries"

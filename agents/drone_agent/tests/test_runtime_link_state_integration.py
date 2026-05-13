@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 from agents.drone_agent.runtime import DroneRuntime
-from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
+from agents.drone_agent.zone_provider import ZoneProvider
 from sim.scenario import load_scenario
 
 
@@ -109,11 +109,11 @@ def fake_async_redis(shared_server):
     return fakeredis.aioredis.FakeRedis(server=shared_server, decode_responses=False)
 
 
-def _make_runtime(*, log_dir, sync, async_, scenario, zone_bounds) -> DroneRuntime:
+def _make_runtime(*, log_dir, sync, async_, scenario, zone_provider) -> DroneRuntime:
     runtime = DroneRuntime(
         drone_id="drone1",
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
         sync_client=sync,
         async_client=async_,
         agent_step_period_s=0.05,
@@ -140,10 +140,10 @@ async def test_runtime_starts_in_standalone_until_link_up_event(
     flips the BufferedPublisher into standalone mode (defensive default)."""
     _patch_paths(monkeypatch, tmp_path)
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
     runtime = _make_runtime(
         log_dir=tmp_path, sync=fake_sync_redis, async_=fake_async_redis,
-        scenario=scenario, zone_bounds=zone_bounds,
+        scenario=scenario, zone_provider=zone_provider,
     )
     # Monitor reports standalone immediately (defensive default).
     assert runtime.link_monitor.is_standalone() is True
@@ -168,10 +168,10 @@ async def test_runtime_flips_to_active_on_link_up_event(
     findings start passing through to Redis."""
     _patch_paths(monkeypatch, tmp_path)
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
     runtime = _make_runtime(
         log_dir=tmp_path, sync=fake_sync_redis, async_=fake_async_redis,
-        scenario=scenario, zone_bounds=zone_bounds,
+        scenario=scenario, zone_provider=zone_provider,
     )
 
     findings_pubsub = fake_sync_redis.pubsub()
@@ -225,10 +225,10 @@ async def test_runtime_flips_to_standalone_on_link_down_event(
     and subsequent findings must buffer."""
     _patch_paths(monkeypatch, tmp_path)
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
     runtime = _make_runtime(
         log_dir=tmp_path, sync=fake_sync_redis, async_=fake_async_redis,
-        scenario=scenario, zone_bounds=zone_bounds,
+        scenario=scenario, zone_provider=zone_provider,
     )
     runtime_task = asyncio.create_task(runtime.run())
     try:
@@ -273,10 +273,10 @@ async def test_runtime_buffer_drains_on_link_restore(
     """
     _patch_paths(monkeypatch, tmp_path)
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
     runtime = _make_runtime(
         log_dir=tmp_path, sync=fake_sync_redis, async_=fake_async_redis,
-        scenario=scenario, zone_bounds=zone_bounds,
+        scenario=scenario, zone_provider=zone_provider,
     )
 
     findings_pubsub = fake_sync_redis.pubsub()
@@ -348,10 +348,10 @@ async def test_runtime_falls_back_to_standalone_after_staleness(
     """
     _patch_paths(monkeypatch, tmp_path)
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
     runtime = _make_runtime(
         log_dir=tmp_path, sync=fake_sync_redis, async_=fake_async_redis,
-        scenario=scenario, zone_bounds=zone_bounds,
+        scenario=scenario, zone_provider=zone_provider,
     )
     # Replace the monitor with one whose clock we control. The runtime
     # holds a reference, so swapping the attribute is sufficient — the

@@ -40,7 +40,7 @@ import numpy as np
 import pytest
 
 from agents.drone_agent.runtime import DroneRuntime
-from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
+from agents.drone_agent.zone_provider import ZoneProvider
 from agents.egs_agent.coordinator import EGSCoordinator
 from agents.egs_agent.scenario_state import build_initial_egs_state
 from agents.egs_agent.validation import EGSValidationNode
@@ -169,13 +169,11 @@ def _build_drone_runtime(
     *, tmp_path: Path, sync_client, async_client,
 ) -> DroneRuntime:
     scenario = load_scenario(RESILIENCE_SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(
-        scenario, "drone3", buffer_m=50.0,
-    )
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
     runtime = DroneRuntime(
         drone_id="drone3",
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
         sync_client=sync_client,
         async_client=async_client,
         agent_step_period_s=0.05,

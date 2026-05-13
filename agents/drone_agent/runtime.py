@@ -32,11 +32,13 @@ from agents.drone_agent.main import DroneAgent
 from agents.drone_agent.perception import PerceptionBundle
 from agents.drone_agent.redis_io import (
     CameraSubscriber,
+    EgsStateSubscriber,
     LinkStatusSubscriber,
     PeerSubscriber,
     RedisPublisher,
     StateSubscriber,
 )
+from agents.drone_agent.zone_provider import ZoneProvider
 from shared.contracts import validate as schema_validate
 from shared.contracts.logging import default_log_dir, now_iso_ms
 from shared.contracts.topics import per_drone_state_channel
@@ -60,7 +62,7 @@ class DroneRuntime:
         *,
         drone_id: str,
         scenario: Scenario,
-        zone_bounds: dict,
+        zone_provider: ZoneProvider,
         sync_client: _redis_sync.Redis,
         async_client: _redis_async.Redis,
         ollama_endpoint: str = "http://localhost:11434",
@@ -138,11 +140,13 @@ class DroneRuntime:
             # .next_finding_id()".
             next_id_fn=self.agent.memory.next_finding_id,
         )
+        self.zone_provider = zone_provider
         self.camera = CameraSubscriber(async_client, drone_id=drone_id)
         self.state = StateSubscriber(
             async_client, drone_id=drone_id,
-            zone_bounds=zone_bounds, scenario=scenario,
+            zone_provider=zone_provider, scenario=scenario,
         )
+        self.egs_state = EgsStateSubscriber(async_client, zone_provider=zone_provider)
         self.peers = PeerSubscriber(async_client, drone_id=drone_id, max_size=10)
         self._sync_client = sync_client
         self._step_period_s = agent_step_period_s
@@ -159,6 +163,9 @@ class DroneRuntime:
     async def run(self) -> None:
         camera_task = asyncio.create_task(self.camera.run(), name=f"{self.drone_id}.camera")
         state_task = asyncio.create_task(self.state.run(), name=f"{self.drone_id}.state")
+        egs_state_task = asyncio.create_task(
+            self.egs_state.run(), name=f"{self.drone_id}.egs_state",
+        )
         peers_task = asyncio.create_task(self.peers.run(), name=f"{self.drone_id}.peers")
         link_task = asyncio.create_task(
             self.link_subscriber.run(), name=f"{self.drone_id}.link_status",
@@ -170,12 +177,13 @@ class DroneRuntime:
         finally:
             await self.camera.stop()
             await self.state.stop()
+            await self.egs_state.stop()
             await self.peers.stop()
             await self.link_subscriber.stop()
-            for t in (camera_task, state_task, peers_task, link_task, loop_task, republish_task):
+            for t in (camera_task, state_task, egs_state_task, peers_task, link_task, loop_task, republish_task):
                 t.cancel()
             await asyncio.gather(
-                camera_task, state_task, peers_task, link_task, loop_task, republish_task,
+                camera_task, state_task, egs_state_task, peers_task, link_task, loop_task, republish_task,
                 return_exceptions=True,
             )
 
