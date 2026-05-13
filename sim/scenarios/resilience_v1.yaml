@@ -60,7 +60,16 @@ frame_mappings:
   drone3:
     - {tick_range: [0, 60],   frame_file: placeholder_fire_01.jpg}
     - {tick_range: [61, 120], frame_file: placeholder_smoke_01.jpg}
-    - {tick_range: [121, 240], frame_file: placeholder_debris_01.jpg}
+    # tick_range [121, 240] was placeholder_debris_01.jpg — base Gemma 4 E2B (no
+    # LoRA) consistently classifies storm-surge-debris aerial as continue_mission.
+    # Swapped to placeholder_victim_01.jpg (FEMA Katrina destroyed-school aerial)
+    # because it is the project's most-validated trigger frame: STATUS.md records
+    # 5× live `report_finding` runs on this image. Restore once GATE 3 LoRA lands
+    # and the base-model debris-perception gap closes. See
+    # docs/plans/2026-05-12-drone3-reliability-capture.md §"Scenario fix" for the
+    # full rationale; groundtruth manifest left untouched (v01 victim already
+    # exists in the scene at lat 34.0017).
+    - {tick_range: [121, 240], frame_file: placeholder_victim_01.jpg}
 
 scripted_events:
   - {t: 30,  type: drone_failure,    drone_id: drone2, detail: battery_depleted}
