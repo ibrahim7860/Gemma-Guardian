@@ -54,7 +54,7 @@ def make_load_check():
     def _load():
         from unsloth import FastVisionModel  # type: ignore
         model, tokenizer = FastVisionModel.from_pretrained(
-            model_name="unsloth/gemma-4-e2b",
+            model_name="unsloth/gemma-4-e2b-it",
             load_in_4bit=True,
         )
         assert model is not None and tokenizer is not None

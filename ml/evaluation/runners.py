@@ -81,7 +81,7 @@ def _make_runner(model, processor) -> Callable:
     return run
 
 
-def base_runner(model_name: str = "unsloth/gemma-4-e2b") -> Callable:
+def base_runner(model_name: str = "unsloth/gemma-4-e2b-it") -> Callable:
     """Load base Gemma 4 E2B in 4-bit via Unsloth, no LoRA."""
     from unsloth import FastVisionModel  # type: ignore
     model, tokenizer = FastVisionModel.from_pretrained(model_name=model_name, load_in_4bit=True)
@@ -89,7 +89,7 @@ def base_runner(model_name: str = "unsloth/gemma-4-e2b") -> Callable:
     return _make_runner(model, tokenizer)
 
 
-def tuned_runner(adapter_dir: str | Path, model_name: str = "unsloth/gemma-4-e2b") -> Callable:
+def tuned_runner(adapter_dir: str | Path, model_name: str = "unsloth/gemma-4-e2b-it") -> Callable:
     """Load base + apply LoRA from our custom lora_weights.pt + lora_config.json."""
     import torch
     from unsloth import FastVisionModel  # type: ignore

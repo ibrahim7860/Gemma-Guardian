@@ -183,7 +183,7 @@ def main():
     from transformers import Trainer, TrainingArguments  # type: ignore
 
     model, tokenizer = FastVisionModel.from_pretrained(
-        model_name="unsloth/gemma-4-e2b",
+        model_name="unsloth/gemma-4-e2b-it",
         load_in_4bit=True,
     )
     lora_config = dict(
@@ -247,7 +247,7 @@ def main():
     save_lora_manual(
         model, tokenizer, out_dir,
         config={
-            "base_model": "unsloth/gemma-4-e2b",
+            "base_model": "unsloth/gemma-4-e2b-it",
             "lora_kwargs": lora_config,
             "training_kwargs": {
                 "epochs": args.epochs,
