@@ -1,101 +1,130 @@
-"""Inference runners: base Gemma 4 (via Ollama) vs LoRA-tuned (via Unsloth FastVisionModel).
+"""Inference runners: base Gemma 4 vs LoRA-tuned, both via Unsloth FastVisionModel.
 
-Both expose: runner(image: PIL.Image) -> {"damage_class": str, "confidence": float, "visual_evidence": str}
+Both runners expose:
+    run(img: PIL.Image) -> {"damage_class": str, "confidence": float, "visual_evidence": str}
 
 PLATFORM:
-  - base_gemma_runner: requires only a running Ollama with gemma-4:e2b. Works on
-    macOS (Metal), Linux/WSL2 (CUDA), or anywhere Ollama runs.
-  - adapter_gemma_runner: requires Unsloth + CUDA. Run on WSL2+NVIDIA or a cloud
-    GPU box; will not work on macOS (see docs/12 §Compute Path).
+  - Both runners require Unsloth + CUDA. Run on WSL2+NVIDIA or a cloud GPU box
+    (the unsloth/unsloth Docker image is what we test against). They will not
+    work on macOS (see docs/12 §Compute Path).
+  - We deliberately do NOT depend on Ollama for the base baseline because
+    Ollama may not be present on the Unsloth Docker pod we're evaluating on.
+    Both base and tuned use the same model-load path; the only difference is
+    whether the LoRA adapter is applied. This keeps the comparison apples-to-apples.
+
+Input formatting bypasses apply_chat_template (the Unsloth-bnb-4bit Gemma 4
+processor we get back has chat_template=None in transformers 5.5.0). We hand-format
+using Gemma's turn markers + the processor's image token (<|image|>).
 """
 from __future__ import annotations
 
-import base64
-import io
 import json
-import os
 import re
+from pathlib import Path
 from typing import Callable
 
-import httpx
 from PIL import Image
 
 CLASSIFY_PROMPT = "Classify the damage to the building in this image."
-SYSTEM_PROMPT = (
-    "You classify post-disaster building damage. Reply with JSON only, no prose. "
-    "Schema: {\"damage_class\": one of [no_damage, minor_damage, major_damage, destroyed], "
-    "\"confidence\": float in [0,1], \"visual_evidence\": short string}."
-)
-
 VALID_CLASSES = {"no_damage", "minor_damage", "major_damage", "destroyed"}
+
+USER_OPEN = "<start_of_turn>user\n"
+MODEL_OPEN = "<start_of_turn>model\n"
+TURN_CLOSE = "<end_of_turn>\n"
 
 
 def _parse_json_envelope(text: str) -> dict:
     text = text.strip()
-    match = re.search(r"\{.*\}", text, re.DOTALL)
+    match = re.search(r"\{.*?\}", text, re.DOTALL)
     if not match:
-        return {"damage_class": "no_damage", "confidence": 0.0, "visual_evidence": ""}
+        return {"damage_class": "no_damage", "confidence": 0.0, "visual_evidence": "", "raw": text[:200]}
     try:
         obj = json.loads(match.group(0))
     except json.JSONDecodeError:
-        return {"damage_class": "no_damage", "confidence": 0.0, "visual_evidence": ""}
+        return {"damage_class": "no_damage", "confidence": 0.0, "visual_evidence": "", "raw": text[:200]}
     if obj.get("damage_class") not in VALID_CLASSES:
         obj["damage_class"] = "no_damage"
         obj["confidence"] = 0.0
     return obj
 
 
-def _img_to_b64(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def base_gemma_runner(endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b") -> Callable:
-    def run(img: Image.Image) -> dict:
-        b64 = _img_to_b64(img)
-        r = httpx.post(
-            f"{endpoint}/api/chat",
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": CLASSIFY_PROMPT, "images": [b64]},
-                ],
-                "stream": False,
-                "options": {"temperature": 0.0},
-            },
-            timeout=60.0,
-        )
-        r.raise_for_status()
-        return _parse_json_envelope(r.json().get("message", {}).get("content", ""))
-    return run
-
-
-def adapter_gemma_runner(adapter_dir: str | None = None) -> Callable:
-    """Loads the LoRA adapter via Unsloth FastVisionModel; returns a callable."""
-    adapter_dir = adapter_dir or os.environ.get("ADAPTER_DIR")
-    if not adapter_dir:
-        raise RuntimeError("set ADAPTER_DIR or pass adapter_dir=…")
-
-    from unsloth import FastVisionModel  # type: ignore
-
-    model, tokenizer = FastVisionModel.from_pretrained(
-        model_name=adapter_dir,
-        load_in_4bit=True,
+def _build_prompt(image_token: str) -> str:
+    return (
+        f"{USER_OPEN}{image_token}\n{CLASSIFY_PROMPT}{TURN_CLOSE}{MODEL_OPEN}"
     )
-    FastVisionModel.for_inference(model)
+
+
+def _make_runner(model, processor) -> Callable:
+    image_token = getattr(processor, "image_token", None) or "<|image|>"
+    prompt = _build_prompt(image_token)
 
     def run(img: Image.Image) -> dict:
-        msgs = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": [
-                {"type": "image"},
-                {"type": "text", "text": CLASSIFY_PROMPT},
-            ]},
-        ]
-        inputs = tokenizer(msgs, images=[img], return_tensors="pt").to(model.device)
-        out = model.generate(**inputs, max_new_tokens=128, temperature=0.0, do_sample=False)
-        text = tokenizer.batch_decode(out, skip_special_tokens=True)[0]
+        import torch
+        inputs = processor(
+            text=[prompt],
+            images=[[img]],
+            return_tensors="pt",
+            padding=False,
+        ).to(model.device)
+        with torch.inference_mode():
+            out = model.generate(
+                **inputs,
+                max_new_tokens=128,
+                do_sample=False,
+                temperature=1.0,  # ignored when do_sample=False
+                pad_token_id=processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id,
+            )
+        # Decode only the newly-generated portion
+        gen_ids = out[0][inputs["input_ids"].shape[1]:]
+        text = processor.tokenizer.decode(gen_ids, skip_special_tokens=True)
         return _parse_json_envelope(text)
     return run
+
+
+def base_runner(model_name: str = "unsloth/gemma-4-e2b") -> Callable:
+    """Load base Gemma 4 E2B in 4-bit via Unsloth, no LoRA."""
+    from unsloth import FastVisionModel  # type: ignore
+    model, tokenizer = FastVisionModel.from_pretrained(model_name=model_name, load_in_4bit=True)
+    FastVisionModel.for_inference(model)
+    return _make_runner(model, tokenizer)
+
+
+def tuned_runner(adapter_dir: str | Path, model_name: str = "unsloth/gemma-4-e2b") -> Callable:
+    """Load base + apply LoRA from our custom lora_weights.pt + lora_config.json."""
+    import torch
+    from unsloth import FastVisionModel  # type: ignore
+
+    adapter_dir = Path(adapter_dir)
+    config_path = adapter_dir / "lora_config.json"
+    weights_path = adapter_dir / "lora_weights.pt"
+    if not weights_path.exists():
+        raise FileNotFoundError(f"missing {weights_path}")
+
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    lora_kwargs = config.get("lora_kwargs", {})
+
+    model, tokenizer = FastVisionModel.from_pretrained(model_name=model_name, load_in_4bit=True)
+    if lora_kwargs:
+        model = FastVisionModel.get_peft_model(model, **lora_kwargs)
+    else:
+        # Fallback: same kwargs as training defaults
+        model = FastVisionModel.get_peft_model(
+            model,
+            finetune_vision_layers=False,
+            finetune_language_layers=True,
+            finetune_attention_modules=True,
+            finetune_mlp_modules=True,
+            target_modules="all-linear",
+            r=32, lora_alpha=32, lora_dropout=0.0,
+            bias="none", random_state=42, use_rslora=False,
+            use_gradient_checkpointing="unsloth",
+        )
+
+    state = torch.load(weights_path, map_location="cpu", weights_only=True)
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    if unexpected:
+        print(f"[tuned_runner] WARN: {len(unexpected)} unexpected keys (first: {unexpected[:3]})")
+    print(f"[tuned_runner] loaded {len(state)} LoRA tensors "
+          f"({sum(v.numel() for v in state.values()):,} params)")
+    FastVisionModel.for_inference(model)
+    return _make_runner(model, tokenizer)
