@@ -41,12 +41,46 @@ class XBDPatchDataset:
 
     Each __getitem__ returns the raw {messages: [user, assistant]} dict. PIL
     loading and processor application happen in the collator.
+
+    If `balance=True`, the dataset resamples so every damage class is equally
+    represented up to N=limit total. Uses each example's assistant JSON
+    `damage_class` field as the class label. This avoids the mode-collapse
+    failure we saw on natural-distribution training (xBD is ~80% no_damage,
+    LoRA over-fit to that and predicted majority for everything at eval).
     """
-    def __init__(self, jsonl_path: Path, limit: int | None = None):
+    def __init__(self, jsonl_path: Path, limit: int | None = None, balance: bool = False, seed: int = 42):
+        import random as _random
         with jsonl_path.open() as f:
-            self.examples = [json.loads(line) for line in f]
-        if limit is not None:
-            self.examples = self.examples[:limit]
+            raw = [json.loads(line) for line in f]
+
+        if balance:
+            from collections import defaultdict
+            by_class = defaultdict(list)
+            for ex in raw:
+                try:
+                    label = json.loads(ex["messages"][1]["content"]).get("damage_class")
+                except Exception:
+                    label = None
+                if label:
+                    by_class[label].append(ex)
+            if not by_class:
+                raise RuntimeError("balance=True but no labels extractable from JSONL")
+            per_class = (limit // len(by_class)) if limit else min(len(v) for v in by_class.values())
+            rng = _random.Random(seed)
+            balanced = []
+            class_counts = {}
+            for cls, items in by_class.items():
+                rng.shuffle(items)
+                take = items[:per_class]
+                balanced.extend(take)
+                class_counts[cls] = len(take)
+            rng.shuffle(balanced)
+            self.examples = balanced
+            print(f"[XBDPatchDataset] balanced sample: {class_counts}")
+        else:
+            if limit is not None:
+                raw = raw[:limit]
+            self.examples = raw
 
     def __len__(self):
         return len(self.examples)
@@ -172,6 +206,8 @@ def main():
     ap.add_argument("--finetune-vision-layers", action="store_true", help="docs/12: start with this OFF.")
     ap.add_argument("--train-limit", type=int, default=None, help="Cap train examples (for quick runs).")
     ap.add_argument("--val-limit", type=int, default=None, help="Cap val examples.")
+    ap.add_argument("--balance", action="store_true", help="Resample train.jsonl to equal counts per damage class.")
+    ap.add_argument("--warmup-ratio", type=float, default=0.03)
     ap.add_argument("--max-hours", type=float, default=24 * 7)
     args = ap.parse_args()
 
@@ -200,7 +236,7 @@ def main():
     FastVisionModel.for_training(model)
 
     repo_root = Path(__file__).resolve().parents[2]
-    train = XBDPatchDataset(args.data_dir / "train.jsonl", limit=args.train_limit)
+    train = XBDPatchDataset(args.data_dir / "train.jsonl", limit=args.train_limit, balance=args.balance)
     val = XBDPatchDataset(args.data_dir / "val.jsonl", limit=args.val_limit)
     print(f"train={len(train)} val={len(val)}")
 
@@ -216,7 +252,7 @@ def main():
         bf16=True,
         optim="adamw_8bit",
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_ratio=args.warmup_ratio,
         logging_steps=10,
         save_strategy="no",   # bypass transformers 5.5.0 save_pretrained bug
         eval_strategy="no",   # skip eval to keep this run cheap; eval externally
