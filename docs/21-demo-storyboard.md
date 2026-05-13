@@ -2,11 +2,13 @@
 
 ## Why This Doc Exists
 
-The 90-second video is what the judge actually watches. Everything else exists to make this video credible. This doc is the locked storyboard. We work backward from this.
+The 1:45 video is what the judge actually watches. Everything else exists to make this video credible. This doc is the locked storyboard. We work backward from this.
 
-## Total Length: 90 Seconds
+## Total Length: 1:45 (internal target) / 3:00 (Kaggle hard cap)
 
-Hard cap. Judges have hundreds of submissions. Going over loses attention.
+**Page-verified cap (Kaggle, 2026-05-13):** videos must be **≤3 minutes**, must be on YouTube, must be publicly viewable without login (unlisted OK, private not).
+
+**Internal target locked at 1:45 (decision 2026-05-13):** extended from the original 90-second cap to give Beat 5 the room it needs. Beat 5 carries a 60-second in-sim scenario (F1→F8 in the frame table below); compressing that to 10s of edit was the original storyboard's tightest constraint and was costing the strongest visual in the video — the victim-count chip ticking 0 → 1 *after* link restore. The extra 15 seconds go entirely to Beat 5; the other beats keep their original pacing.
 
 ## Structure (Six Beats)
 
@@ -15,7 +17,7 @@ Hard cap. Judges have hundreds of submissions. Going over loses attention.
 [0:10 - 0:25]  Beat 2: The Academic Anchor
 [0:25 - 1:05]  Beat 3: The System in Action
 [1:05 - 1:20]  Beat 4: The Resilience Moment
-[1:20 - 1:30]  Beat 5: The Offline Proof + Closer
+[1:20 - 1:45]  Beat 5: The Offline Proof + Closer  ← 25s (was 10s)
 ```
 
 ## Beat 1: The Problem (0:00 - 0:10)
@@ -74,16 +76,28 @@ Then immediately: another drone receives the broadcast, the dashboard ticker sho
 
 ### Sub-beat 3c: The Hallucination Catch (0:55 - 1:05)
 
-**This is the wow moment.** Carefully engineered to reliably trigger.
+**This is the wow moment.** The technical innovation moment. It must land clearly.
 
-**Visual:** EGS replanning event. Side panel shows:
-- First attempt: assignment includes 27 points (only 25 exist). VALIDATION FAILED in red.
-- Corrective prompt visible: *"You are hallucinating, creating more survey points than required..."*
-- Second attempt: 25 points, balanced. VALIDATION PASSED in green.
+**Visual:** The dashboard's Validation Loop banner mounted under `EgsLinkSeveredBanner` shows:
+- **Attempt 1:** red `FAILED` chip + `ASSIGNMENT_TOTAL_MISMATCH` rule id + the actually-shipped corrective text rendered verbatim from `egs_state.replan_in_flight_attempt_log`:
+  > *"Your assignments cover 27 points but 25 are available. Reassign so every point is covered exactly once."*
+- **Attempt 2:** green `PASSED` chip + no corrective text. Both attempt rows visible side-by-side via `AnimatedSwitcher` fade-in (~800ms settle).
 
 **Caption:** *"Validation loop catches and corrects Gemma 4 hallucinations in real-time."*
 
-This is the technical innovation moment. It must land clearly.
+**Capture strategy — stochastic-trigger reality:** Gemma 4 E4B does not always hallucinate the overcount on cue. The `wow_moment_v1` scenario (`sim/scenarios/wow_moment_v1.yaml` — 25 awkwardly-clustered survey points, 3 drones, one partially out of mesh range) is engineered to produce over- or under-assignment with measurable frequency, but Phase 5 close-out on M1 16GB recorded one live run where E4B produced an invalid-but-non-overcount assignment (`scripts/check_wow_moment.sh` exit 1). Three capture-day fallbacks, in priority order:
+
+1. **Live trigger.** Run `scripts/check_wow_moment.sh` immediately before each take; exit 0 greenlights, exit 1 reruns. Cheapest path if the model cooperates.
+2. **Deterministic synth-WS capture (already on disk).** Both reference PNGs are committed:
+   - [`docs_assets/dashboard-validation-wow-failed.png`](../docs_assets/dashboard-validation-wow-failed.png) (56 KB, 1665×720) — Attempt 1 FAILED chip + corrective text
+   - [`docs_assets/dashboard-validation-wow-passed.png`](../docs_assets/dashboard-validation-wow-passed.png) (59 KB, 1665×737) — Attempt 1 FAILED + Attempt 2 PASSED side-by-side
+   - Insert as still frames during edit with a 0.5–1.0s hold per state. The audience cannot tell the difference between a live banner and a synth-WS-driven banner — same DOM, same UI, same data shape (corrective text rendered verbatim from the same `replan_in_flight_attempt_log` field). Use these on capture day if live trigger fails twice in a row.
+3. **Phase 3c `--inject-overcount-once` flag.** If `agents/egs_agent/main.py --inject-overcount-once` ships, run a take with the flag set for a deterministic live capture; disclose in writeup §4.3 as already documented in the plan.
+
+**Reference assets (committed):**
+- `docs_assets/dashboard-validation-wow-failed.png` — Attempt 1 red-chip render
+- `docs_assets/dashboard-validation-wow-passed.png` — Attempt 1 + Attempt 2 side-by-side render
+- `/tmp/gg_wow_moment_capture/wow_moment_passed.png` (59 KB) — the existing Playwright E2E visual-regression reference at `frontend/ws_bridge/tests/test_e2e_playwright_validation_wow.py`
 
 ## Beat 4: The Resilience Moment (1:05 - 1:20)
 
@@ -109,9 +123,11 @@ Then the dramatic moment: a card appears: *"EGS LINK SEVERED."* The dashboard sh
 - `docs_assets/dashboard-multilingual-spanish.png` — live Gemma 4 E4B translation of *"Establecer la prioridad de búsqueda de víctimas en crítico."* through the EGS command pipeline into a structured action with `preview_text_in_operator_language` populated. Captured 2026-05-09 against the real (non-mocked) E4B daemon.
 - `docs_assets/dashboard-egs-severed.png` — `EGS LINK SEVERED` banner + per-drone `STANDALONE` badge driven by an `egs.state` heartbeat staleness >5 s.
 
-## Beat 5: The Offline Proof — Disconnection-Tolerant Findings (1:20 - 1:30)
+## Beat 5: The Offline Proof — Disconnection-Tolerant Findings (1:20 - 1:45)
 
 **Goal:** seal the offline claim with a load-bearing visual: the operator pulls the network, drone3 keeps flying and produces a finding while severed from the EGS, and on reconnect that finding is reconciled to the EGS — no data lost, no double-count.
+
+**Pacing budget (25s — extended from 10s on 2026-05-13):** F1 steady state (~2s) · F2 wifi-down + scripted `egs_link_drop` (~3s) · F3 banner + STANDALONE badge attach (~3s) · F4 drone3 buffering finding (~4s) · F5 link restore (~2s) · **F6 banner clears + victim-count chip ticks 0 → 1 (~5s, the money shot, hold it)** · F7 `ollama list` offline-proof terminal (~3s) · F8 verifier passes + GitHub URL closer + tagline (~3s).
 
 **Frame-by-frame mechanics** (resilience_v1 scenario, 60 s window from t=120 to t=180; full path validated by `scripts/check_beat5.py` and `agents/egs_agent/tests/test_e2e_link_drop_replay.py`):
 
@@ -143,7 +159,7 @@ The storyboard above assumes a fully integrated stack. As of today, several beat
 | Beat | Depends on | Owner | Today's state |
 |---|---|---|---|
 | 3b drone-eye reasoning trace + `report_finding` overlay | `agents/drone_agent/main.py` publishing real findings on `drones.<id>.findings` | Kaleel | ✅ Done. Live Gemma fires `report_finding` on CC0 FEMA Katrina image; 5× verified 2026-05-06 (`docs/sim-live-run-notes.md` Gap #2). DOM render verified end-to-end by `frontend/ws_bridge/tests/test_e2e_playwright_dom_render.py` and MCP capture per `docs/runbooks/mcp-dom-verification.md`; reference asset `docs_assets/dashboard-finding-rendered.png`. |
-| 3c "EGS hallucinates 27 of 25 points → caught → corrected" | `agents/egs_agent/replanning.py` retry loop + dashboard `ValidationWowBanner` rendering `replan_in_flight_attempt_log` from `egs_state` | Ibrahim (steal from Qasim, 2026-05-12) | ✅ Dashboard banner + EGS validation-event logging + `wow_moment_v1` scenario + `eval_wow_moment_trigger.py` (≥12/20 acceptance gate) + Playwright E2E shipped 2026-05-12, commit `3b86d9a`. 69 new tests green (49 Python + 16 Flutter widget + 4 Playwright). Live demo capture pending Phase 5: run `eval_wow_moment_trigger.py --runs 20` on demo box, then `check_wow_moment.sh` greenlights capture session. Plan: `docs/plans/2026-05-12-gate4-wow-moment.md`. |
+| 3c "EGS hallucinates 27 of 25 points → caught → corrected" | `agents/egs_agent/replanning.py` retry loop + dashboard `ValidationWowBanner` rendering `replan_in_flight_attempt_log` from `egs_state` | Ibrahim (backend stolen from Qasim 2026-05-12); Qasim (Phase 5 live eval + latency, reassigned 2026-05-13 — needs CUDA box) | ✅ Code shipped 2026-05-12, commit `3b86d9a`. ✅ Reference PNGs captured 2026-05-12 (`docs_assets/dashboard-validation-wow-{failed,passed}.png` via synth-WS Playwright path). ⚠️ Phase 5 live-eval + p50/p95 latency rerun on CUDA box still pending — reassigned to Qasim 2026-05-13 because M1 16GB couldn't carry `gemma4:e4b` at usable speed. Capture-day rerun of `scripts/check_wow_moment.sh` stays on Ibrahim's plate; PNG fallback is the safety net per Sub-beat 3c capture strategy. Plan: `docs/plans/2026-05-12-gate4-wow-moment.md`. |
 | 4 `command_translation` showing Spanish input → structured task | EGS Gemma 4 E4B path producing real `preview_text_in_operator_language` (TODOS.md tracks this as a Phase 5+ stub) | Qasim | ✅ Done. Gemma 4 E4B translates commands accurately and handles Flutter dashboard timeouts correctly. Reference asset: `docs_assets/dashboard-multilingual-spanish.png` (captured 2026-05-09 via Playwright MCP against real E4B). |
 | 4 `EGS LINK SEVERED` card + "STANDALONE MODE ACTIVE" panel state | Dashboard rendering EGS-offline state | Person 4 (Ibrahim) | ✅ Dashboard side ready 2026-05-07 — banner triggers on egs.state heartbeat staleness >5s, badge keys off `agent_status == "standalone"`. Both have stable `Semantics(identifier: ...)` hooks for Playwright/MCP capture. Awaits Kaleel's runtime `agent_status` flips (TODOS.md "Wire `agent_status` flips") to fully light up under live sim. |
 | 4 `egs_link_drop` event firing in sim | `sim/scenarios/resilience_v1.yaml` — already ships `egs_link_drop` at t=120s and `egs_link_restore` at t=180s | Hazim | ✅ Done |
@@ -194,7 +210,7 @@ Narration is optional. If included:
 - Ibrahim records (or another team member with a clear voice)
 - Quiet room, decent USB mic
 - Pace: ~165 words per minute
-- Total words: ~245 for 90 seconds
+- Total words: ~289 for 1:45 (was ~245 for 90s — extra ~44 words allocated to Beat 5)
 
 If no narration, captions carry the information. Captions are mandatory either way.
 
@@ -233,12 +249,13 @@ A sketched storyboard exists in `docs_assets/storyboard.png` (Ibrahim creates th
 
 Before locking the video, show it to 3 people who don't know the project:
 
-1. Can they explain what the project does? (If no, the pitch is unclear)
+1. Can they explain what the project does? (If no, the pitch is unclear — strengthen Beat 1 / Beat 3a)
 2. Did they understand the offline angle? (If no, strengthen Beat 5)
-3. Did they notice the validation correction? (If no, slow down Beat 3c)
-4. Was 90 seconds too long? (If yes, cut Beat 4 down)
+3. Did they notice the validation correction? (If no, slow down Beat 3c — see Sub-beat 3c capture strategy)
+4. Was the video too long, too short, or the right length? (Kaggle cap is 3:00; our locked target is 1:45 — Beat 5 was extended from 10s to 25s on 2026-05-13. If "too short to follow," extend further toward 2:00; if "drags in the middle," tighten Beat 3 not Beat 5.)
+5. **Did the story land emotionally?** (Kaggle "Video Pitch & Storytelling" is worth 30/100 points. If the answer is "I understood it but didn't feel it," the Beat 1 hook needs more concrete imagery — Eaton Fire stakes, named volunteer, downed cell tower.)
 
-Iterate based on feedback. Lock by Day 17 (May 17). No more changes after Day 17.
+Iterate based on feedback. **Lock by Day 15 (May 17) end of day.** Day 16 (May 18) is GATE 5 + SUBMIT; no video changes after Day 15 except for hard-stop bug fixes.
 
 ## Cross-References
 

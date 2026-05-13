@@ -55,7 +55,7 @@ Read docs in this order when getting up to speed:
 - [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) — JSON schemas locked Day 1, do not change
 
 ### Submission
-- [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md) — 90-second video plan
+- [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md) — 1:45 video plan
 - [`docs/22-writeup-outline.md`](docs/22-writeup-outline.md) — technical writeup structure
 - [`docs/22-writeup-draft.md`](docs/22-writeup-draft.md) — current writeup draft (all 11 sections, on main as of May 6)
 - [`docs/23-submission-checklist.md`](docs/23-submission-checklist.md) — what must be ready May 18

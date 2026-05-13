@@ -135,7 +135,7 @@ A polished 2-drone demo absolutely beats a flaky 3-drone demo. There's no shame 
 
 - [ ] GitHub repo public, README complete, all code committed
 - [ ] Reproduction instructions tested by someone who didn't write them (cold-test was Day 15 / Sat May 17)
-- [ ] 90-second demo video edited and reviewed
+- [ ] 1:45 demo video edited and reviewed
 - [ ] Technical writeup completed (~2000-3000 words)
 - [ ] Kaggle submission form filled out
 - [ ] Backup of everything on at least 2 separate machines

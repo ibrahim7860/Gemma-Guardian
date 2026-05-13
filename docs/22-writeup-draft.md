@@ -1,6 +1,8 @@
-# FieldAgent — Technical Writeup
+# FieldAgent — Technical Writeup (LONG-FORM WORKING DRAFT)
 
-*Gemma 4 Good Hackathon submission (Kaggle × Google DeepMind, May 2026). Repo: [`github.com/ibrahim7860/Gemma-Guardian`](https://github.com/ibrahim7860/Gemma-Guardian). Team: Ibrahim Ahmed, Hazim Kuniyil, Kaleel, Qasim, Thayyil.*
+> **This is the long-form working draft (~4,070 words).** The Kaggle Writeup hard cap is **≤1,500 words**, so the *submission* version lives at the repo root as [`WRITEUP.md`](../WRITEUP.md) (~1,437 words, page-verified cap 2026-05-13). Keep this long-form for internal reference and section archaeology; do not paste it into the Kaggle Writeup. Final §-by-§ decisions sync into `WRITEUP.md` before submit.
+
+*Gemma 4 Good Hackathon submission (Kaggle × Google DeepMind, May 2026). Repo: [`github.com/ibrahim7860/Gemma-Guardian`](https://github.com/ibrahim7860/Gemma-Guardian). Team: Ibrahim Ahmed, Hazim Kuniyil, Muhammad Kaleelurrahman, Qasim Bhutta, Muhammad Thayyil.*
 
 ---
 
@@ -296,7 +298,7 @@ wasn't built for.
 
 ```python
 for attempt in range(MAX_RETRIES):  # MAX_RETRIES = 3
-    response = await ollama_call(model="gemma-4-e2b",
+    response = await ollama_call(model="gemma4:e2b",
                                  messages=conversation,
                                  tools=DRONE_FUNCTION_SCHEMAS)
     call = parse_function_call(response)
@@ -516,8 +518,8 @@ within a 20-day hackathon window. Full rationale per item lives in
   produces a guaranteed assignment artifact even when the perception
   call is non-trivial; (b) a mock-Ollama mode (`scripts/ollama_mock_server.py`)
   is available for capture reproducibility. The fine-tune adapter (§7),
-  if it ships, is the real fix for this gap. Full background in the
-  project's design plans directory.
+  if it ships, is the real fix for this gap. Full background in
+  [`plans/2026-05-12-drone3-reliability-capture.md`](plans/2026-05-12-drone3-reliability-capture.md).
 
 - **~1 Hz perception sampling.** Gemma 4 E2B inference latency on commodity
   GPUs is the bottleneck. Sampling more frequently than 1 Hz starves the
@@ -561,9 +563,12 @@ the venv (regression-guarded by
 
 The cold-start path is [`sim-reproduction.md`](sim-reproduction.md):
 `git clone` → `uv sync` → `ollama pull` → three escalating one-command
-demos. It was outsider-tested on Apple Silicon M1 16GB on 2026-05-12 from
-a fresh clone; every gap was fixed in the same PR (findings doc:
+demos. A v1 cold-run from a fresh clone was completed on Apple Silicon
+M1 16GB on 2026-05-12 (Phase G); every gap surfaced was fixed in the
+same PR (findings doc:
 [`plans/2026-05-12-phase-g-cold-run-findings.md`](plans/2026-05-12-phase-g-cold-run-findings.md)).
+A formal outside-tester pass on a fresh Linux/WSL2 machine lands
+Days 15–16 of the timeline.
 
 The runtime is **Ollama**: no API keys, no network egress, no cloud account.
 This is both the Ollama special-prize play and the falsifiable form of the

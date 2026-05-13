@@ -148,3 +148,115 @@ Theoretical real-deployment hardware (we cite this in the writeup but don't depl
 - Per-drone: NVIDIA Jetson Orin NX (70 TOPS, 10-25W) running Gemma 4 E2B
 - EGS: Portable workstation with single GPU running Gemma 4 E4B
 - Mesh: WiFi 6 or WiFi-Halow
+
+## End-to-End Flow Diagrams
+
+The three-layer ASCII diagram at the top of this doc shows the deployment topology. The Mermaid diagrams below render the same system from two complementary angles — a process graph that names every component and the Redis-backed connections between them, then two sequence diagrams that walk through the two load-bearing interactions (operator command dispatch and finding lifecycle).
+
+### Process graph
+
+```mermaid
+graph TB
+    subgraph "Operator (You)"
+        Dashboard["Flutter Dashboard<br/>http://localhost:8000"]
+    end
+
+    subgraph "WebSocket Bridge"
+        Bridge["FastAPI Bridge<br/>frontend/ws_bridge/"]
+    end
+
+    subgraph "Edge Ground Station (EGS)"
+        EGS["EGS Agent<br/>agents/egs_agent/<br/>Gemma 4 E4B"]
+    end
+
+    subgraph "Drone Swarm"
+        D1["Drone 1<br/>Gemma 4 E2B"]
+        D2["Drone 2<br/>Gemma 4 E2B"]
+        D3["Drone 3<br/>Gemma 4 E2B"]
+    end
+
+    subgraph "Simulation Layer"
+        Sim["Waypoint Runner<br/>sim/waypoint_runner.py"]
+        Frames["Frame Server<br/>sim/frame_server.py"]
+    end
+
+    Redis[("Redis Pub/Sub<br/>localhost:6379")]
+
+    Dashboard <-->|WebSocket| Bridge
+    Bridge <-->|Subscribe/Publish| Redis
+    EGS <-->|Subscribe/Publish| Redis
+    D1 <-->|Subscribe/Publish| Redis
+    D2 <-->|Subscribe/Publish| Redis
+    D3 <-->|Subscribe/Publish| Redis
+    Sim -->|Publishes drone state| Redis
+    Frames -->|Publishes camera frames| Redis
+```
+
+### Command flow — operator → swarm
+
+Translates a natural-language operator command (any of Gemma 4's 140+ trained languages) into a validated structured swarm task, with corrective-retry semantics on the EGS Gemma 4 E4B call.
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant Fl as Flutter Dashboard
+    participant Br as WS Bridge
+    participant Re as Redis
+    participant EGS as EGS Agent
+    participant LLM as Gemma 4 E4B
+
+    Op->>Fl: Types "Recall drone2 for low battery"
+    Fl->>Br: WS: {type: operator_command, raw_text: "...", language: "en"}
+    Br->>Br: Validates against websocket_messages schema
+    Br->>Re: PUBLISH egs.operator_commands
+    Re->>EGS: Message received
+    EGS->>LLM: Translate to structured command
+    LLM->>EGS: {command: "recall_drone", args: {drone_id: "drone2", reason: "low battery"}}
+    EGS->>EGS: Validate against operator_commands.json
+    Note over EGS: If invalid → retry with corrective feedback
+    EGS->>EGS: Semantic check: is drone2 active? ✅
+    EGS->>Re: PUBLISH egs.command_translations
+    Re->>Br: Translation received
+    Br->>Br: Validate against command_translations_envelope
+    Br->>Br: Re-validate against websocket_messages
+    Br->>Fl: WS: {type: command_translation, valid: true, preview_text: "..."}
+    Fl->>Op: Shows preview + DISPATCH button
+    Op->>Fl: Clicks DISPATCH
+    Fl->>Br: WS: {type: operator_command_dispatch, command_id: "..."}
+    Br->>Re: PUBLISH (dispatch channel)
+    Br->>Fl: WS: {type: echo, ack: "operator_command_dispatch"}
+    Fl->>Op: Shows "Dispatched ✓"
+```
+
+### Finding flow — drone → operator
+
+Walks through a single `report_finding` from drone-side function call to operator APPROVE/DISMISS, including the EGS-side deduplication that gives the dashboard's victim-count chip its first-seen-wins semantics.
+
+```mermaid
+sequenceDiagram
+    participant Drone as Drone Agent
+    participant Re as Redis
+    participant EGS as EGS Agent
+    participant Br as WS Bridge
+    participant Fl as Flutter Dashboard
+    participant Op as Operator
+
+    Drone->>Re: PUBLISH drones.drone1.findings {type: "victim", ...}
+    Re->>EGS: Finding received
+    EGS->>EGS: Dedup check (same type + location + 30s window?)
+    alt Duplicate
+        EGS->>EGS: Drop (first-seen-wins)
+    else New finding
+        EGS->>EGS: Accept → increment findings_count_by_type
+    end
+    EGS->>Re: PUBLISH egs.state (includes updated counts)
+    Re->>Br: State update
+    Br->>Fl: WS: {type: state_update, active_findings: [...]}
+    Fl->>Op: Shows finding on map + findings list
+    Op->>Fl: Clicks APPROVE or DISMISS
+    Fl->>Br: WS: {type: finding_approval, finding_id: "...", action: "approve"}
+    Br->>Re: PUBLISH (approval channel)
+    Br->>Fl: WS: {type: echo, ack: "finding_approval"}
+```
+
+**Approve semantics:** EGS treats the finding as verified intelligence for mission planning. **Dismiss semantics:** EGS marks it as a false positive and can deprioritize that area. Both decisions round-trip back into `egs.state.approved_findings` (Contract 3) and the dashboard renders the operator-status chip from the joined stream.

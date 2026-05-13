@@ -19,7 +19,7 @@ git clone https://github.com/ibrahim7860/Gemma-Guardian.git
 cd Gemma-Guardian
 curl -LsSf https://astral.sh/uv/install.sh | sh   # one-time, https://docs.astral.sh/uv/
 uv sync --all-extras
-ollama pull gemma4:e2b && ollama pull gemma4:e4b   # https://ollama.com/library/gemma4
+scripts/pull_models.sh                            # pulls gemma4:e2b + gemma4:e4b via ollama
 brew services start redis    # macOS — see docs/13-runtime-setup.md for Linux/WSL2
 
 # pane 1: full agent stack (sim + drones + EGS + bridge) on :9090
@@ -31,7 +31,7 @@ scripts/run_dashboard_dev.sh
 
 Open the dashboard at [`http://localhost:8000/?ws=ws://127.0.0.1:9090/`](http://localhost:8000/?ws=ws://127.0.0.1:9090/). Clean up with `scripts/stop_demo.sh`.
 
-For the cold-start path from a fresh box (no prior repo context, no warm uv cache), follow [`docs/sim-reproduction.md`](docs/sim-reproduction.md). It's the doc Phase G is locked to and was cold-tested on M1 macOS on 2026-05-12.
+For the cold-start path from a fresh box (no prior repo context, no warm uv cache), follow [`docs/sim-reproduction.md`](docs/sim-reproduction.md). It's the doc Phase G is locked to; a v1 cold-run from a fresh clone was completed on M1 macOS on 2026-05-12, and a fresh-machine outside-tester pass on Linux/WSL2 lands Days 15–16.
 
 ## Hardware requirements
 
@@ -45,12 +45,12 @@ Apple Silicon M1 16GB note: the 3-drone concurrent vision+tools path requires Ol
 
 ## Technical writeup
 
-[`docs/22-writeup-draft.md`](docs/22-writeup-draft.md) — promoted to top-level `WRITEUP.md` at submission. Final pass scheduled for Day 15. Section budget: [`docs/22-writeup-outline.md`](docs/22-writeup-outline.md).
+[`WRITEUP.md`](WRITEUP.md) — the ≤1,500-word Kaggle Writeup submission version (page-verified cap 2026-05-13). Long-form working draft retained at [`docs/22-writeup-draft.md`](docs/22-writeup-draft.md) for internal reference. Section budget: [`docs/22-writeup-outline.md`](docs/22-writeup-outline.md).
 
 ## Where to start
 
 - **What we're building and why:** [`docs/01-vision-and-pitch.md`](docs/01-vision-and-pitch.md)
-- **Architecture overview:** [`docs/04-system-architecture.md`](docs/04-system-architecture.md) — three layers: per-drone Gemma 4 E2B agent, edge ground station with Gemma 4 E4B, Flutter operator dashboard.
+- **Architecture overview:** [`docs/04-system-architecture.md`](docs/04-system-architecture.md) — three layers (per-drone Gemma 4 E2B, EGS with Gemma 4 E4B, Flutter dashboard) with end-to-end flow diagrams for the command and finding paths.
 - **The contracts that keep us in sync:** [`docs/20-integration-contracts.md`](docs/20-integration-contracts.md) (locked Day 1, do not change).
 - **Scope and gates:** [`docs/17-feasibility-and-gates.md`](docs/17-feasibility-and-gates.md), [`docs/16-mocks-and-cuts.md`](docs/16-mocks-and-cuts.md).
 - **AI assistant entry point:** [`CLAUDE.md`](CLAUDE.md) (read first if Claude Code or Cursor is editing this repo).
@@ -131,256 +131,3 @@ If you build on this work, please cite both the project and the reference paper 
   url    = {https://arxiv.org/abs/2601.14437}
 }
 ```
-
-
-# Gemma-Guardian: Full System Flow
-
-## The Big Picture
-
-Gemma-Guardian is an **AI-powered disaster response drone swarm** operated from a command center dashboard. The entire system runs locally — no cloud — using **Gemma 4** models on Ollama for on-device AI.
-
-```mermaid
-graph TB
-    subgraph "Operator (You)"
-        Dashboard["Flutter Dashboard<br/>ws://localhost:9090"]
-    end
-
-    subgraph "WebSocket Bridge"
-        Bridge["FastAPI Bridge<br/>frontend/ws_bridge/"]
-    end
-
-    subgraph "Edge Ground Station (EGS)"
-        EGS["EGS Agent<br/>agents/egs_agent/<br/>Gemma 4 E4B"]
-    end
-
-    subgraph "Drone Swarm"
-        D1["Drone 1<br/>Gemma 4 E2B"]
-        D2["Drone 2<br/>Gemma 4 E2B"]
-        D3["Drone 3<br/>Gemma 4 E2B"]
-    end
-
-    subgraph "Simulation Layer"
-        Sim["Waypoint Runner<br/>sim/waypoint_runner.py"]
-        Frames["Frame Server<br/>sim/frame_server.py"]
-    end
-
-    Redis[("Redis Pub/Sub<br/>localhost:6379")]
-
-    Dashboard <-->|WebSocket| Bridge
-    Bridge <-->|Subscribe/Publish| Redis
-    EGS <-->|Subscribe/Publish| Redis
-    D1 <-->|Subscribe/Publish| Redis
-    D2 <-->|Subscribe/Publish| Redis
-    D3 <-->|Subscribe/Publish| Redis
-    Sim -->|Publishes drone state| Redis
-    Frames -->|Publishes camera frames| Redis
-```
-
----
-
-## Layer by Layer
-
-### 1. Simulation Layer — "The Physical World"
-
-> **Who built it:** Hazim  
-> **What it does:** Simulates drone flight — GPS positions, battery drain, heading, velocity
-
-The sim reads a scenario YAML (e.g., `disaster_zone_v1.yaml`) that defines:
-- A disaster zone polygon (lat/lon boundary)
-- Pre-scripted waypoints for each drone
-- Simulated camera frames (pre-recorded JPEGs from real disaster datasets)
-
-**It publishes:**
-- `drones.<id>.state` at 2 Hz — position, battery, heading, velocity
-- `drones.<id>.camera` — JPEG frames per tick
-
-> [!IMPORTANT]
-> The sim drones follow scripted paths. They do NOT respond to commands — they're a physics simulator, not autonomous agents.
-
----
-
-### 2. Drone Agents — "The Eyes in the Sky"
-
-> **Who built it:** Kaleel  
-> **What they do:** Each drone runs a local **Gemma 4 E2B** model that analyzes camera frames and reports findings
-
-Each drone agent:
-1. **Perceives** — analyzes the camera frame using the LLM
-2. **Reasons** — decides if what it sees is a finding (victim, fire, smoke, damaged structure, blocked route)
-3. **Reports** — publishes findings to `drones.<id>.findings`
-4. **Validates** — the LLM output is validated against strict JSON schemas with a retry loop
-
-**Findings are the core output:**
-```json
-{
-  "finding_id": "f_drone1_047",
-  "source_drone_id": "drone1",
-  "type": "victim",
-  "severity": 4,
-  "gps_lat": 34.1234,
-  "gps_lon": -118.5678,
-  "confidence": 0.78,
-  "visual_description": "Person prone, partially covered by debris..."
-}
-```
-
----
-
-### 3. Edge Ground Station (EGS) — "The Brain"
-
-> **Who built it:** Qasim  
-> **What it does:** Aggregates everything, runs the local **Gemma 4 E4B** model for command translation and mission replanning
-
-The EGS is the central coordinator. It:
-
-#### A. Aggregates Drone State
-- Subscribes to `drones.*.state` and `drones.*.findings`
-- Builds a unified `egs_state` snapshot (all drones, all findings, survey progress)
-- Publishes `egs.state` at 1 Hz for the dashboard
-
-#### B. Deduplicates Findings
-- When multiple drones report the same finding type at nearly the same GPS location within 30 seconds, the EGS keeps only the **first-seen** report
-- This is the `EGS_DUPLICATE_FINDING` rule you see in the logs
-
-#### C. Translates Operator Commands
-The operator can type commands in **any language**. The EGS:
-
-1. Receives the raw text from the dashboard (via Redis `egs.operator_commands`)
-2. Sends it to **Gemma 4 E4B** on Ollama with a system prompt listing available commands
-3. The LLM translates natural language → structured JSON command
-4. The result is **validated** against the `operator_commands.json` schema
-5. If validation fails, a **corrective retry loop** feeds the error back to the LLM
-6. The validated translation is published back to the dashboard for preview
-
-#### D. Replans Missions
-- Uses the LLM to assign survey points to drones based on current state
-- Publishes task assignments to `drones.<id>.tasks`
-
----
-
-### 4. WebSocket Bridge — "The Translator"
-
-> **Who built it:** Ibrahim  
-> **What it does:** Bridges Redis pub/sub ↔ WebSocket for the Flutter dashboard
-
-The bridge:
-- Subscribes to Redis channels (`egs.state`, `drones.*.state`, `drones.*.findings`, `egs.command_translations`)
-- Aggregates all state into a single `state_update` envelope
-- Broadcasts to connected WebSocket clients at 1 Hz
-- Validates ALL messages against JSON schemas before forwarding (defense in depth)
-- Forwards operator commands FROM the dashboard TO Redis
-- Forwards command translations FROM Redis TO the dashboard
-
----
-
-### 5. Flutter Dashboard — "The Eyes of the Operator"
-
-> **Who built it:** Ibrahim  
-> **What it does:** Real-time command center UI
-
-The dashboard shows:
-
-| Panel | What it shows |
-|---|---|
-| **Map** | Drone positions (moving dots), findings (colored markers), zone polygon, aerial overlay |
-| **Drone Status** | Per-drone: battery %, status (active/offline/returning), current task |
-| **Findings** | List of reported findings with type, severity, source drone. **Approve/Dismiss** buttons |
-| **Command Box** | Text input for operator commands → translate → preview → dispatch |
-| **Validation** | Count of schema validation events (passes/failures) |
-
----
-
-## The Command Flow (End to End)
-
-```mermaid
-sequenceDiagram
-    participant Op as Operator
-    participant Fl as Flutter Dashboard
-    participant Br as WS Bridge
-    participant Re as Redis
-    participant EGS as EGS Agent
-    participant LLM as Gemma 4 E4B
-
-    Op->>Fl: Types "Recall drone2 for low battery"
-    Fl->>Br: WS: {type: operator_command, raw_text: "...", language: "en"}
-    Br->>Br: Validates against websocket_messages schema
-    Br->>Re: PUBLISH egs.operator_commands
-    Re->>EGS: Message received
-    EGS->>LLM: Translate to structured command
-    LLM->>EGS: {command: "recall_drone", args: {drone_id: "drone2", reason: "low battery"}}
-    EGS->>EGS: Validate against operator_commands.json
-    Note over EGS: If invalid → retry with corrective feedback
-    EGS->>EGS: Semantic check: is drone2 active? ✅
-    EGS->>Re: PUBLISH egs.command_translations
-    Re->>Br: Translation received
-    Br->>Br: Validate against command_translations_envelope
-    Br->>Br: Re-validate against websocket_messages
-    Br->>Fl: WS: {type: command_translation, valid: true, preview_text: "..."}
-    Fl->>Op: Shows preview + DISPATCH button
-    Op->>Fl: Clicks DISPATCH
-    Fl->>Br: WS: {type: operator_command_dispatch, command_id: "..."}
-    Br->>Re: PUBLISH (dispatch channel)
-    Br->>Fl: WS: {type: echo, ack: "operator_command_dispatch"}
-    Fl->>Op: Shows "Dispatched ✓"
-```
-
----
-
-## The Findings Flow
-
-```mermaid
-sequenceDiagram
-    participant Drone as Drone Agent
-    participant Re as Redis
-    participant EGS as EGS Agent
-    participant Br as WS Bridge
-    participant Fl as Flutter Dashboard
-    participant Op as Operator
-
-    Drone->>Re: PUBLISH drones.drone1.findings {type: "victim", ...}
-    Re->>EGS: Finding received
-    EGS->>EGS: Dedup check (same type + location + 30s window?)
-    alt Duplicate
-        EGS->>EGS: Drop (first-seen-wins)
-    else New finding
-        EGS->>EGS: Accept → increment findings_count_by_type
-    end
-    EGS->>Re: PUBLISH egs.state (includes updated counts)
-    Re->>Br: State update
-    Br->>Fl: WS: {type: state_update, active_findings: [...]}
-    Fl->>Op: Shows finding on map + findings list
-    Op->>Fl: Clicks APPROVE or DISMISS
-    Fl->>Br: WS: {type: finding_approval, finding_id: "...", action: "approve"}
-    Br->>Re: PUBLISH (approval channel)
-    Br->>Fl: WS: {type: echo, ack: "finding_approval"}
-```
-
-**What approve/dismiss does:**
-- **Approve**: Confirms the finding is valid — the EGS treats it as verified intelligence for mission planning
-- **Dismiss**: Marks it as a false positive — the EGS can deprioritize that area
-
----
-
-## Where Gemma 4 Models Run
-
-| Component | Model | Size | What it does |
-|---|---|---|---|
-| Each Drone Agent | `gemma4:e2b` | 2B params | Analyzes camera frames → reports findings |
-| EGS Agent | `gemma4:e4b` | 4B params | Translates commands, replans missions |
-
-Both run on **Ollama** locally. The EGS uses the larger model because command translation requires more reasoning capability than image description.
-
----
-
-## Key Design Principles
-
-1. **Schema-first**: Every message between components is validated against JSON schemas. Invalid messages are rejected with corrective feedback.
-
-2. **Validate-and-retry**: When an LLM produces invalid output, the error is fed back as a corrective prompt. Up to 3 retries before falling back to a safe default.
-
-3. **Edge-native**: Everything runs locally — no cloud dependency. Critical for disaster zones with no internet.
-
-4. **Multilingual**: Operators can type commands in any language. Gemma 4 translates to structured English commands internally, then provides previews in the operator's language.
-
-5. **Human-in-the-loop**: Commands require explicit DISPATCH confirmation. Findings require explicit APPROVE/DISMISS. The AI suggests, the human decides.
-
