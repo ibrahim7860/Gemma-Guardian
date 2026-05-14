@@ -42,13 +42,10 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## Submission Follow-ups
 
-### Writeup §7: collapse Fine-Tuning section after GATE 3 decision
-- **What:** `docs/22-writeup-draft.md` §7 currently ships with both 7.A (gate passed — full Unsloth LoRA narrative) and 7.B (gate failed — honest-failure narrative). After Kaleel signals GATE 3 GO/NO-GO (Day 12 / 2026-05-12), delete the non-applicable variant + the conditional banner above §7.A. This is the only mandatory section-collapse left before submission.
-- **Why:** Doc cannot ship with both variants. The conditional shape is a holdover from authoring the writeup before GATE 3 was decided.
-- **Pros:** Mechanical edit once the decision is in — one delete + the variant header re-titled to `## 7. Fine-Tuning` (no `A`/`B`).
-- **Cons:** none — pure cleanup.
-- **Context:** Caught by `/review` of `25b2411`. Project-name decision ("FieldAgent" alone for Kaggle) made in same review. Surrounding submission artifacts (README, Kaggle form, writeup) all reviewed clean except this single deferred item.
-- **Owner:** Ibrahim (frontend/writeup), unblocked by Kaleel's GATE 3 signal.
+### CLOSED — Writeup §7: collapse Fine-Tuning section after GATE 3 decision
+- **Resolution (2026-05-14, Kaleel, branch `feat/gate3-runpod-bootstrap`):** Gate 3 closed as **strict NO_GO** per docs/12 §250 (≥10 pp on 4-class missed by 2.5 pp; +11.5 pp on binary cleared). `docs/22-writeup-draft.md` §7 rewritten to a single section recording the actual numbers (base 81.5 % vs tuned 89.0 % on 4-class; base 84.5 % vs tuned 96.0 % on binary), the strict-rule call, and the docs/12 NO-GO branch fallback (demo ships base Gemma 4 E2B-it + structured prompts; LoRA adapter retained as documented work; Unsloth special prize NOT claimed). §8 Table 5 has real numbers + per-class F1; §9 has the disclosure paragraph. Full Gate 3 chronology + upstream-bug breakdown + reproduction commands at [`docs/plans/2026-05-14-gate3-fine-tune-run-and-call.md`](docs/plans/2026-05-14-gate3-fine-tune-run-and-call.md).
+- **Note:** the writeup §7 on main had already collapsed to a single (GO-shaped) variant before this work landed; what this commit actually does is rewrite it to the NO-GO content while preserving the pipeline-as-contribution framing.
+- **Owner:** Closed by Kaleel 2026-05-14.
 
 ## Demo Capture Follow-ups
 

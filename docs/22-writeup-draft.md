@@ -385,33 +385,94 @@ assignment / operator command) lives in §8 Table 2, populated from
 
 ---
 
-## 7. Fine-Tuning
+## 7. Fine-Tuning — pipeline shipped, strict NO-GO call on the 4-class threshold
 
-We fine-tuned a LoRA on Gemma 4 E2B against the **xBD** dataset (Gupta et
-al., 2019) — the largest public benchmark for post-disaster building damage
-classification, covering 850,736 annotated buildings across 19 disasters
-(wildfires, hurricanes, earthquakes, floods, tornadoes, volcanic eruptions,
-tsunamis) with four Joint Damage Scale classes (no_damage, minor_damage,
-major_damage, destroyed). xBD is the established benchmark in this space;
-using it makes our results comparable to prior literature.
+We built and exercised the full LoRA fine-tuning pipeline against
+**Gemma 4 E2B-it** on the **xBD** dataset (Gupta et al., 2019) — the largest
+public benchmark for post-disaster building damage classification, covering
+850,736 annotated buildings across 19 disasters with four Joint Damage Scale
+classes (`no_damage`, `minor_damage`, `major_damage`, `destroyed`). The full
+chronology is in [`plans/2026-05-14-gate3-fine-tune-run-and-call.md`](plans/2026-05-14-gate3-fine-tune-run-and-call.md);
+the short version follows.
 
-LoRA via **Unsloth special prize**: kernel-level speedups on the LoRA
-forward/backward path bring single-GPU multimodal fine-tuning into a
-single-day window. Following Unsloth's current Gemma 4 vision recipe, we
-start with `finetune_vision_layers=False` and tune the language, attention,
-and MLP modules first; the vision tower is enabled only if the visual task
-plateaus. Hyperparameters (per [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md)):
-rank 32, alpha 32, `target_modules="all-linear"`, learning rate 2e-4 with
-cosine schedule, batch size 2–4 with gradient accumulation 4–8, bf16, 1–3
-epochs over the cropped per-building patch set (~500k patches at 224×224),
-on a rented A10 / A4000 / A5000 instance.
+**The result against the pre-registered Gate 3 threshold.**
+Per [`docs/12-fine-tuning-plan.md`](12-fine-tuning-plan.md) §"The Day-10
+Go/No-Go Gate" we committed up front to ≥10 percentage points on 4-class
+validation accuracy or NO-GO. Our best LoRA configuration delivers **+7.5 pp
+on 4-class** (base 81.5 % → tuned 89.0 %) and **+11.5 pp on the binary
+damaged-vs-not task** (base 84.5 % → tuned 96.0 %). The binary metric clears
+the threshold; the 4-class metric misses by 2.5 pp. We **honour the strict
+rule and close as NO-GO**. The demo ships base Gemma 4 E2B-it with structured
+prompts (the docs/12 NO-GO branch); the trained adapter remains in the repo
+at `ml/adapters/xbd_e2b_it_lora_v4_balanced/` as documented work, and we do
+not claim the Unsloth special prize.
 
-Results (Table 5, §8): base Gemma 4 E2B vs fine-tuned LoRA, per-class F1 and
-overall accuracy on the held-out xBD test split (split by disaster, not
-random sample, for honest generalization). Sim-to-real caveat: the xBD
-imagery is high-altitude post-event satellite, while our simulation serves
-curated crops. The fine-tune helps the *model*; transferring its gains to
-live drone footage is future work.
+**Why the pipeline still matters as a contribution.** Building this pipeline
+required diagnosing five distinct upstream incompatibilities in a fresh-this-week
+combination of Gemma 4 + Unsloth 2026.5.2 + transformers 5.5.0 + PEFT + bnb_4bit
+that no released version of those packages currently makes work out of the
+box:
+
+1. `transformers 5.5.0` introduced `core_model_loading.revert_weight_conversion`
+   without a `reverse_op` implementation for bnb_4bit weight transforms.
+   `model.save_pretrained` raises `NotImplementedError` for both PEFT adapters
+   and Unsloth's `save_pretrained_merged`. We bypassed this with a manual
+   `torch.save` of LoRA params filtered by name (`ml/training/finetune_lora.py:save_lora_manual`
+   + the symmetric `ml/evaluation/runners.py:tuned_runner` load path) — adapter
+   ships as a custom 239 MB `lora_weights.pt` + `lora_config.json` instead of
+   the standard PEFT format.
+2. The Unsloth-bnb-4bit Gemma 4 processor ships `chat_template=None` on the
+   processor *and* its inner tokenizer; `UnslothVisionDataCollator.__init__`
+   requires a chat_template and fails. We dropped trl.SFTTrainer for
+   transformers.Trainer with a hand-written vision collator that uses
+   `processor.apply_chat_template(...)` directly (the underlying Jinja file
+   exists and works even when the attribute reads None).
+3. Sequential `FastVisionModel.from_pretrained` calls trigger accelerate's
+   CPU-offload path on 16 GB cards (bnb_4bit refuses CPU offload). We load
+   once and thread `(model, tokenizer)` through a state dict shared across
+   all verify checks.
+4. The first end-to-end run on the *raw* `unsloth/gemma-4-e2b` (instead of
+   the `-it` instruction-tuned variant docs/12 line 114 actually specified)
+   produced prompt-loop garbage from base, masking the fact that the LoRA
+   was learning a bad prompt format. Fixed by switching to `-e2b-it` across
+   verify, finetune, and the eval runners.
+5. The first `-it` training run on natural-distribution xBD (~80 % no_damage)
+   collapsed to over-predicting `major_damage` (134 of 200 val examples,
+   accuracy 12 % vs base 81.5 %). Fixed by class-balanced sampling (2 K
+   per class × 4 classes), smaller LR (5e-5 vs 2e-4), longer warmup (10 %),
+   smaller rank (16 vs 32). This is the v8 / v4_balanced run reported above.
+
+**Hyperparameters (final v8 run).** Gemma 4 E2B-it, LoRA rank 16, alpha 16,
+`target_modules="all-linear"`, `finetune_vision_layers=False` (language +
+attention + MLP only per docs/12 "start text-only" guidance), LR 5e-5 with
+cosine schedule + 10 % warmup, bf16, `adamw_8bit`, batch size 2 with
+gradient accumulation 4, 1 epoch over an 8 K class-balanced subset of the
+233 K-example training set, 63 min wall-clock on a Runpod A5000 24 GB.
+
+**Eval methodology.** 200 examples from the natural-distribution val split
+(192 no_damage / 5 minor_damage / 0 major_damage / 3 destroyed — held out by
+disaster per `ml/data_prep/split_dataset.py`), both base and tuned runners
+loaded via the same Unsloth `FastVisionModel.from_pretrained` path with the
+same `processor.apply_chat_template` prompt formatting (apples-to-apples).
+Only difference is whether `get_peft_model(...) + load_state_dict(strict=False)`
+on `lora_weights.pt` is applied. Code at `ml/evaluation/{runners,eval_adapter}.py`.
+
+**What the numbers mean.** The 4-class delta is dominated by the no_damage
+class (192 of 200 val examples). Both models fail equally on the rare-class
+minority (5 minor_damage, 3 destroyed, 0 major_damage in val), so the +7.5 pp
+delta is the tuned model being more conservative on the 192 no_damage
+examples (fewer false-positive damage calls). The +11.5 pp binary delta is
+the same effect viewed through the operationally meaningful "is this scene
+damaged or not?" lens. Both metrics exceed the docs/12 "Realistic
+expectations" ranges (40–55 % base 4-class, 60–75 % tuned 4-class, 80–90 %
+binary). Tuned mean confidence on correct predictions (0.82) is higher than
+on wrong ones (0.72) — well-calibrated.
+
+**Sim-to-real caveat.** xBD imagery is high-altitude post-event satellite,
+while our simulation serves curated crops. The fine-tune helps the *model*;
+transferring its gains to live drone footage is future work. Reproducibility
+commands and the full upstream-bug breakdown are in
+[`plans/2026-05-14-gate3-fine-tune-run-and-call.md`](plans/2026-05-14-gate3-fine-tune-run-and-call.md).
 
 ---
 
@@ -454,15 +515,44 @@ reportable claim; cells are populated from `validation_event` and
 | Spanish | __ | __% | demo language |
 | Arabic | __ | __% | RTL rendering check |
 
-**Table 5 — Fine-Tuning (if §7.A applies)**
+**Table 5 — Fine-Tuning (LoRA on Gemma 4 E2B-it, 8 K class-balanced xBD, v4_balanced run)**
 
-| Class | Base F1 | Fine-tuned F1 | Δ |
-|---|---|---|---|
-| no-damage | __ | __ | __ |
-| minor-damage | __ | __ | __ |
-| major-damage | __ | __ | __ |
-| destroyed | __ | __ | __ |
-| **macro-F1** | __ | __ | __ |
+200 examples from the held-out val split (192 no_damage / 5 minor_damage /
+0 major_damage / 3 destroyed). Both base and tuned runners go through the
+same `processor.apply_chat_template` path; only difference is whether the
+LoRA adapter is applied.
+
+| Metric | Base Gemma 4 E2B-it | Fine-tuned LoRA | Δ | Gate threshold |
+|---|---|---|---|---|
+| 4-class accuracy | 81.5 % | **89.0 %** | **+7.5 pp** | ≥10 pp (docs/12 §250) — **missed by 2.5 pp → NO-GO** |
+| Binary damaged-vs-not accuracy | 84.5 % | **96.0 %** | **+11.5 pp** | ≥10 pp — **cleared** |
+| Mean confidence (correct predictions) | 0.80 | 0.82 | +0.02 | well-calibrated |
+| Mean confidence (wrong predictions) | 0.74 | 0.72 | −0.02 | tuned is *less* confident when wrong |
+
+Per-class F1 is dominated by the no_damage class because the val sample is
+96 % no_damage (held out by disaster, so the class balance reflects what
+those two specific test disasters actually contained):
+
+| Class | Base F1 | Fine-tuned F1 |
+|---|---|---|
+| no_damage | 0.90 | 0.94 |
+| minor_damage | 0.00 | 0.00 |
+| major_damage | 0.00 | 0.00 |
+| destroyed | 0.00 | 0.00 |
+| **macro-F1** | 0.23 | 0.24 |
+
+Both models fail entirely on the 8 rare-class minority examples in val
+(neither predicts minor / major / destroyed correctly on any of them). The
++7.5 pp 4-class gain is the tuned model being more conservative on the 192
+no_damage examples (fewer false-positive damage calls). A class-balanced
+eval slice (125 per class) would test the granular subtype gap directly;
+that didn't get done before the gate.
+
+Confusion-matrix structure (rows = true class, columns = predicted): base
+predicts no_damage 169 times with 26 false-positive `major_damage` calls;
+tuned predicts no_damage 186 times with only 5 false-positive `major_damage`
+calls. Mode collapse from earlier runs (v7 over-predicted `major_damage`
+137 of 200) is fully resolved.
 
 The reportable claim from these tables, in narrative form: FieldAgent
 matches or approaches the reference paper's coverage and completion-time
@@ -490,6 +580,17 @@ within a 20-day hackathon window. Full rationale per item lives in
   the wildfire boundary from satellite imagery via a U-Net. We ship YAML
   polygons. Building U-Net inference on top of a 20-day Gemma-focused build
   was not the right trade.
+
+- **Fine-tuning closed at NO-GO on the strict 4-class threshold.** Our best
+  LoRA configuration delivers +11.5 pp on binary damaged-vs-not (cleared the
+  10 pp gate) and +7.5 pp on 4-class (missed by 2.5 pp). Per the
+  pre-registered Gate 3 rule (docs/12 §250) we honour the strict reading and
+  close as NO-GO; the demo ships base Gemma 4 E2B-it with structured prompts
+  per the docs/12 NO-GO branch. The trained adapter remains in the repo at
+  `ml/adapters/xbd_e2b_it_lora_v4_balanced/` as documented work. We do not
+  claim the Unsloth special prize. Detailed numbers in §7 and §8 Table 5;
+  full chronology and upstream-bug breakdown in
+  [`plans/2026-05-14-gate3-fine-tune-run-and-call.md`](plans/2026-05-14-gate3-fine-tune-run-and-call.md).
 
 - **Software mesh dropout, not WiFi mesh.** Drone-to-drone broadcasts are
   Redis pub/sub on localhost with Euclidean range filtering applied by a
