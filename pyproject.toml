@@ -69,6 +69,7 @@ ml = [
     "tqdm>=4.66",
     "numpy>=1.26",
     "httpx>=0.27",
+    "kaggle>=2.1.2",
 ]
 # Test harness — pytest stack used across every role.
 dev = [

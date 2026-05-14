@@ -80,6 +80,16 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Stub left in place:** `test_e2e_phase3.py:274` still contains the original `pytest.skip(...)`. Re-opening it is post-submission if anyone wants the integration-flavor coverage.
 - **Owner:** Person 4 (Ibrahim), closed 2026-05-11.
 
+## ML / Fine-Tuning Follow-ups
+
+### Root-cause analysis of Kaleel's original Unsloth training regression (post-submission)
+- **What:** When Kaleel's first xBD LoRA run made the model *worse* than base Gemma 4 E2B, the working hypothesis was `finetune_vision_layers=False`. Reading `ml/training/finetune_lora.py:62` shows he already had it `True`. So the regression cause is still unknown. Post-Sunday, compare his exact hyperparams, training data class distribution, eval methodology, and raw eval predictions against whatever the Kaggle-kernel run produces. Document the deltas so future Gemma 4 vision FT work doesn't repeat the same mistake.
+- **Why:** We're rebuilding without understanding the original failure mode. If our Kaggle run also regresses, having a documented hypothesis tree saves cycles. If it succeeds, we should still know *why* his didn't — this is potential signal for the writeup and for any post-hackathon follow-ups.
+- **Pros:** ~2 hrs total work. Surfaces the real cause (likely class imbalance, eval methodology, or LR), which informs all future vision FT runs on this codebase.
+- **Cons:** Requires Kaleel's preprocessed JSONL + raw eval predictions to be retrievable. If he can't surface them, the analysis is impossible.
+- **Context:** Surfaced by `/plan-eng-review` of the Kaggle-kernel training plan (2026-05-14). Reviewer hypothesis A2 (`load_in_4bit` mismatch) and the schema mismatch finding (A1: plain label vs JSON envelope output) are *candidate* causes but unverified without Kaleel's data. Test plan artifact: `~/.gstack/projects/ibrahim7860-Gemma-Guardian/appleuser-main-eng-review-test-plan-20260514-110546.md`.
+- **Owner:** Ibrahim (or whoever picks up post-hackathon vision FT work).
+
 ## Mesh Simulator Follow-ups
 
 ### CLOSED — Derive EGS lat/lon from active scenario YAML

@@ -1,0 +1,9 @@
+{
+  "ownerSlug": "ibrahimahmed7860",
+  "title": "Gemma 4 E2B Vision LoRA — xBD damage",
+  "slug": "gemma4-e2b-xbd-vision-lora",
+  "subtitle": "Gemma 4 E2B fine-tuned on xBD building-damage crops via Unsloth LoRA",
+  "description": "Vision LoRA adapter merged into Gemma 4 E2B base for building-damage classification. Trained on the tunguz/xview2-challenge-dataset-train-and-test Kaggle mirror of the xBD dataset. Produced by FieldAgent / Gemma-Guardian hackathon team. Deploy via HuggingFace Transformers (NOT GGUF — Unsloth Issue #2290 causes vision loss in GGUF export for Gemma family).",
+  "isPrivate": true,
+  "licenseName": "Apache 2.0"
+}

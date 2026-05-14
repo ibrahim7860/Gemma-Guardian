@@ -1,0 +1,17 @@
+{
+  "id": "ibrahimahmed7860/gemma4-xbd-vision-lora",
+  "title": "Gemma 4 E2B Vision LoRA — xBD building damage",
+  "code_file": "gemma4-xbd-vision-lora.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "tunguz/xview2-challenge-dataset-train-and-test"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
