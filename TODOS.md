@@ -88,6 +88,16 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Tests:** 5 new CLI tests in `agents/mesh_simulator/tests/test_cli_scenario.py` (scenario-by-id, scenario-by-path, unknown-id error, explicit-override WARN, no-flags ERROR + exit 2). Regression guard rewritten as `test_shell_launcher_passes_egs_config_to_mesh_simulator` — parametrized over `scripts/*.sh` that launch the mesh sim, asserts EITHER `--scenario` OR both `--egs-lat/--egs-lon` on every invocation. Picks up future launchers automatically. Two Playwright e2e tests migrated and green (DOM-render + real-drone-findings).
 - **Owner:** Closed by Ibrahim 2026-05-11.
 
+## EGS Follow-ups
+
+### `command_translator.py:70` — sibling `180.0` httpx timeout literal
+- **What:** Hazim's GH #32 fix (commit `d86a7d9`) hoisted `replanning.py`'s per-attempt timeout from inline `180.0` → module constant `EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S = 30.0`. The same literal exists at `agents/egs_agent/command_translator.py:70` in the operator-command-translation path (`httpx.AsyncClient().post(..., timeout=180.0)`). Hazim's commit acknowledges it but intentionally left it: that path has no outer `wait_for` guard and is not on the resilience-scenario critical path.
+- **Why:** Defense-in-depth + DRY. If a future change adds an outer guard on the operator-command path (mirroring the replan-task lifecycle pattern), the same bug class as GH #32 would re-appear. Hoisting now keeps the project consistent and lets any future invariant-test cover both paths.
+- **Pros:** ~5 LOC change. Either import `EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S` from `replanning.py` (creates module coupling) OR define a parallel `COMMAND_TRANSLATOR_HTTPX_TIMEOUT_S` constant (cleaner, but introduces drift risk).
+- **Cons:** Behavior change. If operator-command translation genuinely needs >30s on a slow box, dropping the timeout will start producing failures. Worth measuring before committing to a value.
+- **Context:** Surfaced by `/review` of Hazim's PR #48 (2026-05-13). Hazim's commit message explicitly flagged this as Qasim's lane.
+- **Owner:** Qasim (EGS).
+
 ## Drone-Agent Follow-ups
 
 ### CLOSED — Migrate drone agent zone source to `egs.state.zone_polygon` (GATE 4)

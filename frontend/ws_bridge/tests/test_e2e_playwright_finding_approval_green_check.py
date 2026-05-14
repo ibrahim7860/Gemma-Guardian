@@ -437,11 +437,18 @@ def test_finding_action_round_trip_within_3s(
             # rendered. Producer ticks at 0.5s and publishes a finding
             # every 8 ticks; combined with EGS process_findings →
             # publish_egs_state at 1 Hz → bridge tick at 0.25s, the
-            # button typically appears within ~6-10s of cold start.
+            # button typically appears within ~6-10s of cold start
+            # locally. GitHub Actions runners take 2-3x longer for
+            # Flutter web cold-load + EGS subprocess startup + WS
+            # handshake; the dismiss param flaked on `8e791bc` at the
+            # 30s ceiling (PR run for same SHA was clean — pure CI
+            # cold-start variance, not a regression). Bumped to 60s
+            # for CI headroom; the actual 3s round-trip SLA below is
+            # unchanged.
             btn = page.locator(
                 f'flt-semantics[role="button"]:has-text("{button_label}")'
             ).first
-            btn.wait_for(state="visible", timeout=30_000)
+            btn.wait_for(state="visible", timeout=60_000)
 
             # ---- the load-bearing click ----
             click_t0 = time.monotonic()
