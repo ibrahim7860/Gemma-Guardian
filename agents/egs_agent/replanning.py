@@ -15,6 +15,32 @@ from agents.egs_agent.validation import EGSValidationNode
 logger = logging.getLogger(__name__)
 
 
+# GH #32 / Phase D follow-up (2026-05-13, Hazim VRAM-constrained re-run):
+# per-attempt httpx timeout on the Ollama call. Constraint pinned by
+# `agents/egs_agent/tests/test_coordinator_replan_hang.py::
+# test_per_attempt_timeout_fits_inside_outer_guard`:
+#
+#   EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S × (CONFIG.validation.max_retries + 1)
+#       + REPLAN_FALLBACK_HEADROOM_S
+#       <= coordinator.REPLAN_OVERALL_TIMEOUT_S
+#
+# Why this matters: the deterministic round-robin fallback at the bottom
+# of `assign_survey_points` only runs if the retry loop *exhausts*. On a
+# VRAM-stalled box (Ollama hangs waiting for eviction) every retry hits its
+# full per-attempt timeout. If retry-loop worst-case wall time exceeds the
+# coordinator's outer `wait_for(REPLAN_OVERALL_TIMEOUT_S)` guard, the outer
+# guard cancels the inner task mid-retry and the fallback is unreachable —
+# which is exactly what `docs/sim-resilience-run-notes.md` §"2026-05-13"
+# captures live (940 `skipped (already in flight)` lines, 0 `drones.*.tasks`
+# publishes during a 240 s `resilience_v1` run with `timeout=180.0`).
+#
+# 30 s is 3× the typical first-call eviction latency Ibrahim measured in
+# `scripts/measure_e4b_replan_latency.py`; with `max_retries=3` (4 attempts)
+# the retry-loop worst-case is 30 × 4 = 120 s, well under the 240 s outer
+# guard, leaving 120 s for the fallback path itself to run.
+EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S: float = 30.0
+
+
 # Callback signature for the per-attempt sink the coordinator passes in.
 # We pass a plain dict (already-validated by ReplanAttempt semantics on the
 # coordinator side) rather than the model so this module stays decoupled from
@@ -122,7 +148,10 @@ Rules:
 
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(endpoint, json=payload, timeout=180.0)
+                resp = await client.post(
+                    endpoint, json=payload,
+                    timeout=EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S,
+                )
                 resp.raise_for_status()
                 data = resp.json()
 

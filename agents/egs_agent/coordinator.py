@@ -37,19 +37,34 @@ SEEN_FINDING_ID_TTL_S = 300.0
 MAX_APPROVED_FINDINGS: int = 1000
 
 # GH #32 / Bug 3 fix (Phase D resilience-scenario blocker): outer timeout on
-# the spawned replan task. assign_survey_points has its own internal httpx
-# timeout (180 s) plus a retry budget, but Ollama can *hang* without
-# erroring under VRAM eviction stalls — the await never returns, the
-# `finally` never clears `_replan_in_flight`, and every subsequent replan
-# trigger gets dedup-skipped indefinitely. This outer wait_for() forces a
-# bounded lifetime on the in-flight slot. On TimeoutError the `finally`
-# clears the flag and the next replan trigger gets a fresh attempt (which
-# will hit the deterministic fallback path on second hang).
+# the spawned replan task. assign_survey_points has its own internal per-attempt
+# httpx timeout (replanning.EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S = 30 s) plus a
+# retry budget (CONFIG.validation.max_retries = 3, so 4 attempts), but Ollama
+# can *hang* without erroring under VRAM eviction stalls — the await never
+# returns, the `finally` never clears `_replan_in_flight`, and every
+# subsequent replan trigger gets dedup-skipped indefinitely. This outer
+# wait_for() forces a bounded lifetime on the in-flight slot. On TimeoutError
+# the `finally` clears the flag and the next replan trigger gets a fresh
+# attempt.
 #
-# Sized at 240 s = 4 min so a normal multi-retry LLM call (worst case
-# ~3 × ~30-45 s warm vision+tools) completes comfortably, but a true hang
-# is recovered well within a 240 s scenario duration.
+# Sized at 240 s = 4 min so the retry loop's worst-case wall time (4 × 30 s
+# = 120 s when every attempt hangs to its httpx timeout) AND the deterministic
+# round-robin fallback at the bottom of `assign_survey_points` both fit
+# comfortably before the outer guard fires. The arithmetic invariant is pinned
+# by `agents/egs_agent/tests/test_coordinator_replan_hang.py::
+# test_per_attempt_timeout_fits_inside_outer_guard` — see that test's docstring
+# and `docs/sim-resilience-run-notes.md` §"2026-05-13" for the original live
+# evidence that the pre-fix 180 s per-attempt timeout starved the fallback path.
 REPLAN_OVERALL_TIMEOUT_S: float = 240.0
+
+# Headroom required between the retry loop's worst-case wall time and the outer
+# guard so the deterministic round-robin fallback at
+# `agents/egs_agent/replanning.py` (after `while retries <= max_retries:`) has
+# bounded wall time to execute + publish tasks before the outer guard cancels
+# the inner task. The fallback itself is O(survey_points × active_drones) and
+# completes in well under a second on the demo scale (25 points × 3 drones), so
+# 30 s is conservatively oversized — but cheap to enforce as an invariant.
+REPLAN_FALLBACK_HEADROOM_S: float = 30.0
 
 # Phase 1 (GATE 4 wow moment): how long the dashboard banner lingers after a
 # replan finishes. Module-level so tests can monkeypatch it to a tiny value
