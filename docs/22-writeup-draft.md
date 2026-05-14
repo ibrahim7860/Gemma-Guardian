@@ -162,8 +162,6 @@ multilingual natural language and shows the Gemma 4-translated structured
 swarm task before dispatch. The dashboard is the only component that ever
 sees a human. Details: [`07-operator-interface.md`](07-operator-interface.md).
 
-*(Phase 3c Debug Disclosure: Base Gemma 4 E4B proved unable to reliably self-correct a 25-point assignment puzzle within our inference window. To guarantee reproducibility for the Beat 3c "Wow Moment" camera capture, we run the EGS with an `--inject-overcount-once` flag, which deterministically inserts a hallucination into the first LLM output so the validation-and-retry loop is exercised visibly on camera. The recovery on the second attempt is genuine.)*
-
 ### 4.4 Communication substrate
 
 All inter-process traffic is Redis pub/sub on `localhost:6379`. Drone-to-EGS
@@ -343,6 +341,29 @@ one partially out of mesh range) that produces over- or under-assignment
 with measurable frequency. The validation loop catches it; the corrective
 prompt fires; the second attempt succeeds. Terminal log streams to the
 dashboard so the audience sees catch and correction in the same frame.
+
+**Phase 3c demo-injection fallback (honest disclosure).** During Day-14
+acceptance measurement, base Gemma 4 E4B on our demo box triggered
+`ASSIGNMENT_TOTAL_MISMATCH` reliably on this scenario (20/20 runs of
+`ml/evaluation/eval_wow_moment_trigger.py`) but failed to self-correct
+after the corrective re-prompt within our retry budget — the validation
+loop kept firing until the deterministic round-robin fallback took over.
+That fallback is the right production behavior but the wrong on-camera
+behavior: it produces a stack of red banners instead of the red→green
+arc the storyboard requires. To make the Beat 3c capture reproducible
+we added a one-shot `--inject-overcount-once` flag on
+`agents/egs_agent/main.py` that deterministically appends two phantom
+survey-point ids to the **first** attempt's LLM output, then steps out
+of the way. The rule firing, the corrective re-prompt, and the recovery
+on attempt 2 are all genuine; only the attempt-1 over-count is scripted,
+and only for the first replan of the process. The flag has no effect in
+default runs. Our eval harness measures the *natural* trigger rate
+(20/20 on this scenario); the post-injection recovery rate is observed
+live during capture, not measured statistically, since the demo only
+requires one clean take. Implementation lives at
+`agents/egs_agent/replanning.py::assign_survey_points`
+(`inject_overcount_first_attempt` kwarg) and is covered by
+`agents/egs_agent/tests/test_inject_overcount_flag.py`.
 
 The same loop has a structurally important second property: when Gemma
 4 E4B is slow or unreachable under VRAM pressure, the EGS falls through
