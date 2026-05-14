@@ -553,22 +553,34 @@ no regressions in GH-#32 retry-loop tests (`test_replanning.py`,
 
 ### `eval_wow_moment_trigger.py` JSON
 
-The base model successfully triggers the `ASSIGNMENT_TOTAL_MISMATCH` rule (the "Wow Moment" hallucination) but fails to recover from it during the retry loop, repeatedly exhausting its retries. Because the recovery fails, we are officially proceeding with the **Phase 3c debug-injection fallback** for the camera capture session to ensure a clean second-attempt recovery.
+The base model fails to produce a valid assignment or hallucination that reliably triggers the `ASSIGNMENT_TOTAL_MISMATCH` rule, consistently failing the internal retry loop and exhausting its attempts. Because the native recovery fails entirely, we are officially proceeding with the **Phase 3c debug-injection fallback** for the camera capture session to ensure a clean second-attempt recovery.
 
 ```json
 {
-  "runs": 20,
-  "mismatches": 20,
-  "fraction": 1.0,
+  "runs": 2,
+  "mismatches": 0,
+  "fraction": 0.0,
   "threshold": 12,
-  "passed": true,
-  "diagnostic_note": "Model triggers rule but fails to recover after retries (fallback used)."
+  "per_run": [
+    {
+      "run": 0,
+      "rule_ids": [],
+      "had_mismatch": false
+    },
+    {
+      "run": 1,
+      "rule_ids": [],
+      "had_mismatch": false
+    }
+  ],
+  "passed": false
 }
 ```
 
 ### `measure_e4b_replan_latency.py` Latency
 
-- **Single-attempt Latency:** p50 = 8.4s, p95 = 11.2s
-- **Full Retry-loop Latency (2 attempts):** p50 = 16.8s, p95 = 23.5s
+| Metric                              | p50 (s) | p95 (s) | N  |
+|-------------------------------------|---------|---------|----|
+| Single attempt                      | 127.30  | 139.64  | 10 |
 
-**Capture Strategy Decision:** Since the p95 of a 2-attempt run is > 8s, we will use a **jump-cut** strategy ("FAILED... [cut] ...PASSED") for the final video rather than forcing the audience to watch 16+ seconds of inference during the Beat 3c 10-second window.
+**Capture Strategy Decision:** Since the p95 of an attempt loop is massively over our 8-second budget (clocking in at ~140 seconds on the target box), we MUST use a **jump-cut** strategy ("FAILED... [cut] ...PASSED") for the final video. Forcing the audience to watch over two minutes of inference during the Beat 3c 10-second window is not viable.

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # `scripts/measure_e4b_replan_latency.py`; with `max_retries=3` (4 attempts)
 # the retry-loop worst-case is 30 × 4 = 120 s, well under the 240 s outer
 # guard, leaving 120 s for the fallback path itself to run.
-EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S: float = 120.0
+EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S: float = 180.0
 
 # Phase 3c (GATE 4 wow moment fallback): see the
 # `inject_overcount_first_attempt` kwarg on `assign_survey_points`.

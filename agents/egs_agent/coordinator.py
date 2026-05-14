@@ -55,7 +55,7 @@ MAX_APPROVED_FINDINGS: int = 1000
 # test_per_attempt_timeout_fits_inside_outer_guard` — see that test's docstring
 # and `docs/sim-resilience-run-notes.md` §"2026-05-13" for the original live
 # evidence that the pre-fix 180 s per-attempt timeout starved the fallback path.
-REPLAN_OVERALL_TIMEOUT_S: float = 510.0
+REPLAN_OVERALL_TIMEOUT_S: float = 750.0
 
 # Headroom required between the retry loop's worst-case wall time and the outer
 # guard so the deterministic round-robin fallback at
