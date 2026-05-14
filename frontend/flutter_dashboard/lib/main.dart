@@ -13,6 +13,7 @@ import 'widgets/command_panel.dart';
 import 'widgets/drone_status_panel.dart';
 import 'widgets/findings_panel.dart';
 import 'widgets/map_panel.dart';
+import 'widgets/validation_wow_banner.dart';
 
 String _wsBridgeUrl() {
   if (kIsWeb) {
@@ -152,6 +153,7 @@ class _DashboardShellState extends State<_DashboardShell> {
       body: Column(
         children: const [
           EgsLinkSeveredBanner(),
+          ValidationWowBanner(),
           Expanded(child: _FourPanelGrid()),
         ],
       ),

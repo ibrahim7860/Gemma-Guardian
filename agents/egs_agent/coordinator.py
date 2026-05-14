@@ -5,10 +5,11 @@ import time
 from collections import deque
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import TypedDict, Dict, Any, List, Deque, Tuple
+from typing import TypedDict, Dict, Any, List, Deque, Optional, Tuple
 
 from langgraph.graph import StateGraph, START, END
 
+from shared.contracts.logging import ValidationEventLogger, default_log_dir
 from shared.contracts.topics import per_drone_tasks_channel
 from agents.egs_agent.validation import EGSValidationNode
 from agents.egs_agent.replanning import assign_survey_points
@@ -35,6 +36,43 @@ SEEN_FINDING_ID_TTL_S = 300.0
 # realistic demo so the cap is purely defensive.
 MAX_APPROVED_FINDINGS: int = 1000
 
+# GH #32 / Bug 3 fix (Phase D resilience-scenario blocker): outer timeout on
+# the spawned replan task. assign_survey_points has its own internal per-attempt
+# httpx timeout (replanning.EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S = 30 s) plus a
+# retry budget (CONFIG.validation.max_retries = 3, so 4 attempts), but Ollama
+# can *hang* without erroring under VRAM eviction stalls — the await never
+# returns, the `finally` never clears `_replan_in_flight`, and every
+# subsequent replan trigger gets dedup-skipped indefinitely. This outer
+# wait_for() forces a bounded lifetime on the in-flight slot. On TimeoutError
+# the `finally` clears the flag and the next replan trigger gets a fresh
+# attempt.
+#
+# Sized at 240 s = 4 min so the retry loop's worst-case wall time (4 × 30 s
+# = 120 s when every attempt hangs to its httpx timeout) AND the deterministic
+# round-robin fallback at the bottom of `assign_survey_points` both fit
+# comfortably before the outer guard fires. The arithmetic invariant is pinned
+# by `agents/egs_agent/tests/test_coordinator_replan_hang.py::
+# test_per_attempt_timeout_fits_inside_outer_guard` — see that test's docstring
+# and `docs/sim-resilience-run-notes.md` §"2026-05-13" for the original live
+# evidence that the pre-fix 180 s per-attempt timeout starved the fallback path.
+REPLAN_OVERALL_TIMEOUT_S: float = 750.0
+
+# Headroom required between the retry loop's worst-case wall time and the outer
+# guard so the deterministic round-robin fallback at
+# `agents/egs_agent/replanning.py` (after `while retries <= max_retries:`) has
+# bounded wall time to execute + publish tasks before the outer guard cancels
+# the inner task. The fallback itself is O(survey_points × active_drones) and
+# completes in well under a second on the demo scale (25 points × 3 drones), so
+# 30 s is conservatively oversized — but cheap to enforce as an invariant.
+REPLAN_FALLBACK_HEADROOM_S: float = 30.0
+
+# Phase 1 (GATE 4 wow moment): how long the dashboard banner lingers after a
+# replan finishes. Module-level so tests can monkeypatch it to a tiny value
+# without hardcoding 3.0 inline. 3 seconds matches the demo storyboard's
+# Beat 3c hold: long enough for the operator's eye to read "PASSED" in green,
+# short enough that the banner doesn't loiter into the next narration beat.
+REPLAN_ATTEMPT_LOG_CLEAR_DELAY_S: float = 3.0
+
 
 class EGSState(TypedDict):
     egs_state: Dict[str, Any]
@@ -46,10 +84,21 @@ class EGSState(TypedDict):
     trigger_replan: bool
 
 class EGSCoordinator:
-    def __init__(self, validation_node: EGSValidationNode, redis_client=None):
+    def __init__(
+        self,
+        validation_node: EGSValidationNode,
+        redis_client=None,
+        *,
+        inject_overcount_once: bool = False,
+    ):
         self.validation_node = validation_node
         self.redis_client = redis_client
         self._replan_in_flight = False  # re-entrancy guard for fire-and-forget replan
+        # Phase 3c (GATE 4 wow moment): consumed on the first replan to force
+        # the ASSIGNMENT_TOTAL_MISMATCH rule to fire deterministically for the
+        # camera. Flipped to False after that replan completes regardless of
+        # outcome — the demo only needs one clean take.
+        self._inject_overcount_pending: bool = bool(inject_overcount_once)
         self._validation_refresh_counter = 0  # gates refresh_validation_events node
         # Wave 3a (Component 4): finding_id deduplication.
         # We keep both a deque (for FIFO eviction) and a set (for O(1)
@@ -69,7 +118,74 @@ class EGSCoordinator:
         # Without TTL eviction the set leaks linearly with operator clicks.
         self._seen_approval_command_ids: Deque[Tuple[str, float]] = deque()
         self._seen_approval_command_id_set: set[str] = set()
+        # Phase 1 (GATE 4 wow moment): transient per-attempt log surfaced on
+        # egs_state.replan_in_flight_attempt_log. Populated by replanning.py
+        # via the log sink injected on each replan; cleared
+        # REPLAN_ATTEMPT_LOG_CLEAR_DELAY_S seconds after the in-flight slot
+        # frees so the dashboard's wow-moment banner has time to render the
+        # final PASSED/FAILED state. List[Dict] not List[ReplanAttempt] —
+        # contracts/models.ReplanAttempt is the wire-shape mirror; this
+        # bucket stores already-shaped dicts so the snapshot in
+        # refresh_validation_events can deep-copy without round-tripping
+        # through Pydantic on every tick.
+        self._replan_attempt_log: List[Dict[str, Any]] = []
+        # Handle for the pending asyncio.call_later clear. We CANCEL this if a
+        # new replan starts during the 3s grace window — otherwise the second
+        # replan's fresh entries would be wiped out mid-stream.
+        self._pending_clear_handle: Optional[asyncio.TimerHandle] = None
+        # Validation event logger for Layer 2 (EGS function calls). Mirrors
+        # the drone_agent/main.py wiring at line 47 so ASSIGNMENT_TOTAL_MISMATCH
+        # events finally show up in validation_events.jsonl. Path honours the
+        # GG_LOG_DIR env var via default_log_dir() so tests can isolate.
+        self._validation_log = ValidationEventLogger(
+            path=default_log_dir() / "validation_events.jsonl"
+        )
         self.graph = self._build_graph()
+
+    # ---- Phase 1 (GATE 4 wow moment): replan attempt-log lifecycle --------
+
+    def _append_replan_attempt(self, attempt: Dict[str, Any]) -> None:
+        """Sink callback handed to replanning.assign_survey_points.
+
+        Appends one ReplanAttempt-shaped dict to the transient log. Called
+        once per retry-loop branch (validation failure or final success).
+        Any pending clear timer is cancelled here — a fresh replan in the
+        3-second grace window must NOT have its first entries wiped by the
+        previous replan's pending clear.
+        """
+        if self._pending_clear_handle is not None:
+            self._pending_clear_handle.cancel()
+            self._pending_clear_handle = None
+        self._replan_attempt_log.append(attempt)
+
+    def _clear_replan_attempt_log(self) -> None:
+        """TimerHandle callback that empties the transient log."""
+        self._replan_attempt_log = []
+        self._pending_clear_handle = None
+
+    def _schedule_replan_attempt_log_clear(self) -> None:
+        """Schedule the post-replan clear using asyncio.call_later.
+
+        Cancels any pending clear first so back-to-back replans don't double-
+        schedule. The actual delay is read at call time from the module-level
+        constant so tests can monkeypatch it.
+        """
+        if self._pending_clear_handle is not None:
+            self._pending_clear_handle.cancel()
+            self._pending_clear_handle = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop — nothing to schedule. Tests that exercise the
+            # lifecycle always have a loop; production always has one too.
+            # `get_running_loop` (not `get_event_loop`) is the supported way
+            # to obtain the current loop from async code per Python 3.10+ —
+            # the deprecated form would emit a DeprecationWarning.
+            return
+        self._pending_clear_handle = loop.call_later(
+            REPLAN_ATTEMPT_LOG_CLEAR_DELAY_S,
+            self._clear_replan_attempt_log,
+        )
 
     def _build_graph(self):
         workflow = StateGraph(EGSState)
@@ -330,6 +446,10 @@ class EGSCoordinator:
         from agents.egs_agent import validation_log_tail
         egs_state = state["egs_state"].copy()
         egs_state["recent_validation_events"] = validation_log_tail.tail(n=10)
+        # Phase 1 (GATE 4 wow moment): mirror the transient attempt log onto
+        # the egs_state snapshot so the bridge picks it up on the next 1Hz
+        # publish. Deep-copy so consumers can't mutate our internal bucket.
+        egs_state["replan_in_flight_attempt_log"] = deepcopy(self._replan_attempt_log)
         return {**state, "egs_state": egs_state}
 
     async def replan(self, state: EGSState) -> EGSState:
@@ -357,9 +477,36 @@ class EGSCoordinator:
 
         `_replan_in_flight` is set by the caller (`replan`) before this task
         is scheduled; we only clear it here in the `finally` block.
+
+        GH #32 / Bug 3 fix: wrap the assign_survey_points await in
+        `asyncio.wait_for` so a hung Ollama call (VRAM eviction stall, daemon
+        wedge) cannot lock the in-flight slot indefinitely. Without this,
+        every subsequent replan trigger — including drone_failure-triggered
+        replans — gets dedup-skipped forever. See module-level
+        REPLAN_OVERALL_TIMEOUT_S for sizing rationale.
         """
         try:
-            assignment = await assign_survey_points(egs_state_snapshot, self.validation_node)
+            inject_overcount = self._inject_overcount_pending
+            self._inject_overcount_pending = False
+            try:
+                assignment = await asyncio.wait_for(
+                    assign_survey_points(
+                        egs_state_snapshot,
+                        self.validation_node,
+                        validation_logger=self._validation_log,
+                        log_sink=self._append_replan_attempt,
+                        inject_overcount_first_attempt=inject_overcount,
+                    ),
+                    timeout=REPLAN_OVERALL_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "egs.replan abandoned after %.0fs (assign_survey_points hung "
+                    "— probably Ollama VRAM eviction stall). In-flight slot will "
+                    "be cleared so the next trigger can run.",
+                    REPLAN_OVERALL_TIMEOUT_S,
+                )
+                return
             if not assignment:
                 return
             if not self.redis_client:
@@ -413,3 +560,10 @@ class EGSCoordinator:
             logger.exception("egs.replan background task failed: %s", e)
         finally:
             self._replan_in_flight = False
+            # Phase 1 (GATE 4 wow moment): banner stays visible for a short
+            # grace window after replan completes (success or fallback), then
+            # the transient log clears so the dashboard hides the banner.
+            # _append_replan_attempt cancels this handle if a fresh replan
+            # starts inside the grace window — back-to-back replans don't
+            # drop each other's entries.
+            self._schedule_replan_attempt_log_clear()

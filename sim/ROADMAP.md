@@ -60,18 +60,19 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 
 ### Phase D — Mesh dropout live on the swarm
 - **Sim-side: ✅ green** as of 2026-05-11. `agents/mesh_simulator/main.py` running in the integrated stack on `resilience_v1`; mesh adjacency dynamics match the scenario's authored geometry without tuning (`range_meters=200`, `egs_link_range_meters=500`). 180s end-to-end run captured in [`docs/sim-resilience-run-notes.md`](../docs/sim-resilience-run-notes.md) "2026-05-11 re-run" section.
-- **`drone_failure → drones.<id>.tasks` chain: ❌ still blocked**, now on a *new* EGS-side bug (in-flight replan guard never clears under VRAM pressure; see notes-doc "Bug 3" and GH #32 comment). The original Bug 1 (egs_state schema seed) closed via PR #34/#45 commit `9cda8cb` — verified live (0 schema errors vs 268 on 2026-05-07).
+- **`drone_failure → drones.<id>.tasks` chain: ✅ restored end-to-end** after 2026-05-13 Hazim PR (verification + fix + re-verification bundled). Ibrahim's 2026-05-12 GH #32 fix (Bug 2 httpx-retry + Bug 3 outer-`wait_for(240s)`) plus a follow-up adjustment to the per-attempt httpx timeout (`EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S = 30 s`, was inline `180.0`) now lets the deterministic round-robin fallback at `agents/egs_agent/replanning.py` reach completion before the outer guard fires. Live re-run on the same 8 GB VRAM box: **4** `drones.*.tasks` publishes, **8** complete replanning attempts, **2** fallback completions, **0** outer-guard abandons, `egs.state.survey_points` **10/10** assigned. Latency on VRAM-stalled hardware: ~96 s (floored by 4 × 30 s retry-loop wall); on a 24 GB box where both Gemma 4 tags stay resident: ~5 s via LLM path. New iron-rule regression test pins the retry-loop × outer-guard arithmetic so the bug class can't return silently. Full evidence at [`docs/sim-resilience-run-notes.md`](../docs/sim-resilience-run-notes.md) §"2026-05-13 — fix landed + re-verified". The original Bug 1 (egs_state schema seed) remains closed via PR #34/#45 commit `9cda8cb`.
 
 ### Phase E — Gate 4 (multi-drone coordination)
 - **Sim-side: ✅ green** as of 2026-05-11. 2–3 drones coordinating; scripted resilience events (drone_failure, fire_spread, egs_link_drop, egs_link_restore, mission_complete) fire on schedule; mesh dropout produces the right adjacency dynamics. `drone_agent` GATE 2 wiring (PR #25) + EGS GATE 4 wiring (PR #45) both consume the sim's output cleanly.
-- **EGS-side replan publishing: ❌** — same blocker as Phase D's last criterion. Not Hazim-scope to fix.
+- **EGS-side replan publishing: ✅** — unblocked 2026-05-13 alongside Phase D's chain restoration (same root cause, same fix).
 
 ### Phase F — Demo capture
 - Stable, jitter-free sim runs for video capture. Fix any flakiness Ibrahim surfaces during recording.
 
 ### Phase G — Lock + reproduction docs
 - v1 draft of [`docs/sim-reproduction.md`](../docs/sim-reproduction.md) shipped on `sim/phase-g-reproduction-docs` (cross-platform prereqs, uv install, `pytest sim/ agents/mesh_simulator/ scripts/tests/`, the three escalating one-command demos, per-layer health checks, common-failures section drawn from `sim-live-run-notes.md` + `scripts/tests/`). Linked from `docs/13-runtime-setup.md`.
-- Remaining: co-write follow-ups with Thayyil, then have an outside tester run cold from scratch on a fresh box and fix everything that breaks the cold run.
+- **Pre-Thayyil cold run (Ibrahim, M1 16GB, 2026-05-12):** Walked §1–§8 literally from a fresh `git clone`. 9 findings, all shipped in one PR. Script fixes with regression guards: F1 `run_drone3_reliability.sh --dry-run`; F4 `launch_swarm.sh` + `run_hybrid_demo.sh` + `run_beat5_capture.sh` `ACTIVATE` venv prefix (tmux subshells lose VIRTUAL_ENV); F8 escape inner quotes around `$REPO_ROOT` (spaces in path silently broke `cd`). Doc-edits to `sim-reproduction.md`: F7 Python 3.14, F2 `deactivate` note, F3 full-build §4a list, F5 Apple-Silicon Ollama tuning, F9 `drone_count` reconcile. Verified end-to-end from `env -i` shell. Full notes: [`docs/plans/2026-05-12-phase-g-cold-run-findings.md`](../docs/plans/2026-05-12-phase-g-cold-run-findings.md).
+- **Remaining:** Thayyil's Days-15–16 Linux/WSL2 fresh-machine cold-run is what formally closes Phase G. Surface should be minimal — every finding from the M1 pass is already addressed.
 
 ### Phase H — Submission
 - Final repro-doc fixes from cold-tester feedback. Backup of the demo box. On-call for any submission-time sim issue.
@@ -88,7 +89,7 @@ A date-free checklist of what Hazim owns and what's left. Keep this current; ref
 |---|---|---|
 | ~~Real xBD frames in `sim/fixtures/frames/`~~ | ~~Thayyil~~ | **Closed 2026-05-08 (PR #35)** — real public-domain FEMA/USFWS aerials swapped in via `scripts/fetch_disaster_fixtures.py`. |
 | ~~`drone_agent` consuming `drones.<id>.camera` + writing merged state~~ | ~~Kaleel~~ | **Closed 2026-05-06 (PR #25)** — drone agent subscribes/publishes per Contract 4, 11. Live-verified on the 2026-05-11 resilience run. |
-| ~~`egs_agent` consuming `drones.<id>.findings`, issuing `drones.<id>.tasks`~~ | ~~Qasim~~ | **Partially closed 2026-05-09–11 (PRs #34, #45)** — EGS subscribes to findings, scripted-event drone_failure handling, schema-aligned `egs_state` publishes. Outstanding: `drones.<id>.tasks` not yet published end-to-end because the EGS coordinator's `_replan_in_flight` guard never clears when Ollama is slow under 8GB-VRAM eviction pressure (see GH #32 comment + `docs/sim-resilience-run-notes.md` "Bug 3"). |
+| ~~`egs_agent` consuming `drones.<id>.findings`, issuing `drones.<id>.tasks`~~ | ~~Qasim~~ | **Closed 2026-05-12** — PRs #34, #45 shipped the consumer side (drone_failure scripted-event handling, schema-aligned `egs_state`). Final blocker (GH #32 Bug 2 + Bug 3) fixed by Ibrahim today: `assign_survey_points` now falls back deterministically on httpx errors instead of re-raising, and `_replan_impl` wraps the await in `asyncio.wait_for` so a hung Ollama call can't lock `_replan_in_flight=True`. 9 new tests; live VRAM-constrained re-run still pending. |
 
 Nothing on this table currently blocks Hazim from advancing Phase F (demo capture). The remaining `drone_failure → drones.<id>.tasks` link is Qasim-scope.
 

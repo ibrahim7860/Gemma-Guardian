@@ -57,6 +57,79 @@ class BaseImageExtents {
   int get hashCode => Object.hash(latMin, latMax, lonMin, lonMax);
 }
 
+/// Immutable record of a single attempt inside the EGS replan retry loop.
+///
+/// Mirrors `shared/contracts/models.py:ReplanAttempt` (Contract 3 transient
+/// field, added in VERSION 1.1.0). The dashboard's `ValidationWowBanner`
+/// reads a `List<ReplanAttempt>` straight from `egs_state.replan_in_flight_attempt_log`
+/// and renders one row per attempt with a red/green chip.
+///
+/// `correctiveText` is rendered verbatim — the server is the single source
+/// of truth for the rule-id → corrective-prompt mapping (per the rev-2 plan
+/// Issue 6B). Do NOT add a Flutter-side `Map<RuleID, String>` here.
+@immutable
+class ReplanAttempt {
+  final String timestamp;
+  final int attemptN;
+  final bool valid;
+  final String? ruleId;
+  final String? correctiveText;
+  final Map<String, dynamic> details;
+
+  const ReplanAttempt({
+    required this.timestamp,
+    required this.attemptN,
+    required this.valid,
+    this.ruleId,
+    this.correctiveText,
+    this.details = const {},
+  });
+
+  /// Tolerant factory: returns null when a required field is missing or
+  /// of the wrong shape. Callers filter the null entries out so a single
+  /// malformed attempt cannot crash the whole banner.
+  static ReplanAttempt? fromJson(Map<String, dynamic> json) {
+    final timestamp = json["timestamp"];
+    final attemptN = json["attempt_n"];
+    final valid = json["valid"];
+    if (timestamp is! String || timestamp.isEmpty) return null;
+    if (attemptN is! int || attemptN < 1) return null;
+    if (valid is! bool) return null;
+    final ruleId = json["rule_id"];
+    final correctiveText = json["corrective_text"];
+    final rawDetails = json["details"];
+    return ReplanAttempt(
+      timestamp: timestamp,
+      attemptN: attemptN,
+      valid: valid,
+      ruleId: ruleId is String && ruleId.isNotEmpty ? ruleId : null,
+      correctiveText: correctiveText is String && correctiveText.isNotEmpty
+          ? correctiveText
+          : null,
+      details: rawDetails is Map<String, dynamic>
+          ? Map<String, dynamic>.from(rawDetails)
+          : (rawDetails is Map
+              ? Map<String, dynamic>.from(
+                  rawDetails.map((k, v) => MapEntry(k.toString(), v)))
+              : const {}),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ReplanAttempt &&
+          other.timestamp == timestamp &&
+          other.attemptN == attemptN &&
+          other.valid == valid &&
+          other.ruleId == ruleId &&
+          other.correctiveText == correctiveText);
+
+  @override
+  int get hashCode =>
+      Object.hash(timestamp, attemptN, valid, ruleId, correctiveText);
+}
+
 /// Per-finding state machine for operator approve/dismiss interactions.
 ///
 /// "Idle" is represented by the finding_id being absent from
@@ -94,6 +167,18 @@ class MissionState extends ChangeNotifier {
   List<dynamic> activeFindings = const [];
   List<dynamic> activeDrones = const [];
   String connectionStatus = "disconnected";
+
+  /// Transient per-attempt log of the EGS replan retry loop. Populated only
+  /// while a replan is mid-flight; cleared 3 seconds after the replan
+  /// completes (clear is owned server-side by EGSCoordinator, not here).
+  /// Empty list (default) means no validation banner is shown.
+  ///
+  /// Sourced from `egs_state.replan_in_flight_attempt_log` on every
+  /// state_update. Malformed entries are dropped so a single bad attempt
+  /// can't crash the banner; remaining entries are preserved.
+  List<ReplanAttempt> _replanInFlightAttemptLog = const [];
+  List<ReplanAttempt> get replanInFlightAttemptLog =>
+      _replanInFlightAttemptLog;
 
   // ---- EGS heartbeat staleness --------------------------------------------
   //
@@ -527,6 +612,29 @@ class MissionState extends ChangeNotifier {
       _egsLastSeenAt = _now();
       if (_egsLinkSeveredCached) _egsLinkSeveredCached = false;
     }
+    // Parse the transient replan attempt log. Defaults to empty when the
+    // field is absent (legacy / pre-1.1.0 envelopes) or when no replan is
+    // active. Malformed entries (null from fromJson) are filtered out so the
+    // remaining attempts still render.
+    final rawLog = egsState?["replan_in_flight_attempt_log"];
+    List<ReplanAttempt> nextLog = const [];
+    if (rawLog is List) {
+      final parsed = <ReplanAttempt>[];
+      for (final entry in rawLog) {
+        if (entry is Map<String, dynamic>) {
+          final a = ReplanAttempt.fromJson(entry);
+          if (a != null) parsed.add(a);
+        } else if (entry is Map) {
+          final a = ReplanAttempt.fromJson(
+              entry.map((k, v) => MapEntry(k.toString(), v)));
+          if (a != null) parsed.add(a);
+        }
+      }
+      nextLog = List<ReplanAttempt>.unmodifiable(parsed);
+    }
+    if (!_replanLogsEqual(_replanInFlightAttemptLog, nextLog)) {
+      _replanInFlightAttemptLog = nextLog;
+    }
     activeFindings = (envelope["active_findings"] as List?) ?? const [];
     activeDrones = (envelope["active_drones"] as List?) ?? const [];
     // Promote any non-confirmed/non-dismissed state to confirmed when
@@ -596,6 +704,16 @@ class MissionState extends ChangeNotifier {
         debugPrint("[MissionState] failed to decode frame: $e");
       }
     }
+  }
+
+  static bool _replanLogsEqual(
+      List<ReplanAttempt> a, List<ReplanAttempt> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   /// Findings that the operator has acted on but that have left

@@ -11,7 +11,7 @@ import fakeredis
 import fakeredis.aioredis
 
 from agents.drone_agent.runtime import DroneRuntime
-from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
+from agents.drone_agent.zone_provider import ZoneProvider
 from sim.scenario import load_scenario
 from shared.contracts import validate
 
@@ -70,7 +70,7 @@ async def test_agent_republishes_state_with_findings_count_after_finding(
         tmp_path / "validation_events.jsonl",
     )
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
 
     canned = {
         "message": {
@@ -92,7 +92,7 @@ async def test_agent_republishes_state_with_findings_count_after_finding(
 
     runtime = DroneRuntime(
         drone_id="drone1",
-        scenario=scenario, zone_bounds=zone_bounds,
+        scenario=scenario, zone_provider=zone_provider,
         sync_client=fake_sync_redis, async_client=fake_async_redis,
         agent_step_period_s=0.05, agent_state_publish_period_s=0.05,
     )
@@ -151,8 +151,7 @@ def test_observe_step_result_increments_validation_failures_counter():
 
     rt = DroneRuntime(
         drone_id="drone1", scenario=scenario,
-        zone_bounds={"lat_min": 33.99, "lat_max": 34.01,
-                     "lon_min": -118.51, "lon_max": -118.49},
+        zone_provider=ZoneProvider(scenario, buffer_m=50.0),
         sync_client=sync_client, async_client=async_client,
     )
     assert rt._validation_failures_total == 0

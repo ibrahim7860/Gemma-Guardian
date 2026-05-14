@@ -75,9 +75,9 @@ from .models import DroneStateMessage
 
 __all__ += ["DroneStateMessage"]
 
-from .models import EGSStateMessage
+from .models import EGSStateMessage, ReplanAttempt
 
-__all__ += ["EGSStateMessage"]
+__all__ += ["EGSStateMessage", "ReplanAttempt"]
 
 from .models import Finding
 

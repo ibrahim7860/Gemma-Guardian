@@ -2,7 +2,7 @@
 # Source: shared/contracts/topics.yaml
 from __future__ import annotations
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 WS_ENDPOINT = "ws://localhost:9090"
 WS_SCHEMA = "websocket_messages"
 

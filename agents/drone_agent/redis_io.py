@@ -22,8 +22,10 @@ import redis.asyncio as _redis_async
 
 from agents.drone_agent.perception import DroneState
 from agents.drone_agent.state_translator import translate_drone_state
+from agents.drone_agent.zone_provider import ZoneProvider
 from shared.contracts import validate as schema_validate
 from shared.contracts.topics import (
+    EGS_STATE,
     MESH_LINK_STATUS,
     per_drone_camera_channel,
     per_drone_state_channel,
@@ -115,11 +117,11 @@ class StateSubscriber:
     """
 
     def __init__(self, client: _redis_async.Redis, drone_id: str, *,
-                 zone_bounds: dict, scenario: Scenario):
+                 zone_provider: ZoneProvider, scenario: Scenario):
         self._client = client
         self._drone_id = drone_id
         self._channel = per_drone_state_channel(drone_id)
-        self._zone_bounds = zone_bounds
+        self._zone_provider = zone_provider
         self._scenario = scenario
         self._latest: DroneState | None = None
         self._latest_raw_sim: dict | None = None
@@ -150,7 +152,9 @@ class StateSubscriber:
                     continue
                 try:
                     translated = translate_drone_state(
-                        payload, zone_bounds=self._zone_bounds, scenario=self._scenario,
+                        payload,
+                        zone_bounds=self._zone_provider.current(),
+                        scenario=self._scenario,
                     )
                 except KeyError as e:
                     logger.warning("state: translator missing field %s", e)
@@ -219,6 +223,68 @@ class PeerSubscriber:
 
     def recent(self) -> list[dict]:
         return list(self._buf)
+
+    async def stop(self) -> None:
+        self._stop.set()
+
+
+class EgsStateSubscriber:
+    """Async subscriber for `egs.state`. Pushes `zone_polygon` into a ZoneProvider.
+
+    Per `docs/plans/2026-05-13-drone-zone-from-egs-state.md`: the drone agent
+    no longer derives its survey bbox from the scenario YAML at boot. Instead,
+    the EGS publishes a mission-wide `zone_polygon` on `egs.state`, and this
+    subscriber feeds every valid one into the runtime's shared `ZoneProvider`
+    so `ValidationNode._within_zone` evaluates against the canonical
+    mission zone.
+    """
+
+    def __init__(self, client: _redis_async.Redis, zone_provider: ZoneProvider):
+        self._client = client
+        self._channel = EGS_STATE
+        self._zone_provider = zone_provider
+        self._stop = asyncio.Event()
+        self._first_update_logged = False
+
+    async def run(self) -> None:
+        pubsub = self._client.pubsub()
+        await pubsub.subscribe(self._channel)
+        try:
+            while not self._stop.is_set():
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+                if msg is None:
+                    continue
+                data = msg.get("data")
+                if isinstance(data, (bytes, bytearray)):
+                    text = data.decode("utf-8", errors="replace")
+                else:
+                    text = data
+                try:
+                    payload = json.loads(text)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("egs_state: malformed JSON dropped")
+                    continue
+                outcome = schema_validate("egs_state", payload)
+                if not outcome.valid:
+                    logger.warning(
+                        "egs_state: schema invalid dropped: %s",
+                        outcome.errors[0].message if outcome.errors else "?",
+                    )
+                    continue
+                # Only honor zone updates from an active mission; a completed
+                # or aborted mission may still ship its last-known polygon and
+                # we don't want a post-mission state to redefine the zone.
+                if payload.get("mission_status") != "active":
+                    continue
+                polygon = payload.get("zone_polygon")
+                if not self._zone_provider.update_from_polygon(polygon):
+                    continue
+                if not self._first_update_logged:
+                    logger.info("egs_state: first zone_polygon applied to ZoneProvider")
+                    self._first_update_logged = True
+        finally:
+            await pubsub.unsubscribe(self._channel)
+            await pubsub.close()
 
     async def stop(self) -> None:
         self._stop.set()

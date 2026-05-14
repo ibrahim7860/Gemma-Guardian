@@ -100,7 +100,7 @@ Qasim owns resilience scenario scripting alone — Thayyil is dedicated to Hazim
 - Real-time map rendering with drone positions, survey points, findings
 - Multilingual command box with live structured-translation preview
 - Findings approval flow (HITL)
-- **90-second demo video** (capture, edit, narrate)
+- **1:45 demo video** (capture, edit, narrate)
 - **Technical writeup** (~2000-3000 words)
 - **GitHub repo README and reproduction docs**
 - **Demo storyline ownership** (proposes, team approves)

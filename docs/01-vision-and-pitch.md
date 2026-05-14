@@ -34,7 +34,7 @@ Same architecture. Same agentic pattern. Same validation-loop approach. Zero clo
 
 ## The Demo Moment
 
-When a judge watches the 90-second video, they should see:
+When a judge watches the 1:45 video, they should see:
 
 1. A real software-only Python simulation with 2-3 drones flying in a damaged-building scene
 2. Gemma 4's reasoning and function calls visible on screen as drones identify victims and damage

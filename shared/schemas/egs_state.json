@@ -75,6 +75,27 @@
         "enum": ["approved", "dismissed"]
       }
     },
+    "replan_in_flight_attempt_log": {
+      "description": "Transient per-attempt log of the EGS replan retry loop. Populated while a replan is mid-flight; cleared 3 seconds after the replan completes. Powers the dashboard 'wow moment' validation banner. Defaults to empty when no replan is active. Distinct from recent_validation_events (Contract 11 audit tail) — that is a terminal historical stream; this is a transient per-attempt stream.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "attempt_n", "valid"],
+        "additionalProperties": false,
+        "properties": {
+          "timestamp": {"$ref": "_common.json#/$defs/iso_timestamp_utc_ms"},
+          "attempt_n": {"type": "integer", "minimum": 1},
+          "valid": {"type": "boolean"},
+          "rule_id": {
+            "oneOf": [{"$ref": "_common.json#/$defs/rule_id"}, {"type": "null"}]
+          },
+          "corrective_text": {
+            "oneOf": [{"type": "string"}, {"type": "null"}]
+          },
+          "details": {"type": "object"}
+        }
+      }
+    },
     "base_image_path": {
       "description": "Optional. Repository-relative path to the static aerial image the Flutter map_panel renders as a background overlay. Set together with base_image_extents (or both omitted). Sourced from the active scenario YAML (see sim/scenarios/disaster_zone_v1.yaml).",
       "oneOf": [

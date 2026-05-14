@@ -11,7 +11,6 @@ from agents.egs_agent import scenario_state as scenario_state_module
 from agents.egs_agent.scenario_state import (
     SCENARIOS_DIR,
     ZONE_BUFFER_M,
-    _bbox_polygon,
     build_initial_egs_state,
 )
 from shared.contracts import validate

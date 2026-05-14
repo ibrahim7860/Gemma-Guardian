@@ -1,0 +1,19 @@
+# FieldAgent — Edge Ground Station Modelfile (Gemma 4 E4B via Ollama).
+#
+# Build:
+#   ollama create fieldagent/e4b -f ollama/Modelfile.e4b
+#
+# Or use the project's pull-and-build script:
+#   scripts/pull_models.sh --build-tagged
+#
+# Runtime note: the EGS replanner and command translator (agents/egs_agent/
+# replanning.py and command_translator.py) do not override Ollama defaults
+# at the API layer, so the PARAMETER lines below are the effective deployment
+# config when running with this Modelfile.
+
+FROM gemma4:e4b
+
+# Larger context — the EGS combines a full swarm state snapshot, the
+# assign_survey_points / replan_mission prompt, and the corrective re-prompt
+# (Algorithm 1) within a single conversation.
+PARAMETER num_ctx 8192

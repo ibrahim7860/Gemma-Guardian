@@ -77,7 +77,7 @@ We need:
 ## Deliverables Required
 
 - [ ] Working code in a public GitHub repository
-- [ ] 90-second (or shorter) demo video
+- [ ] 1:45 demo video (Kaggle hard cap is 3:00; internal target is 1:45 per `21-demo-storyboard.md`)
 - [ ] Technical write-up explaining Gemma 4 usage (Markdown in repo + Kaggle submission)
 - [ ] Reproducibility instructions (README with setup steps)
 - [ ] Submission via Kaggle by May 18, 2026, 23:59 UTC

@@ -9,6 +9,7 @@ NO LLM calls in this module.
 """
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import dataclass
@@ -126,8 +127,8 @@ class ValidationNode:
                 valid=False,
                 failure_reason=RuleID.GPS_OUTSIDE_ZONE,
                 corrective_prompt=(
-                    f"You reported a finding at GPS ({lat}, {lon}) but your assigned zone bounds are "
-                    f"{bundle.state.zone_bounds}. The finding must be within your zone. "
+                    f"You reported a finding at GPS ({lat}, {lon}) but the mission zone bounds are "
+                    f"{json.dumps(bundle.state.zone_bounds)}. The finding must be within the mission zone. "
                     "Either correct the coordinates or use continue_mission()."
                 ),
             )
@@ -210,24 +211,43 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _within_zone(lat: float, lon: float, bounds: dict, tolerance_m: float) -> bool:
+    """Return True if (lat, lon) is inside the zone bounds, with `tolerance_m` outset.
+
+    Accepts two shapes (polygon wins if both keys present):
+      - `{"polygon": [[lat, lon], ...]}` — preferred production shape, exact
+        containment via ray-casting + perpendicular edge-distance tolerance.
+      - `{"lat_min": ..., "lat_max": ..., "lon_min": ..., "lon_max": ...}` —
+        axis-aligned bbox, outset by `tolerance_m`. Retained for tests and
+        for backward compatibility with hand-built DroneState fixtures.
+    """
     if not bounds:
         return True
+    if "polygon" in bounds:
+        return _point_in_polygon(lat, lon, bounds["polygon"], tolerance_m)
     if "lat_min" in bounds:
         lat_min, lat_max = bounds["lat_min"], bounds["lat_max"]
         lon_min, lon_max = bounds["lon_min"], bounds["lon_max"]
         deg_tol = tolerance_m / 111_000.0
         return (lat_min - deg_tol) <= lat <= (lat_max + deg_tol) and (lon_min - deg_tol) <= lon <= (lon_max + deg_tol)
-    if "polygon" in bounds:
-        return _point_in_polygon(lat, lon, bounds["polygon"], tolerance_m)
     return True
 
 
 def _point_in_polygon(lat: float, lon: float, polygon: list, tolerance_m: float) -> bool:
+    """Ray-cast containment with perpendicular edge-distance tolerance.
+
+    A point passes if either:
+      (a) the standard ray-cast (horizontal eastward from the point) crosses
+          an odd number of edges, OR
+      (b) the perpendicular distance to any edge is <= tolerance_m.
+
+    Distance is computed in an equirectangular projection calibrated for
+    ~34°N (matches the buffer scale in shared.contracts.zones). For the
+    50m tolerance used in production this is accurate to <1m.
+    """
     if not polygon:
         return True
-    deg_tol = tolerance_m / 111_000.0
-    inside = False
     n = len(polygon)
+    inside = False
     for i in range(n):
         lat1, lon1 = polygon[i]
         lat2, lon2 = polygon[(i + 1) % n]
@@ -238,8 +258,41 @@ def _point_in_polygon(lat: float, lon: float, polygon: list, tolerance_m: float)
     if inside:
         return True
     for i in range(n):
-        lat1, lon1 = polygon[i]
-        lat2, lon2 = polygon[(i + 1) % n]
-        if abs(lat - lat1) <= deg_tol and abs(lon - lon1) <= deg_tol:
+        if _point_to_segment_m(lat, lon, polygon[i], polygon[(i + 1) % n]) <= tolerance_m:
             return True
     return False
+
+
+_M_PER_DEG_LAT = 111_320.0
+_M_PER_DEG_LON_34N = 92_300.0  # cos(34°) * 111_320; same constant as shared.contracts.zones
+
+
+def _point_to_segment_m(lat: float, lon: float, a: list, b: list) -> float:
+    """Perpendicular distance in metres from (lat, lon) to segment a—b.
+
+    Equirectangular projection: lat/lon -> metres using the constants above.
+    Calibrated for ~34°N (every shipped scenario sits within 0.01° of 34.0);
+    at other latitudes the longitude scale drifts. Mission zones in this
+    project are always near 34°N, so the drift is <1m for the 50m tolerance.
+    """
+    px = lon * _M_PER_DEG_LON_34N
+    py = lat * _M_PER_DEG_LAT
+    ax = a[1] * _M_PER_DEG_LON_34N
+    ay = a[0] * _M_PER_DEG_LAT
+    bx = b[1] * _M_PER_DEG_LON_34N
+    by = b[0] * _M_PER_DEG_LAT
+    dx = bx - ax
+    dy = by - ay
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq == 0.0:
+        # Degenerate segment — distance to the vertex.
+        ex = px - ax
+        ey = py - ay
+        return math.sqrt(ex * ex + ey * ey)
+    t = ((px - ax) * dx + (py - ay) * dy) / seg_len_sq
+    t = max(0.0, min(1.0, t))
+    cx = ax + t * dx
+    cy = ay + t * dy
+    ex = px - cx
+    ey = py - cy
+    return math.sqrt(ex * ex + ey * ey)

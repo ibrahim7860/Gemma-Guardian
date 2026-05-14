@@ -87,7 +87,7 @@ dependency replaced by on-device Gemma 4.
 
 ## Demo Video
 
-[90-second demonstration](video_url)
+[1:45 demonstration](video_url)
 
 ## Quick Start
 
@@ -150,20 +150,20 @@ arXiv:2601.14437.
 
 ## Video Checklist
 
-- [ ] Length: ≤90 seconds (hard cap)
+- [ ] **Kaggle hard cap: ≤3 minutes** (page-verified 2026-05-13). Our internal storyboard target is **1:45** (extended from 90s on 2026-05-13 to give Beat 5 room; see `21-demo-storyboard.md`).
 - [ ] Resolution: 1080p minimum
 - [ ] Format: MP4 (H.264)
 - [ ] Audio: clear, no clipping (or muted with strong captions)
 - [ ] Captions: present throughout
-- [ ] Hosted on YouTube, set to **unlisted** (not private, not public)
+- [ ] Hosted on YouTube; **must be publicly viewable without login** (Kaggle page: "viewable by the judges without requiring a login"). Unlisted is acceptable; private is not.
 - [ ] All mandatory visual elements from [`21-demo-storyboard.md`](21-demo-storyboard.md) present
 - [ ] Test: 3 people unfamiliar with the project understand it after watching
 - [ ] Test: video works on mobile (judges may watch on phone)
 
 ## Writeup Checklist
 
-- [ ] Length: 2,000-4,000 words
-- [ ] All sections from [`22-writeup-outline.md`](22-writeup-outline.md) present
+- [ ] **Length: ≤1,500 words HARD CAP** (page-verified 2026-05-13; "Submissions over this limit may be subject to penalty"). The current draft at `docs/22-writeup-draft.md` is ~4,070 words and needs ~63% cut before submission.
+- [ ] All sections from [`22-writeup-outline.md`](22-writeup-outline.md) present (trim within sections; don't drop sections wholesale)
 - [ ] Reference paper cited in academic format
 - [ ] Tables with actual measured numbers (not "TBD")
 - [ ] Honest limitations section

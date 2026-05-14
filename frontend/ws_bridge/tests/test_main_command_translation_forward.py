@@ -35,6 +35,7 @@ from frontend.ws_bridge.tests._helpers import drain_until, make_test_client
 
 
 def _valid_envelope() -> Dict[str, Any]:
+    from shared.contracts import VERSION
     return {
         "kind": "command_translation",
         "command_id": "abcd-1700000000000-3",
@@ -46,7 +47,7 @@ def _valid_envelope() -> Dict[str, Any]:
         "preview_text": "Will recall drone1: operator request",
         "preview_text_in_operator_language": "Will recall drone1: operator request",
         "egs_published_at_iso_ms": "2026-05-02T12:34:57.123Z",
-        "contract_version": "1.0.0",
+        "contract_version": VERSION,
     }
 
 
@@ -98,7 +99,12 @@ async def test_command_translation_forwarded_to_ws_client(app_and_redis):
     assert forwarded["structured"]["args"]["drone_id"] == "drone1"
     assert forwarded["valid"] is True
     assert forwarded["preview_text"].startswith("Will recall")
-    assert forwarded["contract_version"] == "1.0.0"
+    # Tracks the live contract VERSION (bumped on schema changes) so the
+    # assertion survives version bumps without churn. The bridge forwards
+    # whatever contract_version the producer stamped, but the fixture's
+    # producer stamps shared.contracts.VERSION on outbound state envelopes.
+    from shared.contracts import VERSION
+    assert forwarded["contract_version"] == VERSION
 
 
 @pytest.mark.asyncio

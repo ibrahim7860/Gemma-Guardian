@@ -15,7 +15,7 @@ import fakeredis
 import fakeredis.aioredis
 
 from agents.drone_agent.runtime import DroneRuntime
-from agents.drone_agent.zone_bounds import derive_zone_bounds_from_scenario
+from agents.drone_agent.zone_provider import ZoneProvider
 from sim.scenario import load_scenario
 from shared.contracts import validate
 from shared.contracts.logging import now_iso_ms
@@ -79,7 +79,7 @@ async def test_state_plus_frame_yields_finding_on_findings_channel(
     )
 
     scenario = load_scenario(SCENARIO_PATH)
-    zone_bounds = derive_zone_bounds_from_scenario(scenario, "drone1", buffer_m=50.0)
+    zone_provider = ZoneProvider(scenario, buffer_m=50.0)
 
     canned_response = {
         "message": {
@@ -102,7 +102,7 @@ async def test_state_plus_frame_yields_finding_on_findings_channel(
     runtime = DroneRuntime(
         drone_id="drone1",
         scenario=scenario,
-        zone_bounds=zone_bounds,
+        zone_provider=zone_provider,
         sync_client=fake_sync_redis,
         async_client=fake_async_redis,
         agent_step_period_s=0.05,

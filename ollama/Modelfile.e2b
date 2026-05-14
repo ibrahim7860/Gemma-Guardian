@@ -1,0 +1,22 @@
+# FieldAgent — per-drone agent Modelfile (Gemma 4 E2B via Ollama).
+#
+# Build:
+#   ollama create fieldagent/e2b -f ollama/Modelfile.e2b
+#
+# Or use the project's pull-and-build script:
+#   scripts/pull_models.sh --build-tagged
+#
+# Runtime note: the drone agent's reasoning node also passes
+# `options.temperature=0.2` on every call (agents/drone_agent/reasoning.py),
+# so per-call overrides win regardless of the defaults set below.
+# The PARAMETER lines here document the deployment posture for anyone
+# running the model outside the agent stack (e.g., `ollama run`).
+
+FROM gemma4:e2b
+
+# Low temperature → reliable structured-output / function calls.
+PARAMETER temperature 0.2
+
+# 4096 tokens of context is sufficient for a single Perception+Reasoning
+# turn (frame description + structured-output schema + corrective re-prompt).
+PARAMETER num_ctx 4096

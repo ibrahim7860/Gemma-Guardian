@@ -23,17 +23,26 @@ import pytest_asyncio
 REPO_ROOT_FOR_FLUTTER = Path(__file__).resolve().parents[3]
 
 
-def _flutter_bundle_is_stale(build_index: Path, lib_dir: Path) -> bool:
-    """Return True iff any ``lib/**/*.dart`` is newer than ``build_index``.
+def _flutter_bundle_is_stale(build_dir: Path, lib_dir: Path) -> bool:
+    """Return True iff any ``lib/**/*.dart`` is newer than the compiled bundle.
 
-    Cheap path: a single ``os.path.getmtime`` per file with early exit on
-    the first newer source. No build is performed here. The common case
-    (developer with a fresh bundle) walks the source tree once and
-    returns False — well under 50 ms on a modern laptop.
+    Reference: ``build/web/main.dart.js`` (the actual compiled Dart code),
+    NOT ``build/web/index.html``. index.html can be touched without a real
+    JS recompile (e.g. when ``flutter build web`` short-circuits or when
+    an IDE/file-watcher rewrites the file). main.dart.js is the load-bearing
+    output — if it is older than any source file, the bundle is stale and
+    Semantics identifiers from new widgets will be missing from the
+    compiled JS even though index.html is "fresh." Observed 2026-05-12
+    during /review of the GATE 4 wow-banner work: stale main.dart.js + fresh
+    index.html → 3/4 Playwright tests failed until manual rebuild.
+
+    Cheap path: single ``os.path.getmtime`` per file with early exit on the
+    first newer source. No build is performed here.
     """
-    if not build_index.exists() or not lib_dir.exists():
+    bundle = build_dir / "main.dart.js"
+    if not bundle.exists() or not lib_dir.exists():
         return False
-    build_mtime = build_index.stat().st_mtime
+    build_mtime = bundle.stat().st_mtime
     for src in lib_dir.rglob("*.dart"):
         try:
             if src.stat().st_mtime > build_mtime:
@@ -122,7 +131,7 @@ def flutter_web_build_dir() -> Path:
 
     index_html = build_dir / "index.html"
     needs_build = not index_html.exists() or _flutter_bundle_is_stale(
-        index_html, flutter_root / "lib",
+        build_dir, flutter_root / "lib",
     )
     if needs_build:
         proc = subprocess.run(

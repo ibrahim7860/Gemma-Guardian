@@ -682,3 +682,78 @@ def test_shell_launcher_passes_egs_config_to_mesh_simulator(script_name: str):
             "gateway). Pass `--scenario $SCENARIO` (preferred) or both "
             "--egs-lat/--egs-lon."
         )
+
+
+def _shell_launchers_that_emit_into_tmux() -> list[str]:
+    """Find every scripts/*.sh that calls `emit ... python3` to spawn a
+    tmux window. These are the scripts whose subshells lose VIRTUAL_ENV
+    and need an explicit `source .venv/bin/activate &&` prefix per F4."""
+    launchers: list[str] = []
+    for sh in sorted(SCRIPTS_DIR.glob("*.sh")):
+        content = sh.read_text()
+        # Heuristic: the launcher both defines its own `emit()` and calls
+        # `emit <window> "cd ... && python3 ..."`. Wrapper scripts that
+        # `exec bash other_script ...` are excluded (they inherit the fix).
+        if "emit()" in content and "emit " in content and "python3" in content:
+            launchers.append(sh.name)
+    return launchers
+
+
+@pytest.mark.parametrize("script_name", _shell_launchers_that_emit_into_tmux())
+def test_shell_launcher_emits_venv_activation_when_present(script_name: str):
+    """F4 regression guard (Phase G cold-run 2026-05-12).
+
+    `tmux new-window` spawns a fresh shell that does NOT inherit
+    VIRTUAL_ENV from the caller. Without an explicit
+    `source .venv/bin/activate &&` prefix on every emit'd command,
+    `python3` in the tmux pane resolves to *system* python — which lacks
+    the project's deps and crashes every service with ModuleNotFoundError.
+
+    This was caught by the Phase G cold-run on M1 (findings doc:
+    docs/plans/2026-05-12-phase-g-cold-run-findings.md, F4). The fix:
+    every launcher defines an `ACTIVATE` variable that resolves to
+    `"source $REPO_ROOT/.venv/bin/activate && "` when `.venv` exists,
+    and prepends it to every emit'd `python3` invocation.
+
+    This test walks every `scripts/*.sh` that emits tmux windows with
+    python3 commands and asserts each one defines `ACTIVATE` AND uses
+    `${ACTIVATE}python3` (or `${ACTIVATE}` directly) in its emit lines.
+    Future launchers picked up automatically by the parametrize discovery.
+    """
+    script = SCRIPTS_DIR / script_name
+    content = script.read_text()
+
+    assert 'ACTIVATE=""' in content or "ACTIVATE=''" in content, (
+        f"{script_name} does not define an ACTIVATE shell variable. Per "
+        f"F4 (Phase G cold-run 2026-05-12), every script that emits "
+        f"tmux windows with python3 commands must source the project "
+        f"venv when present, otherwise tmux subshells run system python "
+        f"and crash with ModuleNotFoundError. Pattern:\n"
+        f"  ACTIVATE=\"\"\n"
+        f"  if [ -f \"$REPO_ROOT/.venv/bin/activate\" ]; then\n"
+        f"    source \"$REPO_ROOT/.venv/bin/activate\"\n"
+        f"    ACTIVATE=\"source $REPO_ROOT/.venv/bin/activate && \"\n"
+        f"  fi"
+    )
+    assert ".venv/bin/activate" in content, (
+        f"{script_name} defines ACTIVATE but does not reference "
+        f"`.venv/bin/activate`. See F4 fix pattern above."
+    )
+
+    # Every emit line that runs python3 should prefix with ${ACTIVATE}.
+    # Skip emit lines that don't call python3 at all (e.g. `emit foo
+    # "echo hi"`) and skip the function-definition lines (`emit() {`).
+    emit_python_lines = [
+        line for line in content.splitlines()
+        if line.lstrip().startswith("emit") and "python3" in line
+    ]
+    assert emit_python_lines, (
+        f"{script_name} has ACTIVATE wiring but no emit-with-python3 "
+        f"lines — test premise wrong, update _shell_launchers_that_emit_into_tmux"
+    )
+    for line in emit_python_lines:
+        assert "${ACTIVATE}" in line, (
+            f"{script_name} has an emit line missing ${{ACTIVATE}} prefix: "
+            f"{line!r}. Per F4, tmux subshells lose VIRTUAL_ENV and need "
+            f"explicit activation. Prefix python3 with ${{ACTIVATE}} in this line."
+        )

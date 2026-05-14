@@ -1,0 +1,19 @@
+# EGSStateMessage contract-version regression fixture.
+#
+# Updated by ANY change to:
+#   * shared/contracts/models.py::EGSStateMessage (and its sub-models reachable
+#     via .model_json_schema())
+#   * shared/schemas/egs_state.json
+#
+# When updating, ALSO bump shared/VERSION (semver) — the IRON RULE is that
+# wire-shape changes ship with a contract-version bump so consumers
+# (Flutter, EGS, drone agents) can refuse to run against incompatible peers.
+#
+# Format: two lines, each "name:hex_sha256".
+#
+# Regenerate via:
+#   uv run python shared/tests/test_contract_version_bump.py --update-fixture
+#
+contract_version=1.1.0
+pydantic_egs_state_message_sha256=043a638b20b189c3e27afba15cdfb93d0e396e2eb18fbd590c8c359aa254b708
+json_egs_state_sha256=d92d06c64da5bb941935decb04fd515127510a39fb4a256513a33c05784eba13
