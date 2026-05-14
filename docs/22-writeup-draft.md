@@ -364,12 +364,6 @@ assignment / operator command) lives in §8 Table 2, populated from
 
 ## 7. Fine-Tuning
 
-> **Conditional section** — the version that ships depends on the Day-10
-> fine-tuning gate ([`12-fine-tuning-plan.md`](12-fine-tuning-plan.md)).
-> Both variants are sketched here; the final writeup carries one.
-
-### 7.A — If the Day-10 gate passed
-
 We fine-tuned a LoRA on Gemma 4 E2B against the **xBD** dataset (Gupta et
 al., 2019) — the largest public benchmark for post-disaster building damage
 classification, covering 850,736 annotated buildings across 19 disasters
@@ -395,16 +389,6 @@ random sample, for honest generalization). Sim-to-real caveat: the xBD
 imagery is high-altitude post-event satellite, while our simulation serves
 curated crops. The fine-tune helps the *model*; transferring its gains to
 live drone footage is future work.
-
-### 7.B — If the Day-10 gate failed
-
-We attempted the LoRA fine-tune described above and documented the
-blocker honestly (specifics filled in at submission time once we have
-final numbers). We shipped FieldAgent with base Gemma 4 E2B plus
-structured prompting and the validation loop. The base model's accuracy
-on our scenario fixtures is sufficient for the agentic-coordination claim;
-the fine-tune was an enhancement, not a load-bearing dependency. Honest
-engineering reporting matters more than a clean win.
 
 ---
 
