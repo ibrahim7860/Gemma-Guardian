@@ -179,3 +179,59 @@ async def test_replan_impl_succeeds_normally_when_assign_returns_quickly(monkeyp
         f"expected 2 per-drone tasks + 1 replan_events publish, "
         f"got {redis_client.publish.await_count}"
     )
+
+
+def test_per_attempt_timeout_fits_inside_outer_guard():
+    """Iron-rule regression for GH #32 / Phase D VRAM-constrained chain.
+
+    The deterministic round-robin fallback at the bottom of
+    `agents/egs_agent/replanning.py::assign_survey_points` (after the
+    `while retries <= max_retries:` loop) only runs if the retry loop
+    *exhausts*. On a VRAM-stalled box every retry hits its full per-attempt
+    httpx timeout (Ollama hangs waiting for `gemma4:e4b` eviction). If the
+    retry loop's worst-case wall time exceeds the coordinator's outer
+    `wait_for(REPLAN_OVERALL_TIMEOUT_S)` guard, the outer guard cancels
+    the inner task mid-retry and the fallback is unreachable — every
+    `drone_failure → drones.<id>.tasks` chain dies after the outer-guard
+    window with zero tasks published.
+
+    Pre-fix arithmetic (2026-05-13 Hazim live evidence on 8 GB VRAM box):
+        timeout=180.0 × (max_retries=3 + 1) = 720s worst-case retry wall
+        REPLAN_OVERALL_TIMEOUT_S = 240s
+        720 > 240 → fallback unreachable → 0 drones.*.tasks publishes
+
+    Post-fix arithmetic:
+        EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S=30.0 × 4 = 120s worst-case retry wall
+        REPLAN_OVERALL_TIMEOUT_S = 240s, REPLAN_FALLBACK_HEADROOM_S = 30s
+        120 + 30 = 150 ≤ 240 → fallback reachable
+
+    Full live evidence at `docs/sim-resilience-run-notes.md` §"2026-05-13".
+
+    This test reads the constants from the source modules instead of pinning
+    literal numbers so any future bump to either timeout immediately surfaces
+    here at unit-test time rather than at demo-capture time.
+    """
+    from agents.egs_agent.replanning import EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S
+    from agents.egs_agent.coordinator import (
+        REPLAN_OVERALL_TIMEOUT_S,
+        REPLAN_FALLBACK_HEADROOM_S,
+    )
+    from shared.contracts import CONFIG
+
+    max_attempts = CONFIG.validation.max_retries + 1
+    retry_loop_worst_case_s = EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S * max_attempts
+    budget_used_s = retry_loop_worst_case_s + REPLAN_FALLBACK_HEADROOM_S
+
+    assert budget_used_s <= REPLAN_OVERALL_TIMEOUT_S, (
+        f"GH #32 regression: retry-loop worst case "
+        f"({EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S}s × {max_attempts} attempts = "
+        f"{retry_loop_worst_case_s}s) + fallback headroom "
+        f"({REPLAN_FALLBACK_HEADROOM_S}s) = {budget_used_s}s exceeds the "
+        f"outer guard ({REPLAN_OVERALL_TIMEOUT_S}s). The deterministic "
+        f"round-robin fallback in replanning.py would be unreachable on a "
+        f"VRAM-stalled box — same failure mode as the 2026-05-13 live re-run "
+        f"that produced 940 'skipped' lines and 0 drones.*.tasks publishes. "
+        f"Either lower EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S, lower max_retries, "
+        f"or raise REPLAN_OVERALL_TIMEOUT_S. See "
+        f"docs/sim-resilience-run-notes.md §'2026-05-13' for context."
+    )
