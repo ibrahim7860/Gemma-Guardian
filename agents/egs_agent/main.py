@@ -120,9 +120,10 @@ def _parse_args():
 async def main():
     args = _parse_args()
     if args.inject_overcount_once:
-        from agents.egs_agent import replanning
-        replanning.INJECT_OVERCOUNT_ONCE = True
-        logger.warning("Phase 3c: --inject-overcount-once flag enabled. First LLM output will be mutated.")
+        logger.warning(
+            "Phase 3c: --inject-overcount-once enabled. First replan's attempt-1 "
+            "LLM output will be mutated to fire ASSIGNMENT_TOTAL_MISMATCH."
+        )
 
     logger.info("Starting EGS Agent...")
     redis_client = redis.from_url(CONFIG.transport.redis_url)
@@ -156,7 +157,11 @@ async def main():
     await pubsub.subscribe(SIM_SCRIPTED_EVENTS)
     
     validation_node = EGSValidationNode()
-    coordinator = EGSCoordinator(validation_node, redis_client=redis_client)
+    coordinator = EGSCoordinator(
+        validation_node,
+        redis_client=redis_client,
+        inject_overcount_once=args.inject_overcount_once,
+    )
     
     # Initial state derived from the active scenario YAML (Contract 3-compliant).
     egs_state = build_initial_egs_state(CONFIG.mission.scenario_id)

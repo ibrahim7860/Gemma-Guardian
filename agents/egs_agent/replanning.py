@@ -40,10 +40,8 @@ logger = logging.getLogger(__name__)
 # guard, leaving 120 s for the fallback path itself to run.
 EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S: float = 120.0
 
-# Phase 3c (GATE 4 wow moment fallback): toggle to inject 2 phantom points
-# into the first assign_survey_points output. Set by main.py CLI flag.
-INJECT_OVERCOUNT_ONCE: bool = False
-_HAS_INJECTED_OVERCOUNT: bool = False
+# Phase 3c (GATE 4 wow moment fallback): see the
+# `inject_overcount_first_attempt` kwarg on `assign_survey_points`.
 
 
 # Callback signature for the per-attempt sink the coordinator passes in.
@@ -78,6 +76,7 @@ async def assign_survey_points(
     *,
     validation_logger: Optional[ValidationEventLogger] = None,
     log_sink: Optional[ReplanLogSink] = None,
+    inject_overcount_first_attempt: bool = False,
 ) -> Dict[str, Any]:
     """Generates the survey point assignment using Gemma 4 E4B.
 
@@ -86,6 +85,12 @@ async def assign_survey_points(
     transient ReplanAttempt dict via ``log_sink`` so the dashboard can render
     the wow-moment banner. Both sinks are optional (production wires them in;
     legacy callers and most existing tests don't provide them).
+
+    ``inject_overcount_first_attempt`` is the Phase 3c demo-injection escape
+    hatch: when True, the canonical from attempt 1 only is mutated to add 2
+    phantom survey-point ids so the ASSIGNMENT_TOTAL_MISMATCH rule fires
+    deterministically. Attempt 2 onwards is the unmodified LLM. Disclosed
+    in `docs/22-writeup-draft.md` §6.5.
     """
 
     survey_points = egs_state.get("survey_points", [])
@@ -116,6 +121,7 @@ Rules:
 
     retries = 0
     max_retries = CONFIG.validation.max_retries
+    pending_overcount_injection = inject_overcount_first_attempt
 
     def _log_in_progress(
         *, attempt_n: int, valid: bool, rule_id: Optional[str],
@@ -163,15 +169,22 @@ Rules:
                 # Normalize
                 canonical = normalize(data, layer="egs")
 
-                global _HAS_INJECTED_OVERCOUNT
-                if INJECT_OVERCOUNT_ONCE and not _HAS_INJECTED_OVERCOUNT:
+                # Phase 3c (GATE 4 wow moment fallback): one-shot phantom-id
+                # injection on attempt 1 only. Local flag, not module state —
+                # tests pass via the kwarg; production passes via the
+                # coordinator-held boolean wired up from the CLI flag.
+                if pending_overcount_injection:
+                    pending_overcount_injection = False
                     if canonical.get("function") == "assign_survey_points":
-                        a_args = canonical.get("arguments", {})
-                        a_assignments = a_args.get("assignments", [])
+                        a_assignments = canonical.get("arguments", {}).get("assignments", [])
                         if a_assignments and isinstance(a_assignments, list):
-                            a_assignments[0].setdefault("survey_point_ids", []).extend(["sp_phantom_1", "sp_phantom_2"])
-                            _HAS_INJECTED_OVERCOUNT = True
-                            logger.info("Phase 3c: Injected 2 phantom survey points into LLM response.")
+                            a_assignments[0].setdefault("survey_point_ids", []).extend(
+                                ["sp_phantom_1", "sp_phantom_2"]
+                            )
+                            logger.info(
+                                "Phase 3c: injected 2 phantom survey points "
+                                "into attempt-1 LLM response."
+                            )
 
                 # Structural Validation
                 val_res = validation_node.validate_egs_function_call(canonical)

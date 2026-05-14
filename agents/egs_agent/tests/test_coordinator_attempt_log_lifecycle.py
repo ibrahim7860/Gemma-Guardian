@@ -70,7 +70,7 @@ async def test_attempt_log_populated_during_replan(monkeypatch):
     # Fake assign_survey_points: invoke the sink twice (mid-replan) then
     # return a valid assignment. This simulates 2 failed attempts + 1
     # success without round-tripping through httpx.
-    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None):
+    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None, **kwargs):
         assert log_sink is not None
         log_sink({
             "timestamp": "2026-05-12T14:23:11.342Z",
@@ -107,7 +107,7 @@ async def test_attempt_log_clears_after_grace_window(monkeypatch):
     monkeypatch.setattr(coordinator_mod, "REPLAN_ATTEMPT_LOG_CLEAR_DELAY_S", 0.05)
     monkeypatch.setattr(coordinator_mod, "REPLAN_OVERALL_TIMEOUT_S", 5.0)
 
-    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None):
+    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None, **kwargs):
         log_sink({
             "timestamp": "2026-05-12T14:23:11.342Z",
             "attempt_n": 1, "valid": True, "rule_id": None,
@@ -144,7 +144,7 @@ async def test_two_replans_back_to_back_dont_share_entries(monkeypatch):
 
     counter = {"n": 0}
 
-    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None):
+    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None, **kwargs):
         counter["n"] += 1
         log_sink({
             "timestamp": "2026-05-12T14:23:11.342Z",
@@ -188,7 +188,7 @@ async def test_pending_clear_cancelled_when_new_replan_starts(monkeypatch):
     monkeypatch.setattr(coordinator_mod, "REPLAN_ATTEMPT_LOG_CLEAR_DELAY_S", 0.5)
     monkeypatch.setattr(coordinator_mod, "REPLAN_OVERALL_TIMEOUT_S", 5.0)
 
-    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None):
+    async def fake_assign(egs_state, validation_node, *, validation_logger=None, log_sink=None, **kwargs):
         log_sink({
             "timestamp": "2026-05-12T14:23:11.342Z",
             "attempt_n": 1, "valid": True, "rule_id": None,

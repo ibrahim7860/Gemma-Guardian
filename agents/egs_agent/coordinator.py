@@ -84,10 +84,21 @@ class EGSState(TypedDict):
     trigger_replan: bool
 
 class EGSCoordinator:
-    def __init__(self, validation_node: EGSValidationNode, redis_client=None):
+    def __init__(
+        self,
+        validation_node: EGSValidationNode,
+        redis_client=None,
+        *,
+        inject_overcount_once: bool = False,
+    ):
         self.validation_node = validation_node
         self.redis_client = redis_client
         self._replan_in_flight = False  # re-entrancy guard for fire-and-forget replan
+        # Phase 3c (GATE 4 wow moment): consumed on the first replan to force
+        # the ASSIGNMENT_TOTAL_MISMATCH rule to fire deterministically for the
+        # camera. Flipped to False after that replan completes regardless of
+        # outcome — the demo only needs one clean take.
+        self._inject_overcount_pending: bool = bool(inject_overcount_once)
         self._validation_refresh_counter = 0  # gates refresh_validation_events node
         # Wave 3a (Component 4): finding_id deduplication.
         # We keep both a deque (for FIFO eviction) and a set (for O(1)
@@ -475,6 +486,8 @@ class EGSCoordinator:
         REPLAN_OVERALL_TIMEOUT_S for sizing rationale.
         """
         try:
+            inject_overcount = self._inject_overcount_pending
+            self._inject_overcount_pending = False
             try:
                 assignment = await asyncio.wait_for(
                     assign_survey_points(
@@ -482,6 +495,7 @@ class EGSCoordinator:
                         self.validation_node,
                         validation_logger=self._validation_log,
                         log_sink=self._append_replan_attempt,
+                        inject_overcount_first_attempt=inject_overcount,
                     ),
                     timeout=REPLAN_OVERALL_TIMEOUT_S,
                 )
