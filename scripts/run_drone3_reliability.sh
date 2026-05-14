@@ -30,12 +30,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 for _arg in "$@"; do
   if [ "$_arg" = "--dry-run" ]; then
     echo "[run_drone3_reliability] --dry-run: planned invocations"
-    echo "  python3 sim/waypoint_runner.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240"
-    echo "  python3 sim/frame_server.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240"
-    echo "  python3 agents/mesh_simulator/main.py --redis-url redis://localhost:6379/0 --scenario resilience_v1"
-    echo "  python3 -m agents.drone_agent --drone-id drone1 --scenario resilience_v1"
-    echo "  python3 -m agents.drone_agent --drone-id drone2 --scenario resilience_v1"
-    echo "  python3 -m agents.drone_agent --drone-id drone3 --scenario resilience_v1"
+    echo "  uv run python sim/waypoint_runner.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240"
+    echo "  uv run python sim/frame_server.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240"
+    echo "  uv run python agents/mesh_simulator/main.py --redis-url redis://localhost:6379/0 --scenario resilience_v1"
+    echo "  uv run python -m agents.drone_agent --drone-id drone1 --scenario resilience_v1"
+    echo "  uv run python -m agents.drone_agent --drone-id drone2 --scenario resilience_v1"
+    echo "  uv run python -m agents.drone_agent --drone-id drone3 --scenario resilience_v1"
     exit 0
   fi
 done
@@ -51,46 +51,36 @@ cleanup() {
   pkill -f 'sim/waypoint_runner\|sim/frame_server\|agents.mesh_simulator\|agents.drone_agent' 2>/dev/null || true
   pkill -f 'ollama serve' 2>/dev/null || true
   sleep 3
-  # Restart brew ollama and wait for it to be reachable so back-to-back runs
-  # don't race the next iteration's `brew services stop`.
-  brew services start ollama >/dev/null 2>&1 || true
-  local tries=0
-  while [ $tries -lt 30 ]; do
-    if curl -fs --max-time 2 http://localhost:11434/api/version >/dev/null 2>&1; then
-      return
-    fi
-    sleep 1
-    tries=$((tries+1))
-  done
+  # (Skipped) Restart background ollama
 }
 trap cleanup EXIT
 
-# 1. Stop brew ollama
-echo "[run_drone3_reliability] stopping brew ollama"
-brew services stop ollama 2>&1 | tail -1 || true
-sleep 2
-pkill -f 'ollama serve' 2>/dev/null || true
-sleep 2
+# 1. Stop background ollama (Skipped on CUDA machine)
+# echo "[run_drone3_reliability] stopping background ollama"
+# systemctl stop ollama >/dev/null 2>&1 || brew services stop ollama >/dev/null 2>&1 || true
+# sleep 2
+# pkill -f 'ollama serve' 2>/dev/null || true
+# sleep 2
 
-# 2. Tuned ollama foreground
-echo "[run_drone3_reliability] starting tuned ollama"
-OLLAMA_FLASH_ATTENTION=1 \
-  OLLAMA_KV_CACHE_TYPE=q8_0 \
-  OLLAMA_NUM_PARALLEL=1 \
-  OLLAMA_KEEP_ALIVE=30m \
-  OLLAMA_MAX_LOADED_MODELS=1 \
-  nohup /opt/homebrew/opt/ollama/bin/ollama serve > "$RUN_LOG_DIR/ollama.log" 2>&1 &
-disown
-sleep 4
-if ! curl -fs --max-time 5 http://localhost:11434/api/version >/dev/null; then
-  echo "[run_drone3_reliability] FAIL: ollama did not come up"
-  exit 1
-fi
+# 2. Tuned ollama foreground (Skipped on CUDA machine)
+# echo "[run_drone3_reliability] starting tuned ollama"
+# OLLAMA_FLASH_ATTENTION=1 \
+#   OLLAMA_KV_CACHE_TYPE=q8_0 \
+#   OLLAMA_NUM_PARALLEL=1 \
+#   OLLAMA_KEEP_ALIVE=30m \
+#   OLLAMA_MAX_LOADED_MODELS=1 \
+#   nohup ollama serve > "$RUN_LOG_DIR/ollama.log" 2>&1 &
+# disown
+# sleep 4
+# if ! curl -fs --max-time 5 http://localhost:11434/api/version >/dev/null; then
+#   echo "[run_drone3_reliability] FAIL: ollama did not come up"
+#   exit 1
+# fi
 
 # 3. Pre-warm
 echo "[run_drone3_reliability] pre-warming gemma4:e2b (vision+tools)"
 FRAME=$(ls "$REPO_ROOT/sim/fixtures/frames/"*.jpg | head -1)
-python3 - <<PY > "$RUN_LOG_DIR/warm_body.json"
+uv run python - <<PY > "$RUN_LOG_DIR/warm_body.json"
 import json, base64
 with open("$FRAME","rb") as f: img=base64.b64encode(f.read()).decode()
 body={"model":"gemma4:e2b","stream":False,
@@ -100,12 +90,12 @@ body={"model":"gemma4:e2b","stream":False,
     "parameters":{"type":"object","properties":{"finding_type":{"type":"string"}},"required":["finding_type"]}}}]}
 print(json.dumps(body))
 PY
-warm_start=$(python3 -c "import time;print(time.time())")
+warm_start=$(uv run python -c "import time;print(time.time())")
 curl -s --max-time 180 -X POST http://localhost:11434/api/chat \
   -H 'Content-Type: application/json' \
   --data-binary @"$RUN_LOG_DIR/warm_body.json" > "$RUN_LOG_DIR/warm_resp.json"
-warm_end=$(python3 -c "import time;print(time.time())")
-python3 -c "print(f'[run_drone3_reliability] pre-warm took {$warm_end - $warm_start:.1f}s')"
+warm_end=$(uv run python -c "import time;print(time.time())")
+uv run python -c "print(f'[run_drone3_reliability] pre-warm took {$warm_end - $warm_start:.1f}s')"
 
 # 4. Launch test stack
 echo "[run_drone3_reliability] launching resilience_v1 stack"
@@ -113,16 +103,16 @@ redis-cli flushdb >/dev/null 2>&1 || true
 cd "$REPO_ROOT"
 export GG_LOG_DIR="$RUN_LOG_DIR"
 export DRONE_AGENT_OLLAMA_TIMEOUT_S=240
-nohup python3 sim/waypoint_runner.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240 \
+nohup uv run python sim/waypoint_runner.py --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240 \
   > "$RUN_LOG_DIR/waypoint_runner.log" 2>&1 &
-nohup python3 sim/frame_server.py    --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240 \
+nohup uv run python sim/frame_server.py    --scenario resilience_v1 --redis-url redis://localhost:6379/0 --duration 240 \
   > "$RUN_LOG_DIR/frame_server.log" 2>&1 &
-nohup python3 agents/mesh_simulator/main.py --redis-url redis://localhost:6379/0 --scenario resilience_v1 \
+nohup uv run python agents/mesh_simulator/main.py --redis-url redis://localhost:6379/0 --scenario resilience_v1 \
   > "$RUN_LOG_DIR/mesh.log" 2>&1 &
 sleep 3
 for d in drone1 drone2 drone3; do
   GG_LOG_DIR="$RUN_LOG_DIR" DRONE_AGENT_OLLAMA_TIMEOUT_S=240 \
-    nohup python3 -m agents.drone_agent --drone-id $d --scenario resilience_v1 \
+    nohup uv run python -m agents.drone_agent --drone-id $d --scenario resilience_v1 \
     > "$RUN_LOG_DIR/$d.log" 2>&1 &
 done
 
@@ -142,7 +132,7 @@ if [ ! -f "$VAL_LOG" ]; then
   exit 1
 fi
 
-python3 - <<'PY'
+uv run python - <<'PY'
 import json, os, sys
 log = os.environ["VAL_LOG"]
 hits = []
