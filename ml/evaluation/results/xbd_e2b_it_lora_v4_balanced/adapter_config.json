@@ -1,0 +1,19 @@
+{
+  "peft_type": "LORA",
+  "base_model_name_or_path": "unsloth/gemma-4-e2b-it",
+  "task_type": "CAUSAL_LM",
+  "r": 16,
+  "lora_alpha": 16,
+  "lora_dropout": 0.0,
+  "bias": "none",
+  "target_modules": "all-linear",
+  "use_rslora": false,
+  "init_lora_weights": true,
+  "fan_in_fan_out": false,
+  "modules_to_save": null,
+  "layers_to_transform": null,
+  "layers_pattern": null,
+  "rank_pattern": {},
+  "alpha_pattern": {},
+  "revision": null
+}

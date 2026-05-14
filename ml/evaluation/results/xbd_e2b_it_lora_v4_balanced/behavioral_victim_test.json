@@ -1,0 +1,61 @@
+{
+  "frame": "sim/fixtures/frames/placeholder_victim_01.jpg",
+  "runs": 3,
+  "base": [
+    {
+      "kind": "report_finding",
+      "type": null,
+      "raw_excerpt": "report_finding(type=\"damaged structures\", severity=2, gps_lat=30.0167, gps_lon=-89.65, confidence=0.95, visual_description=\"Single-story brick building with multiple broken windows visible\")",
+      "wall_s": 11.9
+    },
+    {
+      "kind": "report_finding",
+      "type": null,
+      "raw_excerpt": "report_finding(type=\"damaged structures\", severity=2, gps_lat=30.0167, gps_lon=-89.65, confidence=0.95, visual_description=\"Single-story brick building with multiple broken windows visible\")",
+      "wall_s": 4.2
+    },
+    {
+      "kind": "report_finding",
+      "type": null,
+      "raw_excerpt": "report_finding(type=\"damaged structures\", severity=2, gps_lat=30.0167, gps_lon=-89.65, confidence=0.95, visual_description=\"Single-story brick building with multiple broken windows visible\")",
+      "wall_s": 4.2
+    }
+  ],
+  "tuned": [
+    {
+      "kind": "report_finding",
+      "type": null,
+      "raw_excerpt": "report_finding(type=\"damaged structures\", severity=2, gps_lat=30.0167, gps_lon=-89.65, confidence=0.85, visual_description=\"Single-story brick building with visible roof damage and broken windows\")",
+      "wall_s": 11.7
+    },
+    {
+      "kind": "report_finding",
+      "type": null,
+      "raw_excerpt": "report_finding(type=\"damaged structures\", severity=2, gps_lat=30.0167, gps_lon=-89.65, confidence=0.85, visual_description=\"Single-story brick building with visible roof damage and broken windows\")",
+      "wall_s": 6.4
+    },
+    {
+      "kind": "report_finding",
+      "type": null,
+      "raw_excerpt": "report_finding(type=\"damaged structures\", severity=2, gps_lat=30.0167, gps_lon=-89.65, confidence=0.85, visual_description=\"Single-story brick building with visible roof damage and broken windows\")",
+      "wall_s": 6.5
+    }
+  ],
+  "summary": {
+    "base": {
+      "report_finding_any_count": 3,
+      "report_finding_victim_count": 0,
+      "report_finding_damaged_structure_count": 0,
+      "continue_mission_count": 0,
+      "unparseable_count": 0
+    },
+    "tuned": {
+      "report_finding_any_count": 3,
+      "report_finding_victim_count": 0,
+      "report_finding_damaged_structure_count": 0,
+      "continue_mission_count": 0,
+      "unparseable_count": 0
+    },
+    "gate_3_behavioral_call": "FAIL"
+  }
+}

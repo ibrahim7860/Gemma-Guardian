@@ -474,6 +474,30 @@ transferring its gains to live drone footage is future work. Reproducibility
 commands and the full upstream-bug breakdown are in
 [`plans/2026-05-14-gate3-fine-tune-run-and-call.md`](plans/2026-05-14-gate3-fine-tune-run-and-call.md).
 
+**Behavioral test on the sim's victim frame.** Reviewing the aggregate
+metric in isolation was insufficient for the deployment call. We ran a
+tighter 3-run-each test of base vs LoRA-tuned through the exact drone-agent
+system prompt + user template, with `sim/fixtures/frames/placeholder_victim_01.jpg`
+(FEMA Katrina destroyed-school aerial) as the camera image — the same frame
+drone3 sees in `resilience_v1`'s standalone window. Both base and tuned fire
+`report_finding` 3/3 times, both correctly classify it as a damaged structure
+(no body in frame). The LoRA's effect on this frame is a small confidence
+shift (0.95 → 0.85) and a slightly tighter visual description; the function
+call itself is unchanged. The 3/3 `report_finding(any)` bar **passes for
+both** — so drone3's reliability problem in the standalone window isn't
+"model fails on this frame," it's the multi-drone inference-saturation issue
+documented separately. The literal "report_finding(type=victim) 3/3" reading
+**fails on both** — and is the correct outcome: docs/12 §Scope deliberately
+excluded victim detection from the LoRA, and the system prompt's victim
+criteria (human body, face, limbs, signs of distress) explicitly do not
+match a destroyed-structure aerial. Reading both metrics together: the
+adapter behaves as scoped; the demo-day failure mode lives elsewhere in the
+stack and the docs/12 NO-GO branch (base + structured prompts) is the right
+deployment call. Full result + machine-readable JSON in
+[`ml/adapters/gate3-deliverables.md`](../ml/adapters/gate3-deliverables.md)
+and
+[`ml/evaluation/results/xbd_e2b_it_lora_v4_balanced/behavioral_victim_test.json`](../ml/evaluation/results/xbd_e2b_it_lora_v4_balanced/behavioral_victim_test.json).
+
 ---
 
 ## 8. Results and Metrics

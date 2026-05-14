@@ -1,0 +1,95 @@
+{
+  "split": "val",
+  "limit": 200,
+  "seed": 42,
+  "class_balance": {
+    "no_damage": 192,
+    "minor_damage": 5,
+    "destroyed": 3
+  },
+  "base": {
+    "n": 200,
+    "accuracy_4class": 0.815,
+    "accuracy_binary": 0.845,
+    "f1_per_class": {
+      "no_damage": 0.9030470914127425,
+      "minor_damage": 0.0,
+      "major_damage": 0.0,
+      "destroyed": 0.0
+    },
+    "confusion_matrix": [
+      [
+        163,
+        3,
+        26,
+        0
+      ],
+      [
+        3,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        0,
+        0
+      ]
+    ],
+    "mean_conf_correct": 0.7969325153374234,
+    "mean_conf_wrong": 0.7378378378378379
+  },
+  "tuned": {
+    "n": 200,
+    "accuracy_4class": 0.89,
+    "accuracy_binary": 0.96,
+    "f1_per_class": {
+      "no_damage": 0.9417989417989417,
+      "minor_damage": 0.0,
+      "major_damage": 0.0,
+      "destroyed": 0.0
+    },
+    "confusion_matrix": [
+      [
+        178,
+        9,
+        5,
+        0
+      ],
+      [
+        5,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        0,
+        0
+      ]
+    ],
+    "mean_conf_correct": 0.8247191011235956,
+    "mean_conf_wrong": 0.7249999999999999
+  },
+  "gate": {
+    "base_accuracy_4class": 0.815,
+    "tuned_accuracy_4class": 0.89,
+    "delta_pp": 7.500000000000007,
+    "threshold_pp": 10.0,
+    "decision": "NO_GO"
+  }
+}

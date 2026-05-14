@@ -1,0 +1,25 @@
+{
+  "base_model": "unsloth/gemma-4-e2b-it",
+  "lora_kwargs": {
+    "finetune_vision_layers": false,
+    "finetune_language_layers": true,
+    "finetune_attention_modules": true,
+    "finetune_mlp_modules": true,
+    "target_modules": "all-linear",
+    "r": 16,
+    "lora_alpha": 16,
+    "lora_dropout": 0.0,
+    "bias": "none",
+    "random_state": 42,
+    "use_rslora": false,
+    "use_gradient_checkpointing": "unsloth"
+  },
+  "training_kwargs": {
+    "epochs": 1,
+    "batch_size": 2,
+    "grad_accum": 4,
+    "lr": 5e-05,
+    "train_examples": 8000,
+    "elapsed_hours": 1.04
+  }
+}
