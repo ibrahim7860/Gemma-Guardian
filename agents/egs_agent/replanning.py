@@ -40,6 +40,11 @@ logger = logging.getLogger(__name__)
 # guard, leaving 120 s for the fallback path itself to run.
 EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S: float = 120.0
 
+# Phase 3c (GATE 4 wow moment fallback): toggle to inject 2 phantom points
+# into the first assign_survey_points output. Set by main.py CLI flag.
+INJECT_OVERCOUNT_ONCE: bool = False
+_HAS_INJECTED_OVERCOUNT: bool = False
+
 
 # Callback signature for the per-attempt sink the coordinator passes in.
 # We pass a plain dict (already-validated by ReplanAttempt semantics on the
@@ -157,6 +162,16 @@ Rules:
 
                 # Normalize
                 canonical = normalize(data, layer="egs")
+
+                global _HAS_INJECTED_OVERCOUNT
+                if INJECT_OVERCOUNT_ONCE and not _HAS_INJECTED_OVERCOUNT:
+                    if canonical.get("function") == "assign_survey_points":
+                        a_args = canonical.get("arguments", {})
+                        a_assignments = a_args.get("assignments", [])
+                        if a_assignments and isinstance(a_assignments, list):
+                            a_assignments[0].setdefault("survey_point_ids", []).extend(["sp_phantom_1", "sp_phantom_2"])
+                            _HAS_INJECTED_OVERCOUNT = True
+                            logger.info("Phase 3c: Injected 2 phantom survey points into LLM response.")
 
                 # Structural Validation
                 val_res = validation_node.validate_egs_function_call(canonical)

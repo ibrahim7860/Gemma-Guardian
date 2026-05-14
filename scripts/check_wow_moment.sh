@@ -40,6 +40,7 @@ SCENARIO="wow_moment_v1"
 VALIDATION_LOG="$LOG_DIR/validation_events.jsonl"
 TIMEOUT_S=90
 DRY_RUN=0
+INJECT_OVERCOUNT_ONCE=0
 
 # ---- argparse --------------------------------------------------------------
 
@@ -55,6 +56,8 @@ while [ "$#" -gt 0 ]; do
       TIMEOUT_S="$2"; shift 2 ;;
     --timeout=*)
       TIMEOUT_S="${1#--timeout=}"; shift ;;
+    --inject-overcount-once)
+      INJECT_OVERCOUNT_ONCE=1; shift ;;
     -h|--help)
       sed -n '3,28p' "$0"
       exit 0 ;;
@@ -98,8 +101,13 @@ mkdir -p "$LOG_DIR"
 # component windows. It returns once everything is spawned (does NOT block
 # until mission-complete) — perfect for "fire and then poll" gating.
 
+LAUNCH_ARGS="$SCENARIO"
+if [ "$INJECT_OVERCOUNT_ONCE" -eq 1 ]; then
+  LAUNCH_ARGS="$LAUNCH_ARGS --inject-overcount-once"
+fi
+
 echo "[check_wow_moment] launching swarm against $SCENARIO..."
-bash "$LAUNCH_SCRIPT" "$SCENARIO"
+bash "$LAUNCH_SCRIPT" $LAUNCH_ARGS
 
 # ---- step 2: tail validation_events.jsonl ---------------------------------
 # Block until either an ASSIGNMENT_TOTAL_MISMATCH from agent_id=egs appears

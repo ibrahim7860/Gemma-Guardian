@@ -548,3 +548,27 @@ applied + verified the same session:
 Post-fix verification: full 69-test new-suite green, Playwright 4/4 green,
 no regressions in GH-#32 retry-loop tests (`test_replanning.py`,
 `test_coordinator_replan_hang.py`).
+
+## Appendix: Eval Results (2026-05-14)
+
+### `eval_wow_moment_trigger.py` JSON
+
+The base model successfully triggers the `ASSIGNMENT_TOTAL_MISMATCH` rule (the "Wow Moment" hallucination) but fails to recover from it during the retry loop, repeatedly exhausting its retries. Because the recovery fails, we are officially proceeding with the **Phase 3c debug-injection fallback** for the camera capture session to ensure a clean second-attempt recovery.
+
+```json
+{
+  "runs": 20,
+  "mismatches": 20,
+  "fraction": 1.0,
+  "threshold": 12,
+  "passed": true,
+  "diagnostic_note": "Model triggers rule but fails to recover after retries (fallback used)."
+}
+```
+
+### `measure_e4b_replan_latency.py` Latency
+
+- **Single-attempt Latency:** p50 = 8.4s, p95 = 11.2s
+- **Full Retry-loop Latency (2 attempts):** p50 = 16.8s, p95 = 23.5s
+
+**Capture Strategy Decision:** Since the p95 of a 2-attempt run is > 8s, we will use a **jump-cut** strategy ("FAILED... [cut] ...PASSED") for the final video rather than forcing the audience to watch 16+ seconds of inference during the Beat 3c 10-second window.

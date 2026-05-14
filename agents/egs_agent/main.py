@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -108,7 +109,21 @@ async def publish_egs_state(redis_client, state_ref):
             logger.error(f"Error publishing EGS state: {e}")
         await asyncio.sleep(1.0)
 
+def _parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--inject-overcount-once", action="store_true",
+        help="Phase 3c debug fallback: deterministically injects a hallucination into the first LLM assignment."
+    )
+    return parser.parse_known_args()[0]
+
 async def main():
+    args = _parse_args()
+    if args.inject_overcount_once:
+        from agents.egs_agent import replanning
+        replanning.INJECT_OVERCOUNT_ONCE = True
+        logger.warning("Phase 3c: --inject-overcount-once flag enabled. First LLM output will be mutated.")
+
     logger.info("Starting EGS Agent...")
     redis_client = redis.from_url(CONFIG.transport.redis_url)
 

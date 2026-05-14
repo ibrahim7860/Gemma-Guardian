@@ -162,6 +162,8 @@ multilingual natural language and shows the Gemma 4-translated structured
 swarm task before dispatch. The dashboard is the only component that ever
 sees a human. Details: [`07-operator-interface.md`](07-operator-interface.md).
 
+*(Phase 3c Debug Disclosure: Base Gemma 4 E4B proved unable to reliably self-correct a 25-point assignment puzzle within our inference window. To guarantee reproducibility for the Beat 3c "Wow Moment" camera capture, we run the EGS with an `--inject-overcount-once` flag, which deterministically inserts a hallucination into the first LLM output so the validation-and-retry loop is exercised visibly on camera. The recovery on the second attempt is genuine.)*
+
 ### 4.4 Communication substrate
 
 All inter-process traffic is Redis pub/sub on `localhost:6379`. Drone-to-EGS

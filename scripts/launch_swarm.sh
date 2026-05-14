@@ -59,6 +59,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=1 ;;
     --drones=*) DRONES="${arg#--drones=}" ;;
     --duration=*) DURATION="${arg#--duration=}" ;;
+    --inject-overcount-once) INJECT_OVERCOUNT_ONCE=1 ;;
     --*) echo "unknown flag: $arg" >&2; exit 2 ;;
     *)   SCENARIO="$arg" ;;
   esac
@@ -179,8 +180,12 @@ emit_if_exists mesh "agents/mesh_simulator/main.py" \
 # ModuleNotFoundError under the bare-script form. Mirrors the drone agent's
 # `python3 -m agents.drone_agent` pattern on line 165 and the working EGS
 # invocation in scripts/run_beat5_capture.sh.
+EGS_ARGS=""
+if [ "${INJECT_OVERCOUNT_ONCE:-0}" -eq 1 ]; then
+  EGS_ARGS="--inject-overcount-once"
+fi
 emit_if_exists egs "agents/egs_agent/main.py" \
-  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
+  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m agents.egs_agent.main $EGS_ARGS 2>&1 | tee $LOG_DIR/egs.log"
 
 # --- Drone agents (Kaleel) -------------------------------------------------
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
