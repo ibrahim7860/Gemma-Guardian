@@ -83,7 +83,7 @@ GATE 3 was `report_finding(type='victim')` on the FEMA Hurricane Katrina aerial.
 
 **Method.** Unsloth LoRA on `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`, `target_modules="all-linear"`, `finetune_vision_layers=True`, lr 2e-4 cosine. ~120 MB adapter, [public Kaggle Model](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a) under `Transformers/lora-c2a-bf16`; [training notebook](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster) also public.
 
-**Results (n=400 held-out).** Binary acc 76.75%, victim F1 0.76, parse_rate 1.0. Per-source: C2A 99%, AIDER 82%, SARD 42% — the SARD drop honestly bounds the in-domain claim.
+**Results (n=400 held-out).** Binary acc 77.25%, victim F1 0.78 (precision 0.79, recall 0.77), parse_rate 1.0. Per-source: C2A 97.2%, AIDER 77.5%, SARD 55% — the SARD result (held-out cross-domain) honestly bounds the in-domain claim.
 
 **Runtime.** Unsloth's GGUF vision-tower export regresses on [#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter runs through a PEFT/HF Transformers path; base Gemma 4 tags ship via Ollama. The adapter therefore runs alongside, not through, Ollama — softening but not invalidating the Ollama-deployment narrative.
 
