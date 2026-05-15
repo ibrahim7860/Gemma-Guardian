@@ -13,6 +13,10 @@ ml/adapters/*/
 !ml/adapters/.gitkeep
 !ml/data/.gitkeep
 
+# Kaggle kernel output pulls (large; merged_model + crops can be many GB)
+kaggle_out/
+kaggle_out_c2a/
+
 # Logs
 /tmp/fieldagent_logs/
 *.log

@@ -1,0 +1,10 @@
+{
+  "ownerSlug": "ibrahimahmed7860",
+  "title": "Gemma 4 E2B Victim Vision LoRA — C2A Disaster",
+  "slug": "gemma4-e2b-victim-vision-lora-c2a",
+  "subtitle": "Gemma 4 E2B fine-tuned on C2A for victim detection in disaster aerial imagery",
+  "description": "Vision LoRA adapter for Gemma 4 E2B trained on the C2A (Combination to Application) dataset (rgbnihal/c2a-dataset) for human/victim detection in UAV disaster imagery. Output schema is a JSON envelope with finding_type, confidence, visual_evidence — directly maps to FieldAgent's report_finding function call. Produced by FieldAgent / Gemma-Guardian for the Gemma 4 Good Hackathon (May 2026) GATE 3 acceptance test (3/3 victim trigger on placeholder_victim_01.jpg). Load via the bundled qasim_inference.py (PEFT + base + adapter).",
+  "isPrivate": true,
+  "licenseName": "Apache 2.0",
+  "keywords": ["gemma", "vision", "lora", "c2a", "victim-detection", "search-rescue", "disaster-response"]
+}

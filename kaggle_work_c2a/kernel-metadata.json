@@ -1,7 +1,7 @@
 {
-  "id": "ibrahimahmed7860/gemma-4-e2b-vision-lora-xbd-building-damage",
-  "title": "Gemma 4 E2B Vision LoRA — xBD building damage",
-  "code_file": "gemma4-xbd-vision-lora.py",
+  "id": "ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster",
+  "title": "Gemma 4 E2B Victim Vision LoRA C2A Disaster",
+  "code_file": "gemma4-victim-vision-lora.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": "true",
@@ -9,7 +9,8 @@
   "enable_tpu": "false",
   "enable_internet": "true",
   "dataset_sources": [
-    "tunguz/xview2-challenge-dataset-train-and-test"
+    "rgbnihal/c2a-dataset",
+    "samik2005/aider-dataset"
   ],
   "competition_sources": [],
   "kernel_sources": [],
