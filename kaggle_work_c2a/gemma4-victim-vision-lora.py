@@ -47,24 +47,28 @@ from typing import Optional
 # Flip to False for the real ~3.5-4 hr training run.
 # v4: smoke v3 validated AIDER+C2A balanced eval (binary_acc 0.72, precision 1.0).
 # Full run to push recall up via 500 train steps on 5000+5000 balanced examples.
-SMOKE_TEST = False
+SMOKE_TEST = False  # v6: full run on 3-dataset mix; smoke v5 confirmed pipeline + per-source metrics work
 
 INPUT_ROOT = Path("/kaggle/input")
 # Cross-user datasets mount under /kaggle/input/datasets/<owner>/<slug>/
 C2A_ROOT = INPUT_ROOT / "datasets" / "rgbnihal" / "c2a-dataset"
 AIDER_ROOT = INPUT_ROOT / "datasets" / "samik2005" / "aider-dataset"
+SARD_ROOT = INPUT_ROOT / "datasets" / "nikolasgegenava" / "sard-search-and-rescue"
 # Fallbacks for differing Kaggle mount conventions
 if not C2A_ROOT.exists() and (INPUT_ROOT / "c2a-dataset").exists():
     C2A_ROOT = INPUT_ROOT / "c2a-dataset"
 if not AIDER_ROOT.exists() and (INPUT_ROOT / "aider-dataset").exists():
     AIDER_ROOT = INPUT_ROOT / "aider-dataset"
+if not SARD_ROOT.exists() and (INPUT_ROOT / "sard-search-and-rescue").exists():
+    SARD_ROOT = INPUT_ROOT / "sard-search-and-rescue"
 INPUT_EXPECTED = C2A_ROOT  # legacy name kept for downstream references
 WORK = Path("/kaggle/working")
 WORK.mkdir(parents=True, exist_ok=True)
 
 print(f"SMOKE_TEST = {SMOKE_TEST}")
-print(f"C2A_ROOT: {C2A_ROOT} (exists={C2A_ROOT.exists()})")
+print(f"C2A_ROOT:   {C2A_ROOT} (exists={C2A_ROOT.exists()})")
 print(f"AIDER_ROOT: {AIDER_ROOT} (exists={AIDER_ROOT.exists()})")
+print(f"SARD_ROOT:  {SARD_ROOT} (exists={SARD_ROOT.exists()})")
 
 print("\nGPU info:")
 os.system("nvidia-smi --query-gpu=name,compute_cap,driver_version,memory.total --format=csv 2>/dev/null || echo 'nvidia-smi unavailable'")
@@ -299,11 +303,63 @@ for split_name, paths in c2a_splits_dirs.items():
             continue
         annots = parse_label_file(lbl_path)
         if not annots:
-            continue  # skip empties in C2A (should be rare)
+            continue
         c2a_rows_by_split[split_name].append({
             "path": str(img_path),
             "label": "victim",
+            "source": "c2a",  # tracked for per-source eval breakdown
             "scenario": next((s for s in ("collapsed_building", "fire", "flood", "traffic_accident") if lbl_path.stem.startswith(s)), "unknown"),
+            "n_humans": len(annots),
+        })
+
+# SARD: REAL drone footage with annotated people. Add as a second VICTIM source
+# to break the C2A-synthesis-artifact shortcut. If our model is learning real
+# victim features (H1), training+evaluating with C2A AND SARD victim examples
+# should produce similar metrics. If it's learning C2A synthesis artifacts (H2),
+# SARD examples will be classified wrong.
+def find_sard_splits(root: Path) -> dict[str, dict[str, Path]]:
+    """Roboflow-style: search-and-rescue/{train,val,test}/{images,labels}/"""
+    if not root.exists():
+        return {}
+    candidates = [root]
+    for p in root.rglob("search-and-rescue"):
+        if p.is_dir():
+            candidates.append(p)
+            break
+    for r in candidates:
+        out = {}
+        for split in ("train", "val", "test"):
+            imgs = r / split / "images"
+            lbls = r / split / "labels"
+            if imgs.exists() and lbls.exists():
+                out[split] = {"images": imgs, "labels": lbls}
+        if out:
+            return out
+    return {}
+
+sard_splits_dirs = find_sard_splits(SARD_ROOT)
+print(f"\nSARD splits found: {list(sard_splits_dirs.keys())}")
+sard_rows_by_split: dict[str, list[dict]] = {"train": [], "val": [], "test": []}
+sard_caps = {"train": 500, "val": 100, "test": 100} if SMOKE_TEST else \
+            {"train": None, "val": 400, "test": 400}
+for split_name, paths in sard_splits_dirs.items():
+    label_files = sorted(paths["labels"].glob("*.txt"))
+    cap = sard_caps.get(split_name)
+    if cap:
+        label_files = label_files[:cap]
+    print(f"SARD {split_name}: {len(label_files)} label files (cap={cap})")
+    for lbl_path in tqdm(label_files, desc=f"sard {split_name}"):
+        img_path = find_image_for_label(lbl_path, paths["images"])
+        if img_path is None:
+            continue
+        annots = parse_label_file(lbl_path)
+        if not annots:
+            continue
+        sard_rows_by_split[split_name].append({
+            "path": str(img_path),
+            "label": "victim",
+            "source": "sard",
+            "scenario": "sar_drone",
             "n_humans": len(annots),
         })
 
@@ -327,15 +383,25 @@ for split_name, imgs in aider_split.items():
     aider_rows_by_split[split_name] = [{
         "path": str(p),
         "label": "none",
+        "source": "aider",
         "scenario": p.parent.name,
         "n_humans": 0,
     } for p in imgs]
     print(f"AIDER {split_name}: {len(aider_rows_by_split[split_name])} images")
 
 # Merge + balance per split.
+# v7: REVERTED SARD inclusion. v6 (C2A+AIDER+SARD) collapsed to always-victim
+# (binary_acc 0.508) — model couldn't reconcile diverse victim sources and
+# defaulted to victim prediction. v4 (C2A+AIDER only) was 96.5% balanced.
+# Keep SARD parsing logic for future experiments but exclude from training.
+# SARD eval rows used as held-out test for honest H1 vs H2 measurement.
+USE_SARD_IN_TRAIN = False  # set True to re-include SARD in victim pool
 splits: dict[str, list[dict]] = {}
 for s in ("train", "val", "test"):
-    victim_rows = c2a_rows_by_split[s]
+    victim_rows = c2a_rows_by_split[s] + (sard_rows_by_split[s] if USE_SARD_IN_TRAIN else [])
+    # Hold SARD eval rows for the per-source breakdown even when not training on them.
+    if s in ("val", "test") and not USE_SARD_IN_TRAIN:
+        victim_rows = victim_rows + sard_rows_by_split[s]
     none_rows = aider_rows_by_split[s]
     rng.shuffle(victim_rows)
     rng.shuffle(none_rows)
@@ -348,7 +414,9 @@ for s in ("train", "val", "test"):
     rng.shuffle(splits[s])
 
 for s in splits:
-    print(f"  {s}: {len(splits[s])} ({dict(Counter(r['label'] for r in splits[s]))})")
+    by_src = Counter(r["source"] for r in splits[s])
+    by_lbl = Counter(r["label"] for r in splits[s])
+    print(f"  {s}: {len(splits[s])} | labels={dict(by_lbl)} | sources={dict(by_src)}")
 
 
 def write_chat_jsonl(rows, out_path: Path) -> int:
@@ -481,7 +549,7 @@ eval_cap = 50 if SMOKE_TEST else 400
 eval_rows = eval_rows[:eval_cap]
 print(f"Evaluating on {len(eval_rows)} rows")
 
-y_true, y_pred = [], []
+y_true, y_pred, y_source = [], [], []
 parse_counts = {"ok": 0, "off_schema": 0, "empty": 0, "bad_class": 0}
 raw_samples: list[dict] = []
 
@@ -489,36 +557,50 @@ for row in tqdm(eval_rows, desc="eval"):
     raw = predict_raw(row["path"])
     parsed = parse_model_output(raw)
     parse_counts[parsed["parse_status"]] += 1
-    if len(raw_samples) < 10:
-        raw_samples.append({"label": row["label"], **parsed})
+    if len(raw_samples) < 12:
+        raw_samples.append({"label": row["label"], "source": row.get("source", "?"), **parsed})
     if parsed["parse_status"] == "ok":
         y_true.append(row["label"])
         y_pred.append(parsed["finding_type"])
+        y_source.append(row.get("source", "?"))
 
 if y_true:
     report = classification_report(
         y_true, y_pred, labels=FINDING_TYPES, output_dict=True, zero_division=0,
     )
     cm = confusion_matrix(y_true, y_pred, labels=FINDING_TYPES).tolist()
-    # Binary "victim found" accuracy is THE metric. Already binary here.
     binary_acc = sum(t == p for t, p in zip(y_true, y_pred)) / len(y_true)
-    # Recall on "victim" class = how often we catch real victims. This is the
-    # safety-critical metric for FieldAgent.
     victim_recall = report["victim"].get("recall", 0.0)
     victim_precision = report["victim"].get("precision", 0.0)
+    # Per-source accuracy — H1 vs H2 vs H3 test.
+    # H1 (real victim detection): C2A and SARD should be similar accuracy.
+    # H2 (C2A synthesis artifact): C2A accuracy >> SARD accuracy.
+    # H3 (disaster scene proxy): both C2A and SARD high (both have disaster context).
+    per_source = {}
+    for src in set(y_source):
+        idxs = [i for i, s in enumerate(y_source) if s == src]
+        if not idxs:
+            continue
+        src_correct = sum(y_true[i] == y_pred[i] for i in idxs)
+        per_source[src] = {
+            "n": len(idxs),
+            "accuracy": src_correct / len(idxs),
+            "labels": dict(Counter(y_true[i] for i in idxs)),
+        }
 else:
-    report, cm, binary_acc, victim_recall, victim_precision = {}, [], None, None, None
+    report, cm, binary_acc, victim_recall, victim_precision, per_source = {}, [], None, None, None, {}
 
 parse_rate_ok = parse_counts["ok"] / max(1, len(eval_rows))
 eval_summary = {
     "smoke_test": SMOKE_TEST,
-    "dataset": "c2a",
+    "dataset": "c2a+aider+sard",
     "n_eval": len(eval_rows),
     "parse_counts": parse_counts,
     "parse_rate_ok": parse_rate_ok,
     "binary_acc": binary_acc,
     "victim_recall": victim_recall,
     "victim_precision": victim_precision,
+    "per_source_accuracy": per_source,
     "per_class_report": report,
     "confusion_matrix": cm,
     "confusion_matrix_labels": FINDING_TYPES,

@@ -10,7 +10,8 @@
   "enable_internet": "true",
   "dataset_sources": [
     "rgbnihal/c2a-dataset",
-    "samik2005/aider-dataset"
+    "samik2005/aider-dataset",
+    "nikolasgegenava/sard-search-and-rescue"
   ],
   "competition_sources": [],
   "kernel_sources": [],
