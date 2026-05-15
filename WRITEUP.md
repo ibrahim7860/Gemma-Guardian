@@ -77,9 +77,15 @@ The same loop has a second important property: when Gemma 4 E4B is slow or unrea
 
 ## 6. Fine-Tuning
 
-<!-- SUBMIT-DAY: assumes GATE 3 GO. If NO-GO, rewrite per `docs/22-writeup-draft.md` §7.B. Strip comment + delete this note before pasting into Kaggle. -->
+GATE 3 was `report_finding(type='victim')` on the FEMA Hurricane Katrina aerial. Base Gemma 4 E2B reads it as a damaged building, not a victim — so we trained a vision LoRA purpose-built for human detection in disaster aerial imagery.
 
-We trained a LoRA on Gemma 4 E2B against the xBD dataset (Gupta et al., 2019) using Unsloth for kernel-level forward/backward speedups on the LoRA path. Rank 32, `target_modules="all-linear"`, learning rate 2e-4 cosine, 1–3 epochs over ~500k 224×224 per-building patches. Adapter, weights, and per-class F1 against the held-out xBD test split (split by disaster, not random sample) are published in the linked repo under `ml/adapters/`. Sim-to-real caveat: the xBD imagery is high-altitude post-event satellite while our simulation serves curated public-domain aerials; the adapter helps the model, transferring its gains to live drone footage is future work.
+**Dataset.** [C2A](https://www.kaggle.com/datasets/rgbnihal/c2a-dataset) (10,215 UAV images, ~360k human instances across four disaster scenarios). Schema collapsed to binary `{finding_type: "victim" | "none", confidence, visual_evidence}` to match `report_finding`. Held-out cross-source eval on AIDER and SARD tests domain transfer.
+
+**Method.** Unsloth LoRA on `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`, `target_modules="all-linear"`, `finetune_vision_layers=True`, lr 2e-4 cosine. ~120 MB adapter, [public Kaggle Model](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a) under `Transformers/lora-c2a-bf16`; [training notebook](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster) also public.
+
+**Results (n=400 held-out).** Binary acc 76.75%, victim F1 0.76, parse_rate 1.0. Per-source: C2A 99%, AIDER 82%, SARD 42% — the SARD drop honestly bounds the in-domain claim.
+
+**Runtime.** Unsloth's GGUF vision-tower export regresses on [#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter runs through a PEFT/HF Transformers path; base Gemma 4 tags ship via Ollama. The adapter therefore runs alongside, not through, Ollama — softening but not invalidating the Ollama-deployment narrative.
 
 ## 7. Honest Limitations
 

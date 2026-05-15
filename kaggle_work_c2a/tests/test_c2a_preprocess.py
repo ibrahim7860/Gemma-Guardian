@@ -98,23 +98,41 @@ def test_finding_types_enum(kernel):
 
 
 def test_to_chat_example_victim(kernel):
-    ex = kernel.to_chat_example("/tmp/test.jpg", "victim")
+    ex = kernel.to_chat_example("/tmp/test.jpg", "victim", scenario="collapsed_building", n_humans=3)
     assert ex["messages"][0]["role"] == "user"
     assert ex["messages"][1]["role"] == "assistant"
-    # Both content fields normalized to list-of-typed-dicts.
     assert isinstance(ex["messages"][0]["content"], list)
     assert isinstance(ex["messages"][1]["content"], list)
-    # Assistant content is a JSON envelope.
     envelope = json.loads(ex["messages"][1]["content"][0]["text"])
     assert envelope["finding_type"] == "victim"
-    assert envelope["confidence"] == 0.9
+    # v10: confidence varies by n_humans; 3 humans → 0.85
+    assert envelope["confidence"] == 0.85
     assert "visual_evidence" in envelope
+    # Evidence should mention "collapsed building" or rubble (scenario-keyed).
+    assert any(k in envelope["visual_evidence"].lower() for k in ("collapsed", "building", "rubble", "damaged"))
 
 
 def test_to_chat_example_none(kernel):
-    ex = kernel.to_chat_example("/tmp/test.jpg", "none")
+    ex = kernel.to_chat_example("/tmp/test.jpg", "none", scenario="normal")
     envelope = json.loads(ex["messages"][1]["content"][0]["text"])
     assert envelope["finding_type"] == "none"
+    # v10: AIDER normal → 0.95 confidence (clearly no disaster, no victim).
+    assert envelope["confidence"] == 0.95
+
+
+def test_to_chat_example_varies_per_image_path(kernel):
+    """v10 regression guard: different image paths should pick different
+    evidence templates (deterministic via hash, but varied across rows)."""
+    ex1 = kernel.to_chat_example("/tmp/img_001.jpg", "victim", scenario="collapsed_building", n_humans=3)
+    ex2 = kernel.to_chat_example("/tmp/img_002.jpg", "victim", scenario="collapsed_building", n_humans=3)
+    e1 = json.loads(ex1["messages"][1]["content"][0]["text"])["visual_evidence"]
+    e2 = json.loads(ex2["messages"][1]["content"][0]["text"])["visual_evidence"]
+    # Same scenario+n_humans → 3 template choices. Different image paths
+    # should yield different choices most of the time. Try a few combos
+    # to ensure at least one pair differs.
+    paths = [f"/tmp/img_{i:03d}.jpg" for i in range(10)]
+    evidences = {json.loads(kernel.to_chat_example(p, "victim", scenario="collapsed_building", n_humans=3)["messages"][1]["content"][0]["text"])["visual_evidence"] for p in paths}
+    assert len(evidences) >= 2, f"Expected ≥2 unique evidence strings across 10 paths, got {len(evidences)}: {evidences}"
 
 
 def test_to_chat_example_rejects_unknown(kernel):

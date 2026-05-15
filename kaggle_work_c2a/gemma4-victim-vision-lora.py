@@ -1,5 +1,18 @@
 """Kaggle kernel: Gemma 4 E2B Vision LoRA for VICTIM DETECTION on C2A dataset.
 
+DATASET CITATIONS (declared as dataset_sources in kernel-metadata.json; Kaggle
+auto-renders these under "Input" on the public notebook page):
+  - C2A (Combination to Application) — rgbnihal/c2a-dataset
+      https://www.kaggle.com/datasets/rgbnihal/c2a-dataset
+      Primary training signal for the victim class. UAV disaster imagery with
+      synthetic human overlays across 4 disaster scenarios.
+  - AIDER (Aerial Image Database for Emergency Response) — samik2005/aider-dataset
+      https://www.kaggle.com/datasets/samik2005/aider-dataset
+      Real disaster aerial backgrounds; supplies the `none` class.
+  - SARD (Search And Rescue Dataset) — nikolasgegenava/sard-search-and-rescue
+      https://www.kaggle.com/datasets/nikolasgegenava/sard-search-and-rescue
+      Real drone search-and-rescue footage; held-out generalization slice.
+
 PIVOT RATIONALE (vs kaggle_work/ xBD path):
   The GATE 3 acceptance test is `report_finding(type='victim')` 3/3 on the
   wow-moment frame (placeholder_victim_01.jpg). xBD trains building-damage
@@ -47,7 +60,7 @@ from typing import Optional
 # Flip to False for the real ~3.5-4 hr training run.
 # v4: smoke v3 validated AIDER+C2A balanced eval (binary_acc 0.72, precision 1.0).
 # Full run to push recall up via 500 train steps on 5000+5000 balanced examples.
-SMOKE_TEST = True  # v8: validate DoRA + new hyperparams on smoke before full run
+SMOKE_TEST = False  # v11: full run — v10 smoke showed healthy loss decay (3.456→0.382 over 30 steps, no shortcut crash)
 
 INPUT_ROOT = Path("/kaggle/input")
 # Cross-user datasets mount under /kaggle/input/datasets/<owner>/<slug>/
@@ -116,15 +129,146 @@ PROMPT = (
     "Do not include any other text. Do not refuse. Do not hedge."
 )
 
+# v10: PRE-v10, every victim row used the SAME visual_evidence string and the
+# SAME confidence (0.9). Same for none rows. Result: training loss converged
+# to 0.0004 by step ~130 because the model only needed to emit one of two
+# fixed strings — it could learn the shortcut "is this image style A or B?"
+# without ever attending to whether a HUMAN was visible. v6 (with SARD added)
+# collapsed to "always victim" because the model couldn't reconcile two
+# different victim distributions sharing the same fixed output.
+#
+# v10 FIX: vary visual_evidence and confidence based on row metadata
+# (scenario, n_humans, source). Now the assistant output ENCODES image content
+# the model must attend to → forces real feature learning, breaks the
+# memorize-the-template shortcut.
+#
+# Old fixed strings (kept for reference / backwards-compat with old tests):
 EVIDENCE_VICTIM = "Human figure visible in the disaster scene."
 EVIDENCE_NONE = "No human victims visible in this scene."
 
+# Scenario-keyed evidence templates. Picked at training-data-emission time.
+_SCENE_VICTIM_EVIDENCE = {
+    "collapsed_building": [
+        "{n_str} figure{s_str} visible amid collapsed building debris.",
+        "{n_str} person{s_str} on rubble of a damaged structure.",
+        "{n_str} human figure{s_str} in collapsed building scene.",
+    ],
+    "fire": [
+        "{n_str} figure{s_str} visible near fire damage.",
+        "{n_str} person{s_str} in burning or fire-damaged area.",
+        "{n_str} human{s_str} amid smoke and fire damage.",
+    ],
+    "flood": [
+        "{n_str} figure{s_str} in flooded area.",
+        "{n_str} person{s_str} amid floodwaters.",
+        "{n_str} human{s_str} in water-damaged scene.",
+    ],
+    "traffic_accident": [
+        "{n_str} figure{s_str} near traffic incident.",
+        "{n_str} person{s_str} on or near damaged vehicle scene.",
+        "{n_str} human{s_str} at traffic accident location.",
+    ],
+    "sar_drone": [
+        "{n_str} figure{s_str} visible from aerial drone view.",
+        "{n_str} person{s_str} located in drone search frame.",
+        "Aerial drone view, {n_str} human{s_str} detected.",
+    ],
+    "unknown": [
+        "{n_str} human figure{s_str} visible in disaster scene.",
+        "{n_str} person{s_str} present in aerial view.",
+        "{n_str} figure{s_str} detected in the image.",
+    ],
+}
 
-def to_chat_example(image_path: str, label: str) -> dict:
-    """Convert (image, label) into Unsloth/Gemma 4 vision chat-format row."""
+_SCENE_NONE_EVIDENCE = {
+    "collapsed_building": [
+        "Collapsed building visible; no human figures detected.",
+        "Damaged structure scene with no people visible.",
+        "Rubble and debris present, no humans in view.",
+    ],
+    "fire": [
+        "Fire damage visible; no human figures detected.",
+        "Smoke and fire-damaged area with no people visible.",
+        "Burning area, no humans in frame.",
+    ],
+    "flood": [
+        "Flooded area visible; no human figures detected.",
+        "Floodwaters and water damage, no people visible.",
+        "Submerged terrain, no humans detected.",
+    ],
+    "traffic_incident": [
+        "Traffic incident visible; no human figures detected.",
+        "Damaged vehicles, no people visible.",
+        "Accident scene with no humans in view.",
+    ],
+    "flooded_areas": [
+        "Flooded area visible; no human figures detected.",
+        "Floodwaters covering ground, no people visible.",
+    ],
+    "normal": [
+        "Normal aerial view; no disaster indicators or human victims.",
+        "Routine ground scene, no signs of distress or people in need.",
+        "Standard overhead view of unaffected area.",
+    ],
+    "unknown": [
+        "No human victims visible in this scene.",
+        "No people detected in the image.",
+        "Empty scene, no human figures found.",
+    ],
+}
+
+
+def _confidence_for(label: str, n_humans: int, scenario: str) -> float:
+    """Confidence varies by label clarity. Forces the model to learn calibration."""
+    if label == "victim":
+        if n_humans >= 4:
+            return 0.95
+        if n_humans >= 2:
+            return 0.85
+        return 0.75  # single/distant figure
+    # none
+    if scenario == "normal":
+        return 0.95  # clearly no disaster, clearly no victim
+    return 0.85     # disaster scene without humans — could miss small figures
+
+
+def _evidence_for(label: str, scenario: str, n_humans: int, image_path: str) -> str:
+    """Pick a varied evidence string deterministically from the image path hash.
+
+    Hashing the image path keeps the choice consistent across runs without
+    making the model fit to row-index patterns.
+    """
+    import hashlib
+    table = _SCENE_VICTIM_EVIDENCE if label == "victim" else _SCENE_NONE_EVIDENCE
+    options = table.get(scenario) or table.get("unknown", [
+        EVIDENCE_VICTIM if label == "victim" else EVIDENCE_NONE,
+    ])
+    h = int(hashlib.sha1(image_path.encode()).hexdigest(), 16)
+    template = options[h % len(options)]
+    if label == "victim":
+        n_str = "Multiple" if n_humans >= 4 else ("Several" if n_humans >= 2 else "One")
+        s_str = "s" if n_humans != 1 else ""
+        return template.format(n_str=n_str, s_str=s_str)
+    return template
+
+
+def to_chat_example(
+    image_path: str,
+    label: str,
+    *,
+    scenario: str = "unknown",
+    n_humans: int = 0,
+) -> dict:
+    """Convert (image, label, metadata) into Unsloth/Gemma 4 vision chat-format row.
+
+    v10: scenario + n_humans are used to derive VARIED visual_evidence and
+    confidence values. This forces the model to attend to image content
+    instead of memorizing one of two fixed output strings.
+    """
     if label not in FINDING_TYPES:
         raise ValueError(f"Unknown finding type: {label!r}")
-    evidence = EVIDENCE_VICTIM if label == "victim" else EVIDENCE_NONE
+    evidence = _evidence_for(label, scenario, n_humans, image_path)
+    confidence = _confidence_for(label, n_humans, scenario)
     return {
         "messages": [
             {"role": "user", "content": [
@@ -133,7 +277,7 @@ def to_chat_example(image_path: str, label: str) -> dict:
             ]},
             {"role": "assistant", "content": [{"type": "text", "text": json.dumps({
                 "finding_type": label,
-                "confidence": 0.9,
+                "confidence": confidence,
                 "visual_evidence": evidence,
             })}]},
         ]
@@ -423,7 +567,11 @@ def write_chat_jsonl(rows, out_path: Path) -> int:
     n = 0
     with out_path.open("w") as f:
         for r in rows:
-            f.write(json.dumps(to_chat_example(r["path"], r["label"])) + "\n")
+            f.write(json.dumps(to_chat_example(
+                r["path"], r["label"],
+                scenario=r.get("scenario", "unknown"),
+                n_humans=r.get("n_humans", 0),
+            )) + "\n")
             n += 1
     return n
 

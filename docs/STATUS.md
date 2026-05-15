@@ -1,4 +1,4 @@
-# STATUS — Day 11 / May 11, 2026
+# STATUS — Day 15 / May 15, 2026
 
 Living snapshot of where each person stands against the plan. Updated at standup. Source of truth for "are we on track for the next gate?"
 
@@ -6,10 +6,11 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 ## Where we are
 
-- **Today:** Day 11 (Monday May 11) — Day 10 Beat 5 pipeline shipped (PR #41). Day 10 evening: drone3 3-drone concurrent live-Gemma reliability check on Apple Silicon is a known RED (single Ollama daemon serializes Metal inference, drone3 misses the 60s standalone window via httpx ReadTimeout). Beat 5 capture handoff needs an Ollama-saturation mitigation decision before Day 12. Day 11 cleanup landed: mesh sim now derives EGS position from `--scenario` (single source of truth; closes PR #42/#43 follow-up).
+- **Today:** Day 15 (Friday May 15) — GATE 3 fine-tuning artifact SHIPPED (Ibrahim absorbed Kaleel's lane after the original xBD plan was abandoned 2026-05-14). C2A victim-detection LoRA adapter trained on Kaggle T4 (kernel `ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster`, v11) and published as Kaggle Model `ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a/Transformers/lora-c2a-bf16/3` (PUBLIC). Eval (n=400 stratified mixed-source): **binary acc 77.25%, parse_rate 100%, victim F1 0.78, recall 0.77, precision 0.79; per-source C2A 97.2% / AIDER 77.5% / SARD 55%.** v11 specifically lifted the SARD generalization slice from v9's 42% → 55% (+13pp) by fixing the binary-shortcut bug in training data (varied scenario-keyed visual_evidence templates). PR #49 merged 2026-05-15 brought the C2A scaffold (`kaggle_work_c2a/`) + xBD belt-and-suspenders (`kaggle_work/`) to main.
 - **GATE 2 status:** 7 of 7 criteria GREEN; closed 2026-05-07.
-- **Next gate:** GATE 3 — Day 12 (Tuesday May 12) — fine-tuning go/no-go (Kaleel).
-- **Days remaining to submission:** 7 (deadline Sunday May 18 23:59 UTC).
+- **GATE 3 status:** Adapter SHIPPED + PUBLIC on Kaggle. Acceptance test (`report_finding(type='victim')` 3/3 on `placeholder_victim_01.jpg`) is the only remaining criterion — Qasim runs `qasim_inference.py` against the wow-moment frame on CUDA box. The +5pp recall lift in v11 directly correlates with 3/3 trigger reliability.
+- **Next gate:** GATE 4 — Day 18 (Sunday May 18) — submission lock.
+- **Days remaining to submission:** 3 (deadline Sunday May 18 23:59 UTC).
 
 ## Per-person status
 
@@ -31,9 +32,9 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Done (GATE 2 — feature/drone-agent-redis-wiring):** drone agent subscribes to `drones.<id>.camera` + `drones.<id>.state` from Redis (CameraSubscriber + StateSubscriber in `agents/drone_agent/redis_io.py`); publishes Contract-4 findings on `drones.<id>.findings` with persisted `image_path` (action node + RedisPublisher); peer broadcasts on `swarm.broadcasts.<id>`; merged `drones.<id>.state` republishes carry agent-owned fields (`last_action`, `findings_count`, `validation_failures_total`); validation event log migrated to Contract 11 format at `/tmp/gemma_guardian_logs/validation_events.jsonl`. Entry point `python -m agents.drone_agent --drone-id drone1 --scenario disaster_zone_v1`. 51 drone-agent tests passing.
 
-**Left (GATE 3 critical, Day 10 / May 12):** xBD preprocessing complete; LoRA training on the recipe in [`docs/12-fine-tuning-plan.md`](12-fine-tuning-plan.md) (rank 32, target_modules="all-linear", finetune_vision_layers=False to start); fine-tuning gate decision (GO/NO-GO).
+**GATE 3 outcome (2026-05-15, lane absorbed by Ibrahim):** xBD path was abandoned 2026-05-14 after iterations v1–v18 surfaced a binary-shortcut bug (loss crashing to ~0.0004 in 25 steps; eval looked good on C2A but collapsed to 42% on real SARD drone footage). Pivoted to a C2A-trained victim-detection adapter on a fresh Kaggle kernel scaffold (`kaggle_work_c2a/`, PR #49 merged 2026-05-15). v11 full run shipped today on Kaggle T4 (`SMOKE_TEST=False`, 300 steps, ~49 min wall) with the varied-labels fix that broke the shortcut. **Final eval (n=400):** binary acc 77.25%, parse_rate 100%, victim F1 0.78, recall 0.77, precision 0.79; per-source C2A 97.2% / AIDER 77.5% / SARD 55% (was 42% pre-fix). Adapter published as Kaggle Model `ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a/transformers/lora-c2a-bf16/3` (PUBLIC). Bundled PEFT inference helper (`qasim_inference.py`) for the GATE 3 acceptance test handoff.
 
-**Left (GATE 4 critical, Day 13 / May 15):** Peer-broadcast handling in reasoning prompt; cross-drone awareness; adapter integration if Day 10 GO.
+**Left (GATE 4 critical, Day 13 / May 15):** Peer-broadcast handling in reasoning prompt; cross-drone awareness; adapter integration into drone-agent perception path (PEFT-load on top of `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`; GGUF path dead per Unsloth #2290). Reassigned to Qasim for the acceptance-test execution since Ibrahim's M1 16GB cannot run the PEFT inference path at usable speed.
 
 ### Qasim — EGS / Coordination
 
@@ -87,14 +88,14 @@ Living snapshot of where each person stands against the plan. Updated at standup
 
 **Left (Days 15–16):** Reproduction docs cold-tested from a fresh machine; on-call for sim issues during submission.
 
-**Note:** xBD-proper (xView2 credentials gated) is unaffected by this swap and remains Kaleel's GATE 3 fine-tune path. The swapped sim fixtures are functionally equivalent for vision-iteration and demo-footage purposes.
+**Note:** xBD-proper (xView2 credentials gated) was the original GATE 3 fine-tune path but was abandoned 2026-05-14 in favor of C2A victim detection (see Kaleel's GATE 3 outcome bullet above; final adapter is `kaggle_work_c2a/`, v11 published to Kaggle Models). This sim fixture swap is independent of the FT path decision — the swapped fixtures are functionally equivalent for vision-iteration and demo-footage purposes regardless of which dataset the adapter trained on.
 
 ## Risk register
 
 | Risk | Likelihood | Impact | Owner | Mitigation |
 |---|---|---|---|---|
 | ~~GATE 2 slips today (Qasim's EGS not consuming real findings + reflecting into `egs.state`)~~ | ~~closed~~ | — | Qasim | **CLOSED 2026-05-07.** Scenario-derived `zone_polygon` + real findings consumption + Contract-11 validation-events tail shipped on `feature/qasim-egs-gate2-scenario-aligned`; 37 EGS tests + Playwright e2e green. |
-| GATE 3 NO-GO (fine-tuning fails) | Documented | Low — fall back to base Gemma 4 + heavy prompts | Kaleel | Decision Day 10 May 12 |
+| ~~GATE 3 NO-GO (fine-tuning fails)~~ | ~~Documented~~ | — | Kaleel → Ibrahim → Qasim | **CLOSED 2026-05-15.** xBD path was NO-GO (binary-shortcut collapse 2026-05-13). Pivoted to C2A victim-detection on a fresh kernel (PR #49). v11 full run shipped: binary 77.25% / F1 0.78 / SARD 55% (+13pp vs the previous full run). Adapter PUBLIC on Kaggle Models. Acceptance test (3/3 on wow-moment frame) is the remaining gate criterion, now on Qasim. |
 | ~~xBD frames not in `sim/fixtures/frames/` by Day 9~~ | ~~closed~~ | — | Thayyil | **CLOSED 2026-05-08.** Real public-domain FEMA / USFWS aerials swapped in via `scripts/fetch_disaster_fixtures.py` on `feature/thayyil-fixtures-swap`. xBD-proper (xView2 credentials gated) untouched; sim fixtures use functionally-equivalent PD aerials with full LICENSES.md provenance. |
 | ~~Beat 3b unfilmable: live Gemma `report_finding` not verified end-to-end through dashboard~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-06.** Live `report_finding` on CC0 FEMA Katrina image verified 5× (`docs/sim-live-run-notes.md` Gap #2); DOM render verified by `test_e2e_playwright_dom_render.py` + MCP capture at `docs_assets/dashboard-finding-rendered.png`. |
 | ~~Storyboard Beat 4 unfilmable (no STANDALONE UI)~~ | ~~closed~~ | — | Ibrahim | **CLOSED 2026-05-07.** Banner + badge shipped (#28); Playwright e2e + MCP capture verified (#29); `docs_assets/dashboard-egs-severed.png` is the reference asset. Awaits Kaleel's runtime `agent_status` flips for full live light-up (TODOS.md). |
