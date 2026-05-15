@@ -22,14 +22,33 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${GG_LOG_DIR:-/tmp/gemma_guardian_logs}"
 
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+  esac
+done
+
 cleanup() {
   echo ""
   echo "[run_full_demo] received signal, stopping…"
   bash "$REPO_ROOT/scripts/stop_demo.sh" || true
 }
-trap cleanup INT TERM EXIT
+# In --dry-run mode launch_swarm.sh prints its plan and exits cleanly; no
+# processes were started, so the cleanup trap (which calls stop_demo.sh)
+# is unnecessary and the tail loop would hang forever waiting on a log
+# that never appears. Skip both for the dry-run path.
+if [ "$DRY_RUN" -eq 0 ]; then
+  trap cleanup INT TERM EXIT
+fi
 
 bash "$REPO_ROOT/scripts/launch_swarm.sh" "$@"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "[run_full_demo] dry-run complete (no tmux session started)."
+  exit 0
+fi
+
 echo "[run_full_demo] tailing $LOG_DIR/waypoint_runner.log (Ctrl-C to stop)…"
 mkdir -p "$LOG_DIR"
 touch "$LOG_DIR/waypoint_runner.log"

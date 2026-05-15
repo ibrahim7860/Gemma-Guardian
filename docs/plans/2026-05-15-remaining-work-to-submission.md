@@ -80,9 +80,9 @@ With C3 handed to Qasim, Ibrahim's Fri afternoon + Sat AM are free. Pull writeup
 - [ ] **F3.** Adapter is locked at v3 — no retrain decision needed (see "Three things to flag up front" — v11 is shipped and public).
 
 #### Track J-AM — Code cleanup (each owner sweeps own lane, ~1-2 hr)
-- [ ] **J3.** [Hazim] `scripts/pull_models.sh` works for both Gemma 4 tags + adapter (Ollama prize requirement IF route (a) shipped)
-- [ ] **J4.** [Hazim] `scripts/setup.sh` + `scripts/run_full_demo.sh` end-to-end works
-- [ ] **J5.** [Each owner] Code-quality sweep on own lane: no commented-out blocks, no `print` debug, no hardcoded home paths, no secrets, Black-formatted Python, dartfmt Flutter. Hazim sim/, Ibrahim agents/drone_agent/ + frontend/, Qasim agents/egs_agent/, Kaleel ml/
+- [x] **J3.** [Hazim] `scripts/pull_models.sh` works for Gemma 4 e2b+e4b (pull, `--build-tagged`, `--dry-run` all verified 2026-05-15). Adapter-pull step is route-(a)-conditional ("Ollama prize requirement IF route (a) shipped") and remains deferred to Qasim's C2 outcome.
+- [x] **J4.** [Hazim] `scripts/setup.sh` shipped 2026-05-15 (hard `uv` check + soft warns for redis-cli/ollama/tmux + `uv sync --all-extras` default + `--extras=` role-scoped path + `--pull-models` chain + `--dry-run` + `--help` + exit-2 on bad args). Closes checklist L65 / L97. `scripts/run_full_demo.sh --dry-run` no-longer-hangs fix shipped same commit (was unconditional `tail -F` after launch_swarm exited; now early-exits with "dry-run complete" marker). 5 new tests in `scripts/tests/test_launch_scripts.py`; 43/43 launch-script tests + 409/409 Hazim-lane tests green.
+- [ ] **J5.** [Each owner] Code-quality sweep on own lane: no commented-out blocks, no `print` debug, no hardcoded home paths, no secrets, Black-formatted Python, dartfmt Flutter. **Hazim sim/ swept 2026-05-15, clean** (no pdb/breakpoint, no TODO:/FIXME: strings, no hardcoded home paths, sim/ print statements are all legitimate CLI/REPL output). Ibrahim agents/drone_agent/ + frontend/, Qasim agents/egs_agent/, Kaleel ml/ — still pending each owner.
 
 #### Track K-AM — Reproduction cold-run (so bugs surface before freeze)
 - [ ] **K1.** [Hazim] cold-tests reproduction docs from fresh Linux/WSL2 machine per `docs/sim-reproduction.md`
