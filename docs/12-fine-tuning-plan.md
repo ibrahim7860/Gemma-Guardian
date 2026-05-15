@@ -1,5 +1,18 @@
 # 12 — Fine-Tuning Plan
 
+> **2026-05-14 ADDENDUM — Hackathon focus pivoted to VICTIM DETECTION.** The
+> GATE 3 acceptance test is `report_finding(type='victim')` 3/3 on the wow-moment
+> frame (`placeholder_victim_01.jpg`). Base Gemma 4 E2B reliably emits this 2/3
+> times — fine-tuning is meant to unlock the third hit. The original xBD plan
+> below trains *building damage classification* (a related-but-different task);
+> we kept it as belt-and-suspenders insurance but the primary target moved to
+> the **C2A dataset** (`rgbnihal/c2a-dataset`) which is purpose-built for human
+> detection in disaster aerial imagery. See `kaggle_work_c2a/` for the active
+> scaffold. The xBD work in `kaggle_work/` produces a "general aerial-damage
+> perception" adapter that transfers indirectly. Multi-finding-type training
+> (fire / smoke / damaged_structure / blocked_route) is deferred to
+> post-submission; for the hackathon, victim detection is the only LoRA target.
+
 ## Why We Fine-Tune
 
 The hackathon's published analysis stated explicitly: *"You can improve performance for a specific task rather than relying only on generic prompting. You can show the model being used in realistic resource-constrained settings. That is where your project starts to look serious. This is where a lot of people will lose."*

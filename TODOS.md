@@ -80,6 +80,24 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Stub left in place:** `test_e2e_phase3.py:274` still contains the original `pytest.skip(...)`. Re-opening it is post-submission if anyone wants the integration-flavor coverage.
 - **Owner:** Person 4 (Ibrahim), closed 2026-05-11.
 
+## ML / Fine-Tuning Follow-ups
+
+### Multi-finding-type LoRA adapter (post-submission)
+- **What:** The active C2A-trained adapter (`kaggle_work_c2a/`) is purpose-built for **victim detection only** — binary `finding_type: victim | none` schema. FieldAgent's full perception spec lists 5 finding types (victim, fire, smoke, damaged_structure, blocked_route); the non-victim types currently rely on base Gemma 4 E2B at runtime. Post-submission, train a multi-class adapter that emits the full `report_finding(type=...)` enum.
+- **Why:** Demo only needs victims (the wow-moment). Other finding types work via base Gemma well enough for non-load-bearing scenes. Multi-class training would dilute the signal and risk losing the GATE 3 win.
+- **Pros:** Unified adapter for all 5 finding types; richer demo capability for fire/smoke/blocked_route scenarios.
+- **Cons:** Need diverse training data per finding type (C2A doesn't cover fire/smoke detection directly). Estimated 2-3 days of dataset work (C2A + AIDER + xBD merge) + 1 day training.
+- **Context:** Surfaced 2026-05-14 during the C2A pivot decision (user explicitly chose to focus narrow on victim detection for the hackathon). Active C2A scaffold: `kaggle_work_c2a/`. xBD belt-and-suspenders adapter: `kaggle_work/`. Both produce LoRA adapters; unify post-submission via further training or adapter-merge techniques.
+- **Owner:** TBD post-submission.
+
+### Root-cause analysis of Kaleel's original Unsloth training regression (post-submission)
+- **What:** When Kaleel's first xBD LoRA run made the model *worse* than base Gemma 4 E2B, the working hypothesis was `finetune_vision_layers=False`. Reading `ml/training/finetune_lora.py:62` shows he already had it `True`. So the regression cause is still unknown. Post-Sunday, compare his exact hyperparams, training data class distribution, eval methodology, and raw eval predictions against whatever the Kaggle-kernel run produces. Document the deltas so future Gemma 4 vision FT work doesn't repeat the same mistake.
+- **Why:** We're rebuilding without understanding the original failure mode. If our Kaggle run also regresses, having a documented hypothesis tree saves cycles. If it succeeds, we should still know *why* his didn't — this is potential signal for the writeup and for any post-hackathon follow-ups.
+- **Pros:** ~2 hrs total work. Surfaces the real cause (likely class imbalance, eval methodology, or LR), which informs all future vision FT runs on this codebase.
+- **Cons:** Requires Kaleel's preprocessed JSONL + raw eval predictions to be retrievable. If he can't surface them, the analysis is impossible.
+- **Context:** Surfaced by `/plan-eng-review` of the Kaggle-kernel training plan (2026-05-14). Reviewer hypothesis A2 (`load_in_4bit` mismatch) and the schema mismatch finding (A1: plain label vs JSON envelope output) are *candidate* causes but unverified without Kaleel's data. Test plan artifact: `~/.gstack/projects/ibrahim7860-Gemma-Guardian/appleuser-main-eng-review-test-plan-20260514-110546.md`.
+- **Owner:** Ibrahim (or whoever picks up post-hackathon vision FT work).
+
 ## Mesh Simulator Follow-ups
 
 ### CLOSED — Derive EGS lat/lon from active scenario YAML

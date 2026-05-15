@@ -16,7 +16,15 @@ In post-disaster zones, cell towers fail in the first hour. Drones with cloud-AI
 
 - **Primary:** Global Resilience (with Climate & Green Energy special-track framing)
 - **Secondary:** Safety
-- **Special prize plays:** Unsloth (xBD vision fine-tuning), Ollama (deployment)
+- **Special prize plays:** Unsloth (vision fine-tuning — see below), Ollama (deployment)
+
+> **2026-05-14 NOTE on fine-tuning focus:** The hackathon GATE 3 acceptance bar
+> is `report_finding(type='victim')` 3/3 reliability on the wow-moment frame.
+> Active LoRA work targets **victim detection** via the C2A disaster-aerial
+> dataset (`kaggle_work_c2a/`). The original xBD building-damage adapter
+> (`kaggle_work/`) is belt-and-suspenders. Multi-finding-type adapters
+> (fire / smoke / damaged_structure / blocked_route) are post-submission.
+> See `docs/12-fine-tuning-plan.md` addendum.
 
 ## Documentation Map
 
