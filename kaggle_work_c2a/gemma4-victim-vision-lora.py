@@ -47,7 +47,7 @@ from typing import Optional
 # Flip to False for the real ~3.5-4 hr training run.
 # v4: smoke v3 validated AIDER+C2A balanced eval (binary_acc 0.72, precision 1.0).
 # Full run to push recall up via 500 train steps on 5000+5000 balanced examples.
-SMOKE_TEST = False  # v6: full run on 3-dataset mix; smoke v5 confirmed pipeline + per-source metrics work
+SMOKE_TEST = True  # v8: validate DoRA + new hyperparams on smoke before full run
 
 INPUT_ROOT = Path("/kaggle/input")
 # Cross-user datasets mount under /kaggle/input/datasets/<owner>/<slug>/
@@ -454,11 +454,19 @@ model = FastVisionModel.get_peft_model(
     finetune_language_layers=True,
     finetune_attention_modules=True,
     finetune_mlp_modules=True,
+    # v8: research-backed improvements for generalization
+    #   r=16 with alpha=2*r is the Unsloth heuristic (was 16/16)
+    #   use_dora=True: Weight-Decomposed LoRA — closes half the gap to full
+    #     fine-tuning on vision tasks per DoRA paper (LLaVA, VL-BART). Fused
+    #     in Unsloth 2026.04+, runs at same speed as plain LoRA.
+    #   lora_dropout=0.05: small regularization to prevent shortcut memorization
+    #     (v7 train_loss converged to 0.0004 — deep overfit territory).
     r=16,
-    lora_alpha=16,
-    lora_dropout=0,
+    lora_alpha=32,
+    lora_dropout=0.05,
     bias="none",
     random_state=3407,
+    use_dora=True,
 )
 model.print_trainable_parameters()
 
@@ -484,8 +492,10 @@ train_ds = Dataset.from_list(train_records)
 print(f"Train rows: {len(train_ds)}")
 
 FastVisionModel.for_training(model)
-max_steps = 30 if SMOKE_TEST else 500
-save_steps = 10 if SMOKE_TEST else 100
+# v8: max_steps reduced 500 → 300. Train loss hit 0.0004 by step ~130 in v6/v7,
+# indicating deep overfit. Stopping earlier preserves more general features.
+max_steps = 30 if SMOKE_TEST else 300
+save_steps = 10 if SMOKE_TEST else 75
 
 trainer = SFTTrainer(
     model=model,
@@ -497,7 +507,9 @@ trainer = SFTTrainer(
         gradient_accumulation_steps=4,
         warmup_steps=5,
         max_steps=max_steps,
-        learning_rate=2e-4,
+        # v8: lowered LR per DoRA's "use slightly lower learning rate than LoRA"
+        # recommendation. Was 2e-4.
+        learning_rate=1e-4,
         fp16=True, bf16=False,  # T4 doesn't support bf16
         logging_steps=5,
         save_steps=save_steps,
@@ -577,7 +589,8 @@ if y_true:
     # H2 (C2A synthesis artifact): C2A accuracy >> SARD accuracy.
     # H3 (disaster scene proxy): both C2A and SARD high (both have disaster context).
     per_source = {}
-    for src in set(y_source):
+    # Sorted iteration keeps log output deterministic across runs.
+    for src in sorted(set(y_source)):
         idxs = [i for i, s in enumerate(y_source) if s == src]
         if not idxs:
             continue
