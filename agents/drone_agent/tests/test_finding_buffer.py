@@ -214,6 +214,14 @@ def test_append_after_drain_reopens_writer(tmp_path):
 
 
 def test_restore_from_corrupted_jsonl_skips_bad_lines(tmp_path, caplog):
+    import logging
+
+    # Attach caplog's handler directly so records are captured regardless
+    # of root-logger handler chain (works around lastResort-only setups).
+    target_logger = logging.getLogger("agents.drone_agent.finding_buffer")
+    target_logger.addHandler(caplog.handler)
+    target_logger.setLevel(logging.DEBUG)
+
     path = tmp_path / "q.jsonl"
     valid1 = json.dumps({
         "channel": "drones.drone1.findings",
@@ -232,11 +240,13 @@ def test_restore_from_corrupted_jsonl_skips_bad_lines(tmp_path, caplog):
     path.write_text("\n".join([valid1, bad1, bad2, valid2, bad3]) + "\n")
 
     buf = FindingBuffer(persist_path=path, maxlen=10)
-    with caplog.at_level("WARNING", logger="agents.drone_agent.finding_buffer"):
-        n = buf.restore_from_disk()
+    n = buf.restore_from_disk()
     assert n == 2
     assert len(buf) == 2
     # At least one warning per bad line, but we don't lock down the count
     # exactly so the implementation can change wording.
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
     assert len(warnings) >= 1
+
+    # Cleanup: remove the handler to avoid leaking across tests.
+    target_logger.removeHandler(caplog.handler)

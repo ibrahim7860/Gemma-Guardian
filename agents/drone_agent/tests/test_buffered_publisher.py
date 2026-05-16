@@ -138,6 +138,14 @@ def test_set_standalone_partial_flush_re_buffers_remaining(buffer, caplog):
     would double-publish) and revert to standalone for retry on the next
     reconciliation tick.
     """
+    import logging
+
+    # Attach caplog's handler directly so records are captured regardless
+    # of root-logger handler chain (works around lastResort-only setups).
+    target_logger = logging.getLogger("agents.drone_agent.buffered_publisher")
+    target_logger.addHandler(caplog.handler)
+    target_logger.setLevel(logging.DEBUG)
+
     # First two publishes succeed, third raises. Entries 3, 4, 5 should be
     # re-buffered.
     inner = _PartialFailPublisher(ok_count=2)
@@ -147,9 +155,8 @@ def test_set_standalone_partial_flush_re_buffers_remaining(buffer, caplog):
         bp.publish("drones.drone1.findings", _make_finding(i))
     assert len(buffer) == 5
 
-    with caplog.at_level("ERROR", logger="agents.drone_agent.buffered_publisher"):
-        # set_standalone(False) attempts the flush; failure does NOT raise out.
-        bp.set_standalone(False)
+    # set_standalone(False) attempts the flush; failure does NOT raise out.
+    bp.set_standalone(False)
 
     # Entries 1 and 2 were published successfully.
     ids_published = [p["finding_id"] for (_ch, p) in inner.calls]
@@ -166,7 +173,10 @@ def test_set_standalone_partial_flush_re_buffers_remaining(buffer, caplog):
 
     # An ERROR-level log fired so the operator can see it.
     errors = [r for r in caplog.records if r.levelname == "ERROR"]
-    assert any("re-buffering" in r.message for r in errors)
+    assert any("re-buffering" in r.getMessage() for r in errors)
+
+    # Cleanup: remove the handler to avoid leaking across tests.
+    target_logger.removeHandler(caplog.handler)
 
 
 def test_set_standalone_partial_flush_retry_succeeds_after_recovery(buffer):

@@ -59,6 +59,16 @@ def build_parser() -> argparse.ArgumentParser:
             "production."
         ),
     )
+    parser.add_argument(
+        "--c2a-adapter-path",
+        default=os.environ.get("C2A_ADAPTER_PATH", str(_REPO_ROOT / "kaggle_work_c2a" / "adapter")),
+        help=(
+            "Path to the C2A victim-detection LoRA adapter directory. "
+            "Defaults to $C2A_ADAPTER_PATH or kaggle_work_c2a/adapter/ "
+            "relative to the repo root. If the path does not exist or "
+            "loading fails, the drone agent falls back to Ollama-only."
+        ),
+    )
     return parser
 
 
@@ -128,6 +138,7 @@ async def _run(args: argparse.Namespace) -> int:
         max_retries=args.max_retries,
         send_image=not args.text_only,
         ollama_timeout_s=ollama_timeout_s,
+        c2a_adapter_path=Path(args.c2a_adapter_path) if args.c2a_adapter_path else None,
     )
     if args.standalone:
         runtime.buffered_publisher.set_standalone(True)
@@ -143,7 +154,8 @@ async def _run(args: argparse.Namespace) -> int:
 
     print(
         f"[drone_agent] drone_id={args.drone_id} scenario={scenario.scenario_id} "
-        f"redis={args.redis_url} model={args.model}",
+        f"redis={args.redis_url} model={args.model} "
+        f"c2a_adapter={args.c2a_adapter_path}",
         flush=True,
     )
     try:

@@ -59,19 +59,27 @@ def test_counter_recovers_from_whitespace_file(tmp_path):
 def test_counter_recovers_from_non_integer_file(tmp_path, caplog):
     """Garbage in the file (e.g. someone hand-edited it, or the disk
     corrupted a sector) → log a warning, treat as 0, keep running."""
+    # Attach caplog's handler directly so records are captured regardless
+    # of root-logger handler chain (works around lastResort-only setups).
+    target_logger = logging.getLogger("agents.drone_agent.memory")
+    target_logger.addHandler(caplog.handler)
+    target_logger.setLevel(logging.DEBUG)
+
     counter_path = tmp_path / "drone1_finding_counter.txt"
     counter_path.write_text("abc")
 
-    with caplog.at_level(logging.WARNING, logger="agents.drone_agent.memory"):
-        m = MemoryStore(drone_id="drone1", persist_dir=tmp_path)
+    m = MemoryStore(drone_id="drone1", persist_dir=tmp_path)
 
     assert m.next_finding_id() == "f_drone1_1"
     # Verify a warning was emitted naming the file and the bad content.
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any(
-        "non-integer" in r.message and "abc" in r.message
+        "non-integer" in r.getMessage() and "abc" in r.getMessage()
         for r in warnings
-    ), f"Expected non-integer warning, got: {[r.message for r in warnings]}"
+    ), f"Expected non-integer warning, got: {[r.getMessage() for r in warnings]}"
+
+    # Cleanup: remove the handler to avoid leaking across tests.
+    target_logger.removeHandler(caplog.handler)
 
 
 def test_counter_writes_to_disk_each_call(tmp_path):

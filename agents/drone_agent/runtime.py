@@ -47,6 +47,24 @@ from sim.scenario import Scenario
 logger = logging.getLogger(__name__)
 
 
+def _try_load_c2a(adapter_path: Path | None):
+    """Try to load the C2A adapter.  Returns the node or None on failure.
+
+    All heavy dependencies (torch, transformers, peft) are inside
+    C2AInferenceNode.__init__, so import errors surface here.  This
+    function is deliberately lenient: any failure = log + return None.
+    The drone agent continues using the Ollama-only path.
+    """
+    try:
+        from agents.drone_agent.c2a_inference import C2AInferenceNode
+        return C2AInferenceNode(adapter_path=adapter_path)
+    except Exception as exc:
+        logger.warning(
+            "C2A adapter load failed (falling back to Ollama-only): %s", exc,
+        )
+        return None
+
+
 _ACTION_TO_LAST_ACTION = {
     "report_finding": "report_finding",
     "mark_explored": "mark_explored",
@@ -73,8 +91,15 @@ class DroneRuntime:
         agent_state_publish_period_s: float = 0.5,
         log_dir: Path | None = None,
         ollama_timeout_s: float | None = None,
+        c2a_adapter_path: Path | None = None,
     ):
         self.drone_id = drone_id
+        # --- C2A adapter (best-effort) ---
+        c2a_node = _try_load_c2a(c2a_adapter_path)
+        if c2a_node is not None:
+            logger.info("C2A victim-detection adapter LOADED for %s", drone_id)
+        else:
+            logger.info("C2A adapter not available for %s — Ollama-only mode", drone_id)
         self.agent = DroneAgent(
             drone_id=drone_id,
             ollama_endpoint=ollama_endpoint,
@@ -82,6 +107,7 @@ class DroneRuntime:
             max_retries=max_retries,
             send_image=send_image,
             ollama_timeout_s=ollama_timeout_s,
+            c2a=c2a_node,
         )
         # Beat 5 Component 1: drone-side findings buffer + replay across an
         # EGS link drop. The BufferedPublisher wraps the raw RedisPublisher

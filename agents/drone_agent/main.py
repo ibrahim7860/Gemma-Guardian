@@ -9,12 +9,16 @@ import base64
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agents.drone_agent.action import ActionNode, StdoutPublisher
 from agents.drone_agent.memory import MemoryStore
 from agents.drone_agent.perception import PerceptionBundle, PerceptionNode
 from agents.drone_agent.reasoning import ReasoningNode, render_user_message
 from agents.drone_agent.validation import ValidationNode
+
+if TYPE_CHECKING:
+    from agents.drone_agent.c2a_inference import C2AInferenceNode
 from shared.contracts.logging import ValidationEventLogger, default_log_dir
 
 VALIDATION_LOG_PATH = default_log_dir() / "validation_events.jsonl"
@@ -27,7 +31,7 @@ def _safe_fallback() -> dict:
 
 
 class DroneAgent:
-    def __init__(self, drone_id: str, ollama_endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b", max_retries: int = 3, send_image: bool = True, extra_options: dict | None = None, ollama_timeout_s: float | None = None):
+    def __init__(self, drone_id: str, ollama_endpoint: str = "http://localhost:11434", model: str = "gemma4:e2b", max_retries: int = 3, send_image: bool = True, extra_options: dict | None = None, ollama_timeout_s: float | None = None, c2a: "C2AInferenceNode | None" = None):
         self.drone_id = drone_id
         self.perception = PerceptionNode()
         reasoning_kwargs: dict = {"model": model, "endpoint": ollama_endpoint, "send_image": send_image, "extra_options": extra_options}
@@ -45,8 +49,54 @@ class DroneAgent:
         )
         self.max_retries = max_retries
         self._validation_log = ValidationEventLogger(path=VALIDATION_LOG_PATH)
+        # C2A victim-detection LoRA adapter.  When present, the step loop
+        # tries the adapter FIRST on every frame.  If it detects a victim
+        # and that call passes validation, we short-circuit (skip Ollama).
+        # If None, every frame goes through Ollama as before.
+        self.c2a = c2a
 
     async def step(self, bundle: PerceptionBundle) -> dict:
+        # --- C2A adapter fast-path for victim detection ---
+        # If the C2A adapter is loaded, try it first on every frame.
+        # On victim detection, validate and short-circuit if valid.
+        # On 'none' or parse failure, fall through to Ollama.
+        if self.c2a is not None:
+            try:
+                c2a_call = self.c2a.analyze_frame(
+                    bundle.frame_jpeg,
+                    lat=bundle.state.lat,
+                    lon=bundle.state.lon,
+                    alt=bundle.state.alt,
+                )
+                if c2a_call is not None:
+                    c2a_result = self.validation.validate(c2a_call, bundle)
+                    if c2a_result.valid:
+                        self._validation_log.log(
+                            agent_id=self.drone_id,
+                            layer="drone",
+                            function_or_command="report_finding",
+                            attempt=1,
+                            valid=True,
+                            rule_id=None,
+                            outcome="c2a_adapter_victim",
+                            raw_call=c2a_call,
+                        )
+                        self.validation.record_success(c2a_call, bundle)
+                        self.memory.record_decision(c2a_call, c2a_result, 0)
+                        self.action.execute(c2a_call, sender_position={
+                            "lat": bundle.state.lat, "lon": bundle.state.lon, "alt": bundle.state.alt,
+                        }, raw_frame_jpeg=bundle.raw_frame_jpeg)
+                        logger.info("C2A adapter detected victim — short-circuiting Ollama")
+                        return c2a_call
+                    else:
+                        logger.debug(
+                            "C2A victim call failed validation (%s), falling through to Ollama",
+                            c2a_result.failure_reason,
+                        )
+            except Exception:
+                logger.exception("C2A adapter inference failed, falling through to Ollama")
+
+        # --- Standard Ollama reasoning path (Algorithm 1 retry loop) ---
         conversation = self.reasoning._initial_messages(bundle)
         last_call: dict | None = None
 

@@ -32,11 +32,13 @@ Deferred work captured during planning and reviews. Each entry includes context 
 - **Context:** Adapter artifacts at `kaggle_work_c2a/adapter/` (Kaggle cache symlinks): `adapter_model.safetensors` (~120 MB), `qasim_inference.py`, `prompts.py`, `chat_template.jinja`, `eval_summary.json`. Adapter loads via PEFT on top of `unsloth/gemma-4-E2B-it`. GGUF path is dead (Unsloth #2290 vision capability loss), so PEFT/HF inference is the route.
 - **Owner:** Qasim (completed).
 
-### Wire C2A adapter into drone agent runtime
-- **What:** After GATE 3 acceptance passes, integrate the LoRA adapter into the per-drone agent's perception path. Two routes: (a) Ollama Modelfile bundling base + adapter (needed for Ollama special-prize claim), or (b) PEFT-load on a separate HF Transformers inference path the drone agent calls. Decide based on whether (a) is achievable in the 3 days remaining.
-- **Why:** Demo wow-moment uses the trained adapter, not base Gemma. Without integration, the adapter exists only as a Kaggle artifact, not in the running system.
-- **Context:** Per `docs/05-per-drone-agent.md` + `docs/12-fine-tuning-plan.md` §"Workflow regardless of path" step 5. Memory note: prior Ollama-adapter conversion attempts ran into the Unsloth GGUF vision regression.
-- **Owner:** Kaleel (formal owner per `docs/18-team-roles.md`); Qasim executes if Kaleel is unavailable (CUDA-box constraint + recent track record).
+### ~~Wire C2A adapter into drone agent runtime~~ ✅ CLOSED
+- **Result:** **Route (b) — PEFT/HF inference path** implemented 2026-05-15 by Qasim. Route (a) Ollama Modelfile is dead (Unsloth #2290 vision capability loss confirmed during GATE 3).
+- **Implementation:** New `agents/drone_agent/c2a_inference.py` module: loads base model (4-bit), applies GATE 3 fixes (ClippableLinear unwrap + DoRA key rename), loads PEFT adapter, exposes `analyze_frame()` → `report_finding` dict. Wired into `DroneAgent.step()` as a fast-path before Ollama reasoning. CLI flag `--c2a-adapter-path` (default `$C2A_ADAPTER_PATH` or `kaggle_work_c2a/adapter/`). Graceful fallback: adapter load failure → warning + Ollama-only mode (demo never crashes).
+- **Version-agnostic:** Swapping v3 → v8/v9 is a path/tag change, no code change.
+- **Tests:** `agents/drone_agent/tests/test_c2a_inference.py` — parser, translator, path resolution, schema compliance.
+- **Context:** Per `docs/05-per-drone-agent.md` + `docs/12-fine-tuning-plan.md` §"Workflow regardless of path" step 5.
+- **Owner:** Qasim (completed).
 
 ### `command_translator.py:70` — sibling `180.0` httpx timeout literal
 - **What:** Hazim's GH #32 fix (commit `d86a7d9`) hoisted `replanning.py`'s per-attempt timeout from inline `180.0` → module constant `EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S = 30.0`. The same literal exists at `agents/egs_agent/command_translator.py:70` in the operator-command-translation path (`httpx.AsyncClient().post(..., timeout=180.0)`). Hazim's commit acknowledges it but intentionally left it: that path has no outer `wait_for` guard and is not on the resilience-scenario critical path.
