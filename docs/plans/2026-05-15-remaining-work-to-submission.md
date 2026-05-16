@@ -39,7 +39,7 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 ### Track C — Qasim owns CUDA + adapter integration; Kaleel reviews + parallel work; Ibrahim handoff support — 4-6 hr
 **Split:** Qasim owns the full CUDA lane plus adapter wiring (single ownership — fast inner loop, no PR roundtrip). Kaleel reviews PR + ships small parallel tasks. Ibrahim ships the handoff package early today so Qasim can start C3 immediately, then pivots to writeup pull-forward.
 
-- [ ] **C1.** [Qasim] GATE 3 acceptance test: `qasim_inference.py` on `placeholder_victim_01.jpg` 3× — need 3/3 `finding_type: victim` (`TODOS.md` L29-33). CUDA-bound, standalone script.
+- [x] **C1.** [Qasim] GATE 3 acceptance test: `qasim_inference.py` on `placeholder_victim_01.jpg` 3× — **PASSED 3/3 `finding_type: victim`** (2026-05-15, RTX A2000 8GB). Required two inference-time fixes: ClippableLinear unwrap + DoRA key rename. `TODOS.md` entry closed.
 - [ ] **C2.** [Qasim] Route (a) vs (b) decision — runs right after C1 passes. 30-min Ollama Modelfile `ADAPTER` probe on CUDA box (`FROM gemma4:e2b` + `ADAPTER /path/to/adapter`, `ollama create`, vision smoke against `placeholder_victim_01.jpg`). Hard 1-hr cap before falling back to route (b) PEFT/HF. Route decision feeds C3 (his own next task).
 - [ ] **C3.** [Qasim] Wire C2A adapter into drone agent runtime per chosen route (`TODOS.md` L35-39)
   - [ ] Sidecar HTTP server at `agents/vision_classifier/` wrapping `qasim_inference.py` logic (PEFT/HF route) — POST /classify, env-aware device_map (cuda first). New `vision` extra in `pyproject.toml` for FastAPI + torch + transformers + peft.

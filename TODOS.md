@@ -26,11 +26,11 @@ Deferred work captured during planning and reviews. Each entry includes context 
 
 ## ML / Fine-Tuning Follow-ups
 
-### GATE 3 acceptance test — `report_finding(type='victim')` 3/3 on the wow-moment frame
-- **What:** With the C2A LoRA adapter trained and published (Kaggle Model `ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a`, local copy in `kaggle_out_c2a/adapter/`), run the bundled `qasim_inference.py` against `sim/fixtures/frames/placeholder_victim_01.jpg` three times and confirm 3/3 emit `finding_type: victim` with a valid JSON envelope. Base Gemma 4 E2B was 2/3; the adapter is meant to unlock the third hit.
-- **Why:** This is the literal hackathon acceptance bar per `CLAUDE.md` and `docs/12-fine-tuning-plan.md` addendum. The eval at n=400 looks good (binary acc 76.75%, parse_rate 1.0) but the gate is specifically on the demo frame, not the held-out set.
-- **Context:** Adapter artifacts at `kaggle_out_c2a/adapter/` (gitignored): `adapter_model.safetensors` (~120 MB), `qasim_inference.py`, `prompts.py`, `chat_template.jinja`, `eval_summary.json`. Adapter loads via PEFT on top of `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`. GGUF path is dead (Unsloth #2290 vision capability loss), so PEFT/HF inference is the route.
-- **Owner:** Qasim (needs CUDA box; bundled inference script literally named `qasim_inference.py`).
+### ~~GATE 3 acceptance test — `report_finding(type='victim')` 3/3 on the wow-moment frame~~ ✅ CLOSED
+- **Result:** **PASS — 3/3 `finding_type: victim`** on `placeholder_victim_01.jpg`, valid JSON envelopes. Completed 2026-05-15 by Qasim on RTX A2000 8GB (CUDA box).
+- **Fixes required for local inference:** The bundled `qasim_inference.py` needed two patches to run on the CUDA box: (1) **ClippableLinear unwrap** — vanilla PEFT doesn't support `Gemma4ClippableLinear` (a Gemma 4 custom module); unwrapping 232 layers to their inner `nn.Linear` before PEFT injection resolved the `ValueError`. (2) **DoRA magnitude-vector key rename** — Unsloth saves DoRA keys as `...lora_magnitude_vector.default` but vanilla PEFT expects `...lora_magnitude_vector.default.weight`; renaming in a temp copy before `PeftModel.from_pretrained` fixed the UNEXPECTED/MISSING key mismatch. Base model loaded in fp16 (not 4-bit) to fit in 8GB VRAM.
+- **Context:** Adapter artifacts at `kaggle_work_c2a/adapter/` (Kaggle cache symlinks): `adapter_model.safetensors` (~120 MB), `qasim_inference.py`, `prompts.py`, `chat_template.jinja`, `eval_summary.json`. Adapter loads via PEFT on top of `unsloth/gemma-4-E2B-it`. GGUF path is dead (Unsloth #2290 vision capability loss), so PEFT/HF inference is the route.
+- **Owner:** Qasim (completed).
 
 ### Wire C2A adapter into drone agent runtime
 - **What:** After GATE 3 acceptance passes, integrate the LoRA adapter into the per-drone agent's perception path. Two routes: (a) Ollama Modelfile bundling base + adapter (needed for Ollama special-prize claim), or (b) PEFT-load on a separate HF Transformers inference path the drone agent calls. Decide based on whether (a) is achievable in the 3 days remaining.
