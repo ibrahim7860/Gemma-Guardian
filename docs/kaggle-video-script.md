@@ -35,11 +35,11 @@ This is the v1 script. Companion shot list / capture day plan lives below the sc
 
 **Visual:** Cut to a 5-up grid of all team webcams for ~2s, then settle on the speaker.
 
-**IBRAHIM:** We're the team behind FieldAgent. The strongest disaster-response AI on the planet needs the cloud to think — which means the moment a hurricane takes out the cell towers, it goes dark.
+**IBRAHIM:** Hey, we're the team behind FieldAgent. So the thing that kept bugging us — basically every serious disaster-response AI out there runs in the cloud. Which works great, until a hurricane takes out the cell towers.
 
-**THAYYIL:** That's the first hour. The hour that decides who lives.
+**THAYYIL:** Which is the worst possible time for it to fail, right? The first 72 hours after a disaster hits are when most rescues actually happen.
 
-**HAZIM:** So we asked a simple question: what if every drone had its own brain? What if the swarm could keep coordinating *after* the disaster broke the network?
+**HAZIM:** So we figured, what if you just put the AI directly on the drones themselves? That way it doesn't really matter what the network is doing — everything just keeps working.
 
 **Lower-third:** *FieldAgent — fully offline disaster response, powered by Gemma 4*
 
@@ -49,11 +49,11 @@ This is the v1 script. Companion shot list / capture day plan lives below the sc
 
 **Visual:** Simple architecture diagram animates in — drones (Layer 1) → Edge Ground Station (Layer 2) → operator dashboard (Layer 3). A cloud icon appears, then is crossed out with a red ✕.
 
-**QASIM:** Every drone runs Gemma 4 E2B locally — vision and reasoning, on-device. The Edge Ground Station runs the larger E4B for swarm-level decisions. No internet, ever.
+**QASIM:** So under the hood, every drone is running Gemma 4 E2B for the vision and reasoning, all on the device itself. Then the bigger E4B model sits at our edge ground station handling the swarm-level coordination. Both completely offline.
 
-**KHALEEL:** We fine-tuned a victim-detection LoRA on real disaster aerial imagery. When a drone sees a survivor, Gemma emits a structured function call — the operator gets pinged in seconds.
+**KHALEEL:** We also fine-tuned a victim-detection adapter on real disaster aerial imagery. So when a drone actually spots a survivor, Gemma fires off a structured call and the operator sees it on their dashboard pretty much instantly.
 
-**THAYYIL:** And every output Gemma produces is validated against hard constraints. If it hallucinates, we catch it, re-prompt it, retry — before anyone acts on it.
+**THAYYIL:** And the part we're really proud of is the validation layer. Every output Gemma generates gets checked against a set of hard rules — so if it hallucinates something, we catch it and make it retry before anything actually ships.
 
 **Visual cut:** function-call JSON appears → red ✕ → corrective re-prompt → green ✓
 
@@ -63,23 +63,23 @@ This is the v1 script. Companion shot list / capture day plan lives below the sc
 
 **Visual:** Screen recording of the actual Flutter dashboard. Three drones tracking across the aerial base map.
 
-**IBRAHIM (VO):** Three drones. One disaster zone. Zero internet.
+**IBRAHIM (VO):** Okay, so what you're looking at here is three drones surveying a simulated disaster zone. The whole demo is running with the wifi off — everything's happening locally on our laptop.
 
 **Visual overlay** (top-right, ~2s): macOS/Windows airplane-mode indicator — *real* wifi-off icon, captured for real.
 
-**IBRAHIM (VO):** Drone one spots a survivor.
+**IBRAHIM (VO):** And there — drone one just picked up a survivor.
 
 **Visual:** C2A adapter fires. Camera frame highlights the victim. Finding card pops on dashboard — severity, GPS, confidence, image.
 
-**THAYYIL (VO):** That detection ran entirely on the drone. No server in the loop. Pure on-device Gemma 4.
+**THAYYIL (VO):** The cool part is that detection happened entirely on the drone itself. No server, no API call, no internet — just Gemma running on the device.
 
 **Visual:** Operator clicks approve. Card moves to *Approved*.
 
-**IBRAHIM (VO):** Now watch what happens when a drone fails.
+**IBRAHIM (VO):** Now I'm going to take drone three offline and see how the swarm reacts.
 
 **Visual:** Drone 3 marker turns red. EGS triggers a replan. The validation banner flashes red at the top — *ASSIGNMENT_TOTAL_MISMATCH detected* — then green — *retry succeeded*.
 
-**HAZIM (VO):** That's Gemma 4 E4B catching its own mistake. Validation rejected the bad plan, re-prompted with the constraint, and the corrected assignment shipped to the remaining drones.
+**HAZIM (VO):** And that banner at the top is the part we love — that's Gemma 4 actually catching its own mistake during the replan. The validation layer rejected the first plan, sent it back with the constraint, and the corrected version went out to the remaining drones.
 
 **Visual:** Drones one and two redistribute survey points and continue. Path closes in on the survivor's location.
 
@@ -89,15 +89,15 @@ This is the v1 script. Companion shot list / capture day plan lives below the sc
 
 **Visual:** Cut back to the 5-up team grid. Clean, even framing.
 
-**KHALEEL:** Every drone has a brain.
+**KHALEEL:** Honestly, working on this has been one of the coolest things I've done. Knowing it could actually help in a real disaster — that means a lot.
 
-**QASIM:** Every brain stays local.
+**QASIM:** Yeah, our whole bet was that on-device AI is finally ready for safety-critical work. And working with Gemma 4 kind of proved that to us.
 
-**HAZIM:** Every decision survives the disaster that broke the network.
+**HAZIM:** This is just our v1 too — we'd love to take it further and get it onto real hardware.
 
-**THAYYIL:** This is what on-device AI is *for.* Not convenience. Not novelty. Saving lives when nothing else can reach.
+**THAYYIL:** Thanks so much for checking out our project, we really appreciate it.
 
-**IBRAHIM:** FieldAgent. Built on Gemma 4. Built to work when the cloud can't.
+**IBRAHIM:** Yeah that's FieldAgent. Thanks for watching.
 
 **End card:** Project name • GitHub URL • *Built for the Gemma 4 Good Hackathon*
 
@@ -188,8 +188,10 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 |---|---|---|---|
 | Cold open | 12s | 0 | n/a |
 | Stakes | 13s | 0 | n/a |
-| Team + Problem | 30s | ~65 | 130 wpm ✓ |
-| How it works | 35s | ~80 | 137 wpm ✓ |
-| Demo VO | 60s | ~85 | 85 wpm ✓ (slow, deliberate VO) |
-| Close | 25s | ~55 | 132 wpm ✓ |
-| **Total** | **175s** | **~285** | 5s buffer for transitions |
+| Team + Problem | 30s | ~75 | ~150 wpm ✓ (casual, conversational) |
+| How it works | 35s | ~95 | ~163 wpm — slightly brisk, trim if needed |
+| Demo VO | 60s | ~135 | ~135 wpm ✓ (slower deliberate VO over screen) |
+| Close | 25s | ~70 | ~168 wpm — tight; if anyone runs long, trim Hazim or Khaleel |
+| **Total** | **175s** | **~375** | 5s buffer for transitions; casual delivery is forgiving |
+
+**On the close timing:** five people in 25s is genuinely tight. If a take feels rushed, you've got two outs — extend the close to 30s by trimming the demo VO by 5s (drop the "And there — drone one just picked up a survivor" beat and let the visual carry it), or cut Hazim's close line since he already speaks in the demo VO.
