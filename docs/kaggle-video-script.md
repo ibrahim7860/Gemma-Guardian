@@ -58,7 +58,7 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **Cut to B-roll:** brief shot of a rescue worker or someone trapped near rubble.
 
-**KHALEEL (VO, over B-roll):** So we built something to help close that gap.
+**KHALEEL (VO, over B-roll):** So we built something to help close that gap,
 
 **Cut to webcam:** Khaleel.
 
@@ -72,7 +72,7 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **QASIM:** The way we did it is simple. Instead of having drones rely on the internet to think, we put the AI directly on the drones themselves.
 
-**THAYYIL:** There's a paper from earlier this year that proposed something similar — but it needed cloud GPT-4. We took that architecture and made it run on Gemma 4 locally. Completely offline.
+**IBRAHIM:** There's a paper from earlier this year that proposed something similar — but it needed cloud GPT-4. We took that architecture and made it run on Gemma 4 locally. Completely offline.
 
 **IBRAHIM:** So now a swarm of drones can see, think, coordinate rescue work — without any internet at all.
 
@@ -86,7 +86,7 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **Visual overlay** (top-right, holds ~2s): real macOS/Windows airplane-mode icon, captured with wifi actually off.
 
-**IBRAHIM (VO):** And here's what that actually looks like in action. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
+**HAZIM (VO):** And here's what that actually looks like in action. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
 
 ### Drone spots a survivor *(~12s)*
 
@@ -101,7 +101,7 @@ report_finding(
 )
 ```
 
-**THAYYIL (VO):** Right there — drone one just picked up a survivor. That's Gemma analyzing the camera frame, deciding it's a person who needs help, and producing a structured report — the operator sees it on the dashboard instantly.
+**HAZIM (VO):** Right there — drone one just picked up a survivor. That's Gemma analyzing the camera frame, deciding it's a person who needs help, and producing a structured report — the operator sees it on the dashboard instantly.
 
 ### Multilingual command *(~10s)*
 
@@ -115,13 +115,13 @@ report_finding(
 - **Attempt 1 — FAILED:** *"Your assignments cover 27 points but 25 are available. Reassign so every point is covered exactly once."*
 - **Attempt 2 — PASSED.**
 
-**QASIM (VO):** Here's a key moment. Gemma actually makes a mistake while re-coordinating — but the validation layer catches it and corrects it before any drone acts. In a real rescue, that's what keeps a bad decision from costing someone their life.
+**THAYYIL (VO):** Here's a key moment. Gemma actually makes a mistake while re-coordinating — but the validation layer catches it and corrects it before any drone acts. In a real rescue, that's what keeps a bad decision from costing someone their life.
 
 ### Beat 5 — offline proof *(~15s)*
 
 **Visual:** Operator runs `sudo ifconfig en0 down`. EGS LINK SEVERED banner appears. Drone 3 gets a STANDALONE badge. Drone 3 keeps flying. Sidecar log shows "finding produced (buffered)." Then operator runs `sudo ifconfig en0 up` — banner clears, the buffered finding pops onto the dashboard, victim count chip ticks up by one.
 
-**IBRAHIM (VO):** Now I'm dropping drone three's connection completely. It keeps flying, finds another survivor while it's offline, and the second it reconnects — that finding shows up on the dashboard. Nothing lost.
+**THAYYIL (VO):** Now I'm dropping drone three's connection completely. It keeps flying, finds another survivor while it's offline, and the second it reconnects — that finding shows up on the dashboard. Nothing lost.
 
 ### Local-only proof *(~8s)*
 
@@ -133,17 +133,17 @@ report_finding(
 
 ## [2:27 – 3:00]  WHAT THIS COULD MEAN *(33s)*
 
-**Visual:** Cut back to the 5-up team grid. Clean framing.
+**Visual:** Cut to khaleel face.
 
-**KHALEEL:** The next big disaster is going to happen eventually. And when it does, rescue teams shouldn't be losing people just because the cell network went down.
+**KHALEEL:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
 
-**QASIM:** Having drones that can keep coordinating even when there's no internet — that could be what makes the difference between finding someone in time, or not.
+**QASIM:** A swarm of drones that keeps coordinating offline — that could be the difference between someone being found in time, or not at all.
 
-**HAZIM:** And that's what we want to actually get into the hands of real rescue teams someday. Faster searches, fewer people slipping through.
+**HAZIM:** And that's what we want to put in the hands of real rescue teams. Faster searches, smarter coordination, fewer people falling through the cracks.
 
-**THAYYIL:** Yeah, we're nowhere near done with this either. There's a ton more we want to build.
+**THAYYIL:** (not sure what to say here, maybe I dont need to say anything)
 
-**IBRAHIM:** If you want to check out the code, everything's up on GitHub. Thanks for watching.
+**IBRAHIM:** This is our project, FieldAgent, built on Gemma 4.
 
 **End card:** Project name • GitHub URL • Apache-2.0 • *Built for the Gemma 4 Good Hackathon*
 
