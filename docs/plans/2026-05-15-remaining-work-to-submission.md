@@ -36,12 +36,9 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 ### Track B — All hands — GATE 4 vote (~15 min)
 **Single-machine run on Qasim's CUDA box** (the demo box — C2A adapter is in-process PEFT/HF and needs CUDA; E4B latency was measured there; integrated GATE 3 3/3 passed there). Architecture is localhost-only (Redis `:6379`, WS bridge `:9090`, Ollama `:11434`) — no cross-machine networking exists in the codebase. The other three join via screen share (Zoom/Meet/Discord) and observe different surfaces of the same run.
 
-- [ ] **B1.** Run GATE 4 evaluation per `docs/17-feasibility-and-gates.md` L105-130 (5 multi-drone criteria) — **Qasim drives the keyboard on his CUDA box; team observes via screen share**
-  - **Qasim** starts the 3-drone scenario on his machine; watches EGS logs for replan + validation events
-  - **Hazim** observes the sim terminal (waypoint motion, scripted dropout, frame server) via screen share
-  - **Ibrahim** observes the dashboard tab (state updates, severed-banner, finding cards) via screen share
-- [ ] **B2.** Record PASS/FAIL decision in `docs/decisions.md` (per L178-185) — **Thayyil** writes up the decision
-- [ ] **B3.** If FAIL → drop to 2 drones, update storyboard — Ibrahim arbitrates; **Hazim updates scenario YAML and pushes to main; Qasim re-runs on his box**
+- [x] **B1.** ~~Run GATE 4 evaluation~~ → **FAIL (hardware-constrained).** Qasim ran both 3-drone and 2-drone configs on RTX A2000 8GB (2026-05-16). 8GB VRAM can't hold `gemma4:e2b` + `gemma4:e4b` simultaneously — Ollama model-swaps cause `ReadTimeout` on every replan attempt. Code paths correct (events fire, replan triggers), but no inference completes. No team member has ≥16GB VRAM hardware.
+- [x] **B2.** Decision recorded in `docs/decisions.md` — **DROP TO 2-DRONE configuration.** Demo uses `scripts/ollama_mock_server.py` for deterministic capture takes.
+- [x] **B3.** ~~If FAIL → drop to 2 drones~~ → **Actioned.** 2-drone config adopted. Storyboard update: "drone 1 surveys west, drone 2 surveys east, drone 1 fails, drone 2 takes over." Writeup frames scaling as future work.
 
 ### Track C — STATUS: Buckets 1-3 closed Fri evening by Qasim. C6-disclosure (Ibrahim) + C7/C8 (Kaleel) remain.
 **Status as of 2026-05-15 PM:** Qasim cleared C1-C5 + C6-flag in 5 commits Fri evening. The C3 PR didn't need a Kaleel review roundtrip because the integrated 3/3 acceptance passed. Remaining: a one-paragraph writeup disclosure (Ibrahim) and Kaleel's two small parallel items if he hasn't started them.
@@ -87,7 +84,7 @@ With C3 handed to Qasim, Ibrahim's Fri afternoon + Sat AM are free. Pull writeup
 ### Saturday AM — Cleanup + dress rehearsal block (target: noon CDT)
 
 #### Track F — Hazim + Qasim — Integration validation (~1-2 hr — most work pre-done)
-- [ ] **F1.** [Qasim — reassigned from Hazim 2026-05-16] drone3 reliability on integrated path: `scripts/run_drone3_reliability.sh` 3× — need 3/3 hits. **Reassignment rationale (Hazim, commit `6d2f71e`):** Hazim's K1 cold-run on RTX 3060 Ti 8 GB / WSL2 surfaced that the harness launches all 3 resilience_v1 drone agents in parallel, each unconditionally loading C2A via the argparse default at `agents/drone_agent/__main__.py:64` (in-tree `kaggle_work_c2a/adapter/` exists in any checkout). Three parallel cold loads of `unsloth/gemma-4-E2B-it` 4-bit don't fit in 8 GB VRAM AND the disk/CPU thrash delays the agent main loop past the 240s scripted-event window → drone3 misses the victim frame → harness reports `drone3 did not emit any report_finding` even though the C2A path itself works. `env -u C2A_ADAPTER_PATH` is insufficient (argparse default re-introduces the path). Reassigned to Qasim's RTX A2000 8 GB box on the grounds that Qasim already proved 3/3 integrated victim detection on his hardware for a *single-drone* invocation (STATUS L51, commit `962fc28`). **OPEN RISK:** Qasim's A2000 has the same 8 GB VRAM ceiling as Hazim's 3060 Ti — the multi-drone integrated path has never been validated end-to-end on any hardware. If Qasim hits the same wall, the no-`--no-c2a`-flag constraint is documented in `TODOS.md` Post-Submission for post-submission resolution (CLI flag → Kaleel, harness → Hazim).
+- [x] **F1.** ~~drone3 reliability on integrated path~~ → **BLOCKED by same 8GB VRAM constraint as B1.** Qasim's A2000 8GB confirmed same wall as Hazim's 3060 Ti 8GB (2026-05-16). Multi-drone integrated C2A path cannot be validated on any available hardware. Single-drone integrated 3/3 already proven (commit `962fc28`). Deferred to post-submission per `TODOS.md` Post-Submission §"Multi-drone integrated C2A path on 8 GB-class GPUs".
 - [x] **F2.** ~~Integration PR review/merge~~ → Qasim shipped direct to main (`962fc28`) since the 3/3 integrated acceptance proved it. Kaleel can do an optional post-merge cleanup review if desired (non-blocking).
 - [x] **F3.** Adapter locked at v3.
 
