@@ -28,7 +28,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sys
 from typing import Any, Dict, Optional, Tuple
 
 import redis.asyncio as redis_async
@@ -423,10 +422,11 @@ class RedisSubscriber:
         except asyncio.QueueFull:
             # Sustained burst — queue can't keep up with dispatch. The
             # validation log is debug telemetry, so dropping is acceptable.
-            # Log to stderr so the fact that we dropped is visible without
+            # Log a warning so the fact that we dropped is visible without
             # requiring a tail of the (now-stale) validation_events.jsonl.
-            print(
-                f"[ws_bridge] validation_log_queue full — dropping record "
-                f"for {agent_id}/{schema_name}@{channel}",
-                file=sys.stderr,
+            _LOG.warning(
+                "validation_log_queue full — dropping record for %s/%s@%s",
+                agent_id,
+                schema_name,
+                channel,
             )

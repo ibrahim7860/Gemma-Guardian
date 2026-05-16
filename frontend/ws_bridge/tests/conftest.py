@@ -9,6 +9,7 @@ fakeredis bind to the same loop as the test.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import subprocess
@@ -125,9 +126,12 @@ def flutter_web_build_dir() -> Path:
     """
     flutter_root = REPO_ROOT_FOR_FLUTTER / "frontend" / "flutter_dashboard"
     build_dir = flutter_root / "build" / "web"
-    flutter_bin = shutil.which("flutter") or "/Users/appleuser/CS Work/flutter/bin/flutter"
-    if not Path(flutter_bin).exists():
-        pytest.skip(f"Flutter SDK not found at {flutter_bin}")
+    flutter_bin = shutil.which("flutter") or os.environ.get("FLUTTER_BIN")
+    if not flutter_bin or not Path(flutter_bin).exists():
+        pytest.skip(
+            "Flutter SDK not found on PATH or via FLUTTER_BIN env var "
+            f"(checked: {flutter_bin!r})"
+        )
 
     index_html = build_dir / "index.html"
     needs_build = not index_html.exists() or _flutter_bundle_is_stale(

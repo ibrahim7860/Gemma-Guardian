@@ -16,7 +16,10 @@ const _palette = <Color>[
 /// alphabetically-sorted drone_id list.
 Map<String, Color> palettePreview(List<String> droneIds) {
   final sorted = List<String>.from(droneIds)..sort();
-  return {for (var i = 0; i < sorted.length; i++) sorted[i]: _palette[i % _palette.length]};
+  return {
+    for (var i = 0; i < sorted.length; i++)
+      sorted[i]: _palette[i % _palette.length],
+  };
 }
 
 /// Toast duration for the missing-asset and chevron-tap SnackBars. Locked
@@ -49,8 +52,12 @@ class _MapPanelState extends State<MapPanel> {
   Widget build(BuildContext context) {
     return Consumer<MissionState>(
       builder: (_, mission, _) {
-        final drones = mission.activeDrones.whereType<Map<String, dynamic>>().toList();
-        final findings = mission.activeFindings.whereType<Map<String, dynamic>>().toList();
+        final drones = mission.activeDrones
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        final findings = mission.activeFindings
+            .whereType<Map<String, dynamic>>()
+            .toList();
 
         // Reset image-loaded latch if the path changed (mission switch /
         // EGS replan). Without this, a swap to a missing asset would never
@@ -84,81 +91,90 @@ class _MapPanelState extends State<MapPanel> {
           for (final d in drones) (d["drone_id"] as String?) ?? "?",
         ]);
 
-        return LayoutBuilder(builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, constraints.maxHeight);
-          // Layer order (bottom → top):
-          //   1. _GridBackgroundPainter — synchronous, always paints
-          //   2. AnimatedOpacity(Image.asset) — fades in at 0.80 over 150ms
-          //   3. _ProjectionPainter — markers only (drones, finding dots)
-          //   4. Finding GestureDetectors (tap targets, beneath drones)
-          //   5. Drone GestureDetectors + label pills
-          //   6. Off-extents drone chevrons (only when overlay locked)
-          //   7. Refit IconButton (hidden when overlay locked, D1)
-          return Stack(
-            children: [
-              CustomPaint(size: Size.infinite, painter: _GridBackgroundPainter()),
-              if (hasOverlay)
-                Positioned.fill(
-                  child: AnimatedOpacity(
-                    opacity: _imageLoaded ? _imageOpacityLoaded : 0.0,
-                    duration: _imageFadeDuration,
-                    child: Image.asset(
-                      _resolveAssetPath(path),
-                      fit: BoxFit.fill,
-                      gaplessPlayback: true,
-                      errorBuilder: (ctx, _, _) {
-                        _scheduleToast(
-                          ctx,
-                          "Aerial overlay unavailable",
-                          key: "asset_error_$path",
-                        );
-                        return const SizedBox.shrink();
-                      },
-                      frameBuilder: (_, child, frame, wasSynchronouslyLoaded) {
-                        if (frame != null && !_imageLoaded) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted && !_imageLoaded) {
-                              setState(() => _imageLoaded = true);
-                            }
-                          });
-                        }
-                        return child;
-                      },
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            // Layer order (bottom → top):
+            //   1. _GridBackgroundPainter — synchronous, always paints
+            //   2. AnimatedOpacity(Image.asset) — fades in at 0.80 over 150ms
+            //   3. _ProjectionPainter — markers only (drones, finding dots)
+            //   4. Finding GestureDetectors (tap targets, beneath drones)
+            //   5. Drone GestureDetectors + label pills
+            //   6. Off-extents drone chevrons (only when overlay locked)
+            //   7. Refit IconButton (hidden when overlay locked, D1)
+            return Stack(
+              children: [
+                CustomPaint(
+                  size: Size.infinite,
+                  painter: _GridBackgroundPainter(),
+                ),
+                if (hasOverlay)
+                  Positioned.fill(
+                    child: AnimatedOpacity(
+                      opacity: _imageLoaded ? _imageOpacityLoaded : 0.0,
+                      duration: _imageFadeDuration,
+                      child: Image.asset(
+                        _resolveAssetPath(path),
+                        fit: BoxFit.fill,
+                        gaplessPlayback: true,
+                        errorBuilder: (ctx, _, _) {
+                          _scheduleToast(
+                            ctx,
+                            "Aerial overlay unavailable",
+                            key: "asset_error_$path",
+                          );
+                          return const SizedBox.shrink();
+                        },
+                        frameBuilder:
+                            (_, child, frame, wasSynchronouslyLoaded) {
+                              if (frame != null && !_imageLoaded) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (mounted && !_imageLoaded) {
+                                    setState(() => _imageLoaded = true);
+                                  }
+                                });
+                              }
+                              return child;
+                            },
+                      ),
                     ),
                   ),
-                ),
-              CustomPaint(
-                size: Size.infinite,
-                painter: _ProjectionPainter(
-                  drones: drones,
-                  findings: findings,
-                  bbox: bbox,
-                  colors: colors,
-                ),
-              ),
-              // Tap order: findings UNDER drones, so drones win when
-              // co-located (matches paint order in _ProjectionPainter).
-              ..._buildFindingMarkers(findings, bbox, size, mission),
-              ..._buildDroneMarkers(
-                drones: drones,
-                bbox: bbox,
-                size: size,
-                mission: mission,
-                colors: colors,
-                hasOverlay: hasOverlay,
-              ),
-              if (!hasOverlay)
-                Positioned(
-                  top: 4, right: 4,
-                  child: IconButton(
-                    tooltip: "Refit",
-                    icon: const Icon(Icons.center_focus_strong),
-                    onPressed: () => setState(() => _bbox = null),
+                CustomPaint(
+                  size: Size.infinite,
+                  painter: _ProjectionPainter(
+                    drones: drones,
+                    findings: findings,
+                    bbox: bbox,
+                    colors: colors,
                   ),
                 ),
-            ],
-          );
-        });
+                // Tap order: findings UNDER drones, so drones win when
+                // co-located (matches paint order in _ProjectionPainter).
+                ..._buildFindingMarkers(findings, bbox, size, mission),
+                ..._buildDroneMarkers(
+                  drones: drones,
+                  bbox: bbox,
+                  size: size,
+                  mission: mission,
+                  colors: colors,
+                  hasOverlay: hasOverlay,
+                ),
+                if (!hasOverlay)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton(
+                      tooltip: "Refit",
+                      icon: const Icon(Icons.center_focus_strong),
+                      onPressed: () => setState(() => _bbox = null),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
       },
     );
   }
@@ -191,21 +207,23 @@ class _MapPanelState extends State<MapPanel> {
       final p = _project(lat, lon, bbox, size);
       if (p == null) continue;
 
-      final inCanvas = p.dx >= 0 && p.dx <= size.width &&
-                       p.dy >= 0 && p.dy <= size.height;
+      final inCanvas =
+          p.dx >= 0 && p.dx <= size.width && p.dy >= 0 && p.dy <= size.height;
 
       // D1 follow-on: drones outside the locked extents render as edge
       // chevrons instead of clipped markers. Only triggers when the
       // overlay is locked — without an overlay, we'd just refit the bbox.
       if (hasOverlay && !inCanvas && lat != null && lon != null) {
-        out.add(_buildOffExtentsChevron(
-          id: id,
-          droneLat: lat,
-          droneLon: lon,
-          bbox: bbox,
-          size: size,
-          color: colors[id] ?? Colors.indigo,
-        ));
+        out.add(
+          _buildOffExtentsChevron(
+            id: id,
+            droneLat: lat,
+            droneLon: lon,
+            bbox: bbox,
+            size: size,
+            color: colors[id] ?? Colors.indigo,
+          ),
+        );
         continue;
       }
 
@@ -281,8 +299,10 @@ class _MapPanelState extends State<MapPanel> {
     final dy = unclamped.dy - cy;
     final angle = math.atan2(dy, dx);
     final dist = _haversineMeters(
-      _bboxNearestLat(droneLat, bbox), _bboxNearestLon(droneLon, bbox),
-      droneLat, droneLon,
+      _bboxNearestLat(droneLat, bbox),
+      _bboxNearestLon(droneLon, bbox),
+      droneLat,
+      droneLon,
     );
     final cardinal = _cardinalFromBbox(droneLat, droneLon, bbox);
     final message = "$id is ${dist.round()}m $cardinal";
@@ -302,9 +322,7 @@ class _MapPanelState extends State<MapPanel> {
         },
         child: Transform.rotate(
           angle: angle,
-          child: CustomPaint(
-            painter: _ChevronPainter(color: color),
-          ),
+          child: CustomPaint(painter: _ChevronPainter(color: color)),
         ),
       ),
     );
@@ -323,18 +341,20 @@ class _MapPanelState extends State<MapPanel> {
       final loc = f["location"] as Map<String, dynamic>?;
       final p = _project(loc?["lat"] as num?, loc?["lon"] as num?, bbox, size);
       if (p == null) continue;
-      out.add(Positioned(
-        key: ValueKey("map-finding-$id"),
-        left: p.dx - _findingHitRadius,
-        top: p.dy - _findingHitRadius,
-        width: _findingHitRadius * 2,
-        height: _findingHitRadius * 2,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => mission.selectFinding(id),
-          child: const SizedBox.expand(),
+      out.add(
+        Positioned(
+          key: ValueKey("map-finding-$id"),
+          left: p.dx - _findingHitRadius,
+          top: p.dy - _findingHitRadius,
+          width: _findingHitRadius * 2,
+          height: _findingHitRadius * 2,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => mission.selectFinding(id),
+            child: const SizedBox.expand(),
+          ),
         ),
-      ));
+      );
     }
     return out;
   }
@@ -348,10 +368,9 @@ class _MapPanelState extends State<MapPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final messenger = ScaffoldMessenger.maybeOf(ctx);
       if (messenger == null) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text(text),
-        duration: _toastDuration,
-      ));
+      messenger.showSnackBar(
+        SnackBar(content: Text(text), duration: _toastDuration),
+      );
     });
   }
 }
@@ -363,10 +382,7 @@ Offset? _project(num? la, num? lo, _Bbox bbox, Size size) {
   final lat = la.toDouble();
   final lon = lo.toDouble();
   if (!lat.isFinite || !lon.isFinite) return null;
-  final cosLat = math.max(
-    math.cos(bbox.midLat * math.pi / 180.0).abs(),
-    0.01,
-  );
+  final cosLat = math.max(math.cos(bbox.midLat * math.pi / 180.0).abs(), 0.01);
   final lonScale = size.width / (bbox.lonSpan * cosLat);
   final latScale = size.height / bbox.latSpan;
   final x = (lon - bbox.minLon) * cosLat * lonScale;
@@ -440,6 +456,7 @@ bool _bboxStillCovers(
     if (!lat.isFinite || !lon.isFinite) return true;
     return bbox.covers(lat, lon);
   }
+
   for (final d in drones) {
     final p = d["position"] as Map<String, dynamic>?;
     if (!checkPoint(p?["lat"] as num?, p?["lon"] as num?)) return false;
@@ -465,6 +482,7 @@ _Bbox _computeBbox(
     lats.add(d);
     lons.add(e);
   }
+
   for (final d in drones) {
     final p = d["position"] as Map<String, dynamic>?;
     add(p?["lat"] as num?, p?["lon"] as num?);
@@ -476,8 +494,10 @@ _Bbox _computeBbox(
   if (lats.isEmpty) {
     return const _Bbox(-1, 1, -1, 1);
   }
-  final padLat = (lats.reduce(math.max) - lats.reduce(math.min)).abs() * 0.2 + 1e-4;
-  final padLon = (lons.reduce(math.max) - lons.reduce(math.min)).abs() * 0.2 + 1e-4;
+  final padLat =
+      (lats.reduce(math.max) - lats.reduce(math.min)).abs() * 0.2 + 1e-4;
+  final padLon =
+      (lons.reduce(math.max) - lons.reduce(math.min)).abs() * 0.2 + 1e-4;
   return _Bbox(
     lats.reduce(math.min) - padLat,
     lats.reduce(math.max) + padLat,
@@ -512,9 +532,12 @@ double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
   double toRad(double deg) => deg * math.pi / 180.0;
   final dLat = toRad(lat2 - lat1);
   final dLon = toRad(lon2 - lon1);
-  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-            math.cos(toRad(lat1)) * math.cos(toRad(lat2)) *
-            math.sin(dLon / 2) * math.sin(dLon / 2);
+  final a =
+      math.sin(dLat / 2) * math.sin(dLat / 2) +
+      math.cos(toRad(lat1)) *
+          math.cos(toRad(lat2)) *
+          math.sin(dLon / 2) *
+          math.sin(dLon / 2);
   final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
   return earthRadiusM * c;
 }
@@ -615,12 +638,18 @@ class _ProjectionPainter extends CustomPainter {
 
   Color _findingColor(String type) {
     switch (type) {
-      case "victim": return Colors.red.shade700;
-      case "fire": return Colors.deepOrange.shade700;
-      case "smoke": return Colors.orange.shade400;
-      case "damaged_structure": return Colors.grey.shade700;
-      case "blocked_route": return Colors.blue.shade700;
-      default: return Colors.purple.shade700;
+      case "victim":
+        return Colors.red.shade700;
+      case "fire":
+        return Colors.deepOrange.shade700;
+      case "smoke":
+        return Colors.orange.shade400;
+      case "damaged_structure":
+        return Colors.grey.shade700;
+      case "blocked_route":
+        return Colors.blue.shade700;
+      default:
+        return Colors.purple.shade700;
     }
   }
 
@@ -644,7 +673,7 @@ class _ChevronPainter extends CustomPainter {
     final cy = size.height / 2;
     final r = math.min(size.width, size.height) / 2;
     final path = Path()
-      ..moveTo(cx + r, cy)        // tip
+      ..moveTo(cx + r, cy) // tip
       ..lineTo(cx - r * 0.7, cy - r * 0.7)
       ..lineTo(cx - r * 0.7, cy + r * 0.7)
       ..close();

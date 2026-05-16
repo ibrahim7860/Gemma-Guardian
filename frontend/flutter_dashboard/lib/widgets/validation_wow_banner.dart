@@ -114,7 +114,9 @@ class _AttemptRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final n = attempt.attemptN;
     final outcomeLabel = attempt.valid ? 'PASSED' : 'FAILED';
-    final outcomeColor = attempt.valid ? Colors.green.shade600 : Colors.red.shade700;
+    final outcomeColor = attempt.valid
+        ? Colors.green.shade600
+        : Colors.red.shade700;
 
     return Semantics(
       identifier: 'validation-attempt-$n',

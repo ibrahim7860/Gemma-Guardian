@@ -164,14 +164,14 @@ async def _emit_loop(
             if outcome.valid:
                 await registry.broadcast(env)
             else:
-                print(f"[ws_bridge] BUG: aggregator emitted invalid envelope: {outcome.errors}")
+                logger.error("BUG: aggregator emitted invalid envelope: %s", outcome.errors)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             # Never let one bad tick kill the loop. Without this guard, a
             # single malformed aggregator state silently stops broadcasts
             # forever while WS clients keep connecting and seeing empty.
-            print(f"[ws_bridge] _emit_loop tick error (continuing): {type(exc).__name__}: {exc}")
+            logger.warning("_emit_loop tick error (continuing): %s: %s", type(exc).__name__, exc)
         await asyncio.sleep(tick_s)
 
 
@@ -287,9 +287,9 @@ def create_app() -> FastAPI:
                 # corrupt the WS clients.
                 outcome = validate("websocket_messages", frame)
                 if not outcome.valid:
-                    print(
-                        f"[ws_bridge] BUG: dropped translation frame "
-                        f"post-strip: {outcome.errors}"
+                    logger.error(
+                        "BUG: dropped translation frame post-strip: %s",
+                        outcome.errors,
                     )
                     continue
                 await registry.broadcast(frame)
@@ -297,9 +297,10 @@ def create_app() -> FastAPI:
                 raise
             except Exception as exc:
                 # A single bad frame must not kill the broadcaster.
-                print(
-                    f"[ws_bridge] translation_broadcaster tick error "
-                    f"(continuing): {type(exc).__name__}: {exc}"
+                logger.warning(
+                    "translation_broadcaster tick error (continuing): %s: %s",
+                    type(exc).__name__,
+                    exc,
                 )
 
     # Eng-review 2A: bounded queue between dispatch and disk-write.
@@ -340,9 +341,10 @@ def create_app() -> FastAPI:
                 raise
             except Exception as exc:
                 # A single bad record must not kill the writer.
-                print(
-                    f"[ws_bridge] validation_log_writer tick error "
-                    f"(continuing): {type(exc).__name__}: {exc}"
+                logger.warning(
+                    "validation_log_writer tick error (continuing): %s: %s",
+                    type(exc).__name__,
+                    exc,
                 )
 
     subscriber = RedisSubscriber(

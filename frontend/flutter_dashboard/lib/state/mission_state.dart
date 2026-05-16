@@ -40,7 +40,10 @@ class BaseImageExtents {
     if (![latMin, latMax, lonMin, lonMax].every((v) => v.isFinite)) return null;
     if (latMax <= latMin || lonMax <= lonMin) return null;
     return BaseImageExtents(
-      latMin: latMin, latMax: latMax, lonMin: lonMin, lonMax: lonMax,
+      latMin: latMin,
+      latMax: latMax,
+      lonMin: lonMin,
+      lonMax: lonMax,
     );
   }
 
@@ -109,9 +112,10 @@ class ReplanAttempt {
       details: rawDetails is Map<String, dynamic>
           ? Map<String, dynamic>.from(rawDetails)
           : (rawDetails is Map
-              ? Map<String, dynamic>.from(
-                  rawDetails.map((k, v) => MapEntry(k.toString(), v)))
-              : const {}),
+                ? Map<String, dynamic>.from(
+                    rawDetails.map((k, v) => MapEntry(k.toString(), v)),
+                  )
+                : const {}),
     );
   }
 
@@ -147,7 +151,14 @@ enum ApprovalState { pending, received, confirmed, dismissed, failed }
 ///                                          → (rephrase resets to absent)
 ///         → failed (on bridge error, WS drop, or 15s timeout)
 ///         → (orphaned: dropped from map entirely on second submit, finding #4)
-enum CommandState { sending, translating, ready, dispatching, dispatched, failed }
+enum CommandState {
+  sending,
+  translating,
+  ready,
+  dispatching,
+  dispatched,
+  failed,
+}
 
 /// Mission state held in memory; updated by every WebSocket state_update
 /// message and by operator actions.
@@ -177,8 +188,7 @@ class MissionState extends ChangeNotifier {
   /// state_update. Malformed entries are dropped so a single bad attempt
   /// can't crash the banner; remaining entries are preserved.
   List<ReplanAttempt> _replanInFlightAttemptLog = const [];
-  List<ReplanAttempt> get replanInFlightAttemptLog =>
-      _replanInFlightAttemptLog;
+  List<ReplanAttempt> get replanInFlightAttemptLog => _replanInFlightAttemptLog;
 
   // ---- EGS heartbeat staleness --------------------------------------------
   //
@@ -198,7 +208,7 @@ class MissionState extends ChangeNotifier {
   /// want to assert the staleness flip can drive it manually via
   /// [debugRecomputeEgsLinkSevered].
   MissionState({DateTime Function()? now, bool autoRecompute = false})
-      : _now = now ?? DateTime.now {
+    : _now = now ?? DateTime.now {
     if (autoRecompute) {
       _egsHeartbeatTimer = Timer.periodic(
         const Duration(seconds: 1),
@@ -265,7 +275,10 @@ class MissionState extends ChangeNotifier {
   static String _generateSessionId() {
     final r = Random.secure();
     const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-    return List<String>.generate(4, (_) => alphabet[r.nextInt(alphabet.length)]).join();
+    return List<String>.generate(
+      4,
+      (_) => alphabet[r.nextInt(alphabet.length)],
+    ).join();
   }
 
   String _nextCommandId() {
@@ -389,11 +402,14 @@ class MissionState extends ChangeNotifier {
       }
       return;
     }
-    if (cur == CommandState.failed || cur == CommandState.dispatched ||
+    if (cur == CommandState.failed ||
+        cur == CommandState.dispatched ||
         cur == CommandState.dispatching) {
       // Late arrival on terminal/in-flight-dispatch state — log and drop.
       if (kDebugMode) {
-        debugPrint("[MissionState] dropped late translation for $cid (state=$cur)");
+        debugPrint(
+          "[MissionState] dropped late translation for $cid (state=$cur)",
+        );
       }
       return;
     }
@@ -491,7 +507,9 @@ class MissionState extends ChangeNotifier {
   void sendOutbound(Map<String, dynamic> envelope) {
     if (connectionStatus != "connected" || _sink == null) {
       if (kDebugMode) {
-        debugPrint("[MissionState] sendOutbound dropped: status=$connectionStatus sink=${_sink != null}");
+        debugPrint(
+          "[MissionState] sendOutbound dropped: status=$connectionStatus sink=${_sink != null}",
+        );
       }
       return;
     }
@@ -626,7 +644,8 @@ class MissionState extends ChangeNotifier {
           if (a != null) parsed.add(a);
         } else if (entry is Map) {
           final a = ReplanAttempt.fromJson(
-              entry.map((k, v) => MapEntry(k.toString(), v)));
+            entry.map((k, v) => MapEntry(k.toString(), v)),
+          );
           if (a != null) parsed.add(a);
         }
       }
@@ -663,8 +682,7 @@ class MissionState extends ChangeNotifier {
       // here as defensive forward-compat for any non-bridge producer that
       // sets the bool form directly; the bridge itself no longer does.
       if (raw["approved"] == true || raw["operator_status"] == "approved") {
-        if (cur != ApprovalState.confirmed &&
-            cur != ApprovalState.dismissed) {
+        if (cur != ApprovalState.confirmed && cur != ApprovalState.dismissed) {
           _findingActions[id] = ApprovalState.confirmed;
         }
       } else if (raw["operator_status"] == "dismissed") {
@@ -706,8 +724,7 @@ class MissionState extends ChangeNotifier {
     }
   }
 
-  static bool _replanLogsEqual(
-      List<ReplanAttempt> a, List<ReplanAttempt> b) {
+  static bool _replanLogsEqual(List<ReplanAttempt> a, List<ReplanAttempt> b) {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
@@ -725,10 +742,12 @@ class MissionState extends ChangeNotifier {
         .where((id) => id != null)
         .toSet();
     return _findingActions.entries
-        .where((e) =>
-            e.value != ApprovalState.pending &&
-            e.value != ApprovalState.failed &&
-            !upstream.contains(e.key))
+        .where(
+          (e) =>
+              e.value != ApprovalState.pending &&
+              e.value != ApprovalState.failed &&
+              !upstream.contains(e.key),
+        )
         .map((e) => e.key)
         .toList();
   }

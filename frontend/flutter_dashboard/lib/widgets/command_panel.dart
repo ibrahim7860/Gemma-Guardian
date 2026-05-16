@@ -50,16 +50,24 @@ class _CommandPanelState extends State<CommandPanel> {
         final cs = cid != null ? state.commandState(cid) : null;
         final translation = cid != null ? state.commandTranslation(cid) : null;
         final connected = state.connectionStatus == "connected";
-        final inputEnabled = cs == null || cs == CommandState.failed || cs == CommandState.dispatched;
+        final inputEnabled =
+            cs == null ||
+            cs == CommandState.failed ||
+            cs == CommandState.dispatched;
         final translateEnabled =
-            connected && _controller.text.trim().isNotEmpty && (cs == null || cs == CommandState.failed);
+            connected &&
+            _controller.text.trim().isNotEmpty &&
+            (cs == null || cs == CommandState.failed);
 
         return Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text("Command", style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                "Command",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -87,7 +95,10 @@ class _CommandPanelState extends State<CommandPanel> {
               ),
               const SizedBox(height: 12),
               if (cs == CommandState.sending || cs == CommandState.translating)
-                const _StatusLine(text: "Translating with Gemma 4 E4B…", showSpinner: true),
+                const _StatusLine(
+                  text: "Translating with Gemma 4 E4B…",
+                  showSpinner: true,
+                ),
               if (cs == CommandState.ready && translation != null)
                 _Preview(translation: translation),
               if (cs == CommandState.dispatching && translation != null) ...[
@@ -98,12 +109,18 @@ class _CommandPanelState extends State<CommandPanel> {
               if (cs == CommandState.dispatched)
                 const _StatusLine(text: "Dispatched ✓", showSpinner: false),
               if (cs == CommandState.failed)
-                const _StatusLine(text: "Translation failed — retry", showSpinner: false, error: true),
+                const _StatusLine(
+                  text: "Translation failed — retry",
+                  showSpinner: false,
+                  error: true,
+                ),
               const SizedBox(height: 12),
               Row(
                 children: [
                   ElevatedButton(
-                    onPressed: translateEnabled ? () => _onTranslate(state) : null,
+                    onPressed: translateEnabled
+                        ? () => _onTranslate(state)
+                        : null,
                     child: const Text("TRANSLATE"),
                   ),
                   const SizedBox(width: 12),
@@ -113,7 +130,9 @@ class _CommandPanelState extends State<CommandPanel> {
                           ? "Send the structured command to the swarm"
                           : "Command not understood — rephrase",
                       child: ElevatedButton(
-                        onPressed: translation?["valid"] == true ? () => _onDispatch(state) : null,
+                        onPressed: translation?["valid"] == true
+                            ? () => _onDispatch(state)
+                            : null,
                         child: const Text("DISPATCH"),
                       ),
                     ),
@@ -122,7 +141,9 @@ class _CommandPanelState extends State<CommandPanel> {
                       onPressed: null,
                       child: Text("DISPATCHING…"),
                     ),
-                  if (cs == CommandState.ready || cs == CommandState.dispatching) const SizedBox(width: 12),
+                  if (cs == CommandState.ready ||
+                      cs == CommandState.dispatching)
+                    const SizedBox(width: 12),
                   if (cs == CommandState.ready || cs == CommandState.failed)
                     OutlinedButton(
                       onPressed: () => _onRephrase(state),
@@ -163,15 +184,26 @@ class _StatusLine extends StatelessWidget {
   final String text;
   final bool showSpinner;
   final bool error;
-  const _StatusLine({required this.text, required this.showSpinner, this.error = false});
+  const _StatusLine({
+    required this.text,
+    required this.showSpinner,
+    this.error = false,
+  });
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         if (showSpinner)
-          const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
         if (showSpinner) const SizedBox(width: 8),
-        Text(text, style: TextStyle(color: error ? Colors.red[700] : Colors.black87)),
+        Text(
+          text,
+          style: TextStyle(color: error ? Colors.red[700] : Colors.black87),
+        ),
       ],
     );
   }
@@ -189,7 +221,9 @@ class _Preview extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: valid ? Colors.green[700]! : Colors.orange[700]!),
+        border: Border.all(
+          color: valid ? Colors.green[700]! : Colors.orange[700]!,
+        ),
         borderRadius: BorderRadius.circular(4),
         color: (valid ? Colors.green : Colors.orange).withValues(alpha: 0.05),
       ),
@@ -199,7 +233,10 @@ class _Preview extends StatelessWidget {
           Text(preview, style: const TextStyle(fontWeight: FontWeight.w600)),
           if (localPreview != preview) ...[
             const SizedBox(height: 4),
-            Text(localPreview, style: const TextStyle(fontStyle: FontStyle.italic)),
+            Text(
+              localPreview,
+              style: const TextStyle(fontStyle: FontStyle.italic),
+            ),
           ],
         ],
       ),

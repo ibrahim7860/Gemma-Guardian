@@ -76,10 +76,7 @@ class _DashboardShellState extends State<_DashboardShell> {
     _snackbarSub = mission.snackbarStream.listen((message) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 4),
-        ),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
       );
     });
   }
@@ -179,8 +176,11 @@ class EgsLinkSeveredBanner extends StatelessWidget {
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.warning_amber_rounded,
-                    color: Colors.white, size: 18),
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
                 SizedBox(width: 8),
                 Text(
                   "EGS LINK SEVERED — drones operating in standalone mode",
@@ -211,14 +211,40 @@ class _FourPanelGrid extends StatelessWidget {
         final h = c.maxHeight / 2;
         return Column(
           children: [
-            Row(children: [
-              SizedBox(width: w, height: h, child: const _Panel(title: "Map", child: MapPanel())),
-              SizedBox(width: w, height: h, child: const _Panel(title: "Drone Status", child: DroneStatusPanel())),
-            ]),
-            Row(children: [
-              SizedBox(width: w, height: h, child: const _Panel(title: "Findings", child: FindingsPanel())),
-              SizedBox(width: w, height: h, child: const _Panel(title: "Command", child: CommandPanel())),
-            ]),
+            Row(
+              children: [
+                SizedBox(
+                  width: w,
+                  height: h,
+                  child: const _Panel(title: "Map", child: MapPanel()),
+                ),
+                SizedBox(
+                  width: w,
+                  height: h,
+                  child: const _Panel(
+                    title: "Drone Status",
+                    child: DroneStatusPanel(),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                SizedBox(
+                  width: w,
+                  height: h,
+                  child: const _Panel(
+                    title: "Findings",
+                    child: FindingsPanel(),
+                  ),
+                ),
+                SizedBox(
+                  width: w,
+                  height: h,
+                  child: const _Panel(title: "Command", child: CommandPanel()),
+                ),
+              ],
+            ),
           ],
         );
       },
@@ -240,8 +266,12 @@ class _Panel extends StatelessWidget {
           Container(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Text(title,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+            child: Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
           ),
           Expanded(child: child),
         ],
