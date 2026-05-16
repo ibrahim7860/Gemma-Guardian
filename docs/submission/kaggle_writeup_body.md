@@ -111,7 +111,7 @@ Agentic search-and-rescue can run entirely on-device. The edge-enabled architect
 
 ## Links
 
-- **GitHub:** [TODO: confirm final repo URL — currently `https://github.com/ibrahim7860/Gemma-Guardian`]
+- **GitHub:** https://github.com/ibrahim7860/Gemma-Guardian
 - **Demo video:** [TODO: insert YouTube URL after upload]
 - **Kaggle Model (C2A victim-detection LoRA):** https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a
 - **Kaggle Notebook (training):** https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster
