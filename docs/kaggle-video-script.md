@@ -27,31 +27,46 @@
 
 ---
 
-## [0:10 – 0:22]  STAKES — Drone POV *(12s, no narration)*
+## [0:10 – 0:55]  WHY WE BUILT THIS *(45s, B-roll and webcams interleaved)*
 
-**Visual:** Aerial drone footage over fire-damaged neighborhoods and collapsed buildings. Slow tilt-down reveals a person on a rooftop or near rubble, waving for help. Hold on the figure for two beats.
+The voice is already going when we land here — we don't introduce ourselves over silence and *then* cut to footage. The drone B-roll and the team webcams cross-cut throughout, so the segment plays as one continuous thought with our faces appearing and disappearing over the imagery.
 
-**Text overlay (large, centered):**
+**Visual opens on:** aerial drone footage over fire-damaged neighborhoods. Audio is already playing.
+
+**IBRAHIM (VO, over B-roll):** Hey, we're the team behind FieldAgent.
+
+**Cut to webcams:** 5-up grid for ~1s, then settle on Ibrahim.
+
+**IBRAHIM (on camera):** And honestly, the reason we built this is pretty personal for all of us.
+
+**Cut to B-roll:** drone POV slowly tilting down toward a person waving from a rooftop. Hold on the figure.
+
+**THAYYIL (VO, over B-roll):** Watching what happened with the Eaton Fire really got to us. All this tech built to help people in disasters, but the second the cell towers go down, it's basically useless.
+
+**Cut to webcam:** Thayyil.
+
+**THAYYIL (on camera):** And that's not just an Eaton Fire problem — that's how every major disaster goes.
+
+**Cut to B-roll:** aerial of collapsed structures, smoke rising. Text overlay fades in mid-shot:
 > 3.6 billion people live in disaster-vulnerable regions.
-> And when disaster hits, the cell towers go first.
+
+**HAZIM (VO, over B-roll):** And that's the worst possible time for the tech to fail.
+
+**Cut to webcam:** Hazim.
+
+**HAZIM (on camera):** The first few hours after a disaster hits are when most rescues actually happen.
+
+**Cut to B-roll:** brief shot of a rescue worker or someone trapped near rubble.
+
+**KHALEEL (VO, over B-roll):** So we wanted to build something that actually still works when everything else breaks.
+
+**Cut to webcam:** Khaleel.
+
+**KHALEEL (on camera):** Something that could genuinely help save lives.
 
 ---
 
-## [0:22 – 0:52]  WHY WE BUILT THIS *(30s)*
-
-**Visual:** 5-up grid of all team webcams for ~2s, then cuts to whoever is speaking.
-
-**IBRAHIM:** Hey, we're the team behind FieldAgent.
-
-**THAYYIL:** Watching what happened with the Eaton Fire really got to us. Like — all this technology built to help people in disasters, and the second the cell towers go down, it's basically useless.
-
-**HAZIM:** And that's the worst possible time for it to fail. The first few hours after a disaster hits are when most rescues actually happen.
-
-**KHALEEL:** So we wanted to build something that actually still works when everything else breaks. Something that could genuinely help save lives.
-
----
-
-## [0:52 – 1:20]  HOW WE SOLVED IT *(28s)*
+## [0:55 – 1:23]  HOW WE SOLVED IT *(28s)*
 
 **Visual:** Simple animated graphic — a cloud icon appears, gets crossed out, replaced by a drone with a tiny "AI" chip glowing inside it. Then three drones connected to each other (not to the cloud).
 
@@ -63,7 +78,7 @@
 
 ---
 
-## [1:20 – 2:25]  THE DEMO *(65s — voice-over on screen recording)*
+## [1:23 – 2:28]  THE DEMO *(65s — voice-over on screen recording)*
 
 **Visual:** Live screen recording of the actual Flutter dashboard. Three drones tracking across the aerial base map. *"Software simulation"* caption in the bottom-right corner throughout this segment (honest disclosure per storyboard).
 
@@ -116,7 +131,7 @@ report_finding(
 
 ---
 
-## [2:25 – 2:53]  WHAT THIS COULD MEAN *(28s)*
+## [2:28 – 2:56]  WHAT THIS COULD MEAN *(28s)*
 
 **Visual:** Cut back to the 5-up team grid. Clean framing.
 
@@ -142,10 +157,10 @@ Every speaker appears at least twice. Demo voice-over rotates speakers per beat 
 
 | Segment | Speakers (in order) | Notes |
 |---|---|---|
-| Why we built this (0:22) | Ibrahim → Thayyil → Hazim → Khaleel | Ibrahim opens; Thayyil delivers the Eaton Fire personal hook; Hazim lands the timing stake; Khaleel closes the segment on motivation. |
-| How we solved it (0:52) | Qasim → Thayyil → Ibrahim | Qasim explains the on-device idea; Thayyil mentions the paper reframe casually; Ibrahim closes with the offline payoff. |
-| Demo VO (1:20) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Khaleel | Beats cycle so the demo feels like a group narration, not a single host. |
-| Close (2:25) | Khaleel → Qasim → Hazim → Thayyil → Ibrahim | Personal-meaning → societal impact → next steps → thanks → sign-off. |
+| Why we built this (0:10) | Ibrahim → Thayyil → Hazim → Khaleel | Each person speaks both as VO over B-roll and on-camera. Ibrahim opens over aerial footage; Thayyil delivers the Eaton Fire personal hook; Hazim lands the timing stake; Khaleel closes on motivation. |
+| How we solved it (0:55) | Qasim → Thayyil → Ibrahim | Qasim explains the on-device idea; Thayyil mentions the paper reframe casually; Ibrahim closes with the offline payoff. |
+| Demo VO (1:23) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Khaleel | Beats cycle so the demo feels like a group narration, not a single host. |
+| Close (2:28) | Khaleel → Qasim → Hazim → Thayyil → Ibrahim | Personal-meaning → societal impact → next steps → thanks → sign-off. |
 
 ## Capture-day flags
 
@@ -190,9 +205,10 @@ Hardest to get right. Shoot first while operator is fresh.
 ### Block B — Webcam talking heads (45 min)
 All 5 in one session if possible. Pin one Zoom-style window per person.
 
-1. Each person reads their line 3× (cold, warm, best). Capture all takes.
-2. Capture the 5-up grid silent footage for the 0:22 intro and the 2:25 close.
+1. Each person reads **both** their VO line and their on-camera line, 3× each (cold, warm, best). The "Why we built this" segment uses both — the VO carries over the B-roll, the on-camera line lands when we cut to their webcam.
+2. Capture the 5-up grid silent footage for the brief intro cut and the 2:28 close.
 3. Capture each person nodding / listening for cutaways during voice-over sections.
+4. Capture clean room-tone for each speaker — the cross-cut between B-roll and webcam needs the audio to feel continuous, which means matching room acoustics in post.
 
 ### Block C — Voice-over (30 min)
 Re-record demo VO clean over a quiet mic, even if the original demo audio is fine. Sync in post.
@@ -233,11 +249,10 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 | Segment | Duration | Spoken words | Pace check |
 |---|---|---|---|
 | Cold open | 10s | 0 | n/a |
-| Stakes | 12s | 0 | n/a |
-| Why we built this | 30s | ~75 | ~150 wpm ✓ |
+| Why we built this (B-roll + webcams interleaved) | 45s | ~100 | ~133 wpm ✓ — comfortable for cross-cut pacing |
 | How we solved it | 28s | ~75 | ~160 wpm ✓ |
 | Demo VO | 65s | ~140 | ~130 wpm ✓ (slower, deliberate VO) |
 | Close | 28s | ~75 | ~160 wpm — slight push; trim Hazim line if needed |
-| **Total** | **173s** | **~365** | 7s buffer for transitions and breathing |
+| **Total** | **176s** | **~390** | 4s buffer for transitions; well under 3:00 cap |
 
 **On the close timing:** if any take in the close runs long, the easiest cut is to merge Hazim's line into Khaleel's ("…that means a lot to all of us — and we'd love to take it to real hardware next").
