@@ -120,8 +120,12 @@ done
 echo "[run_drone3_reliability] waiting 300s for run to complete"
 sleep 300
 
-# 6. Stop test stack (the trap also handles this but explicit teardown for log clarity)
-pkill -f 'sim/waypoint_runner\|sim/frame_server\|agents.mesh_simulator\|agents.drone_agent' 2>/dev/null || true
+# 6. Stop test stack. SIGKILL (not the default SIGTERM) because mid-import
+# torch/peft processes ignore SIGTERM until the import returns — observed
+# 2026-05-16 (Hazim, WSL2 8GB) with three zombie drone_agent procs
+# surviving the default pkill after `C2A_ADAPTER_PATH` was set and
+# `c2a_inference.py` was loading the base model when the timeout hit.
+pkill -KILL -f 'sim/waypoint_runner\|sim/frame_server\|agents.mesh_simulator\|agents.drone_agent' 2>/dev/null || true
 sleep 2
 
 # 7. Check validation events
