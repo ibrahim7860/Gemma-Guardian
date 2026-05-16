@@ -52,13 +52,25 @@ The repo uses [`uv`](https://docs.astral.sh/uv/) with a single root
 `pyproject.toml` and a committed `uv.lock`. There are no per-role
 `requirements.txt` files; do not create any. CI runs `uv sync --frozen`.
 
-Pick the slice that matches what you want to run:
+For a cold-start full demo, the one-command path is:
+
+```bash
+bash scripts/setup.sh                 # uv sync --all-extras + prereq check
+bash scripts/setup.sh --pull-models   # add Gemma 4 pulls (§1) in the same step
+bash scripts/setup.sh --help          # all flags
+```
+
+`setup.sh` hard-checks that `uv` is on PATH, soft-warns on missing
+`redis-cli` / `ollama` / `tmux` (those are runtime, not install-time), and
+delegates to the same `uv sync` invocations documented below. If you'd
+rather drive `uv sync` yourself, pick the slice that matches what you want
+to run:
 
 ```bash
 # Sim only (waypoint runner, frame server, mesh simulator)
 uv sync --extra sim --extra mesh --extra dev
 
-# Full graph — drones, EGS, bridge, ML. Use this for a cold-start full demo.
+# Full graph — drones, EGS, bridge, ML.
 uv sync --all-extras
 ```
 
@@ -116,6 +128,13 @@ broker is already running as a system service, `launch_swarm.sh` reuses it;
 otherwise the script daemonizes its own and writes
 `$LOG_DIR/.gg_started_redis` so `stop_demo.sh` knows which broker is safe to
 shut down (Contract: see anomaly #3 below).
+
+`scripts/run_full_demo.sh [scenario]` is an umbrella over `launch_swarm.sh`
+that adds log tailing and Ctrl-C cleanup; all flags below forward verbatim
+(`--drones=...`, `--duration=N`, `--dry-run`). The README and submission
+checklist both point users at this script — the per-scenario invocations
+in (a)/(b)/(c) below are the equivalent direct calls if you want finer
+control over what gets launched.
 
 ### a. Single-drone smoke (~30 seconds wall time)
 
