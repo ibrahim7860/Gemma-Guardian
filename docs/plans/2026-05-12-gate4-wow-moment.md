@@ -549,11 +549,13 @@ Post-fix verification: full 69-test new-suite green, Playwright 4/4 green,
 no regressions in GH-#32 retry-loop tests (`test_replanning.py`,
 `test_coordinator_replan_hang.py`).
 
-## Appendix: Eval Results (2026-05-14)
+## Appendix: Eval Results (2026-05-14 / 2026-05-15)
 
 ### `eval_wow_moment_trigger.py` JSON
 
-The base model fails to produce a valid assignment or hallucination that reliably triggers the `ASSIGNMENT_TOTAL_MISMATCH` rule, consistently failing the internal retry loop and exhausting its attempts. Because the native recovery fails entirely, we are officially proceeding with the **Phase 3c debug-injection fallback** for the camera capture session to ensure a clean second-attempt recovery.
+#### Run 1 — Ibrahim, M1 16GB (2026-05-14, partial)
+
+Aborted after 2 runs due to M1 speed constraints. 0/2 triggers.
 
 ```json
 {
@@ -577,10 +579,50 @@ The base model fails to produce a valid assignment or hallucination that reliabl
 }
 ```
 
+#### Run 2 — Qasim, RTX A2000 8GB (2026-05-15, clean 5-run)
+
+Clean execution on CUDA box. Every run exhausted retries and fell through to deterministic fallback. The base model cannot produce valid survey-point assignments at all, so `ASSIGNMENT_TOTAL_MISMATCH` never fires. **0/5 triggers → acceptance gate FAILED → Phase 3c is REQUIRED.**
+
+```json
+{
+  "runs": 5,
+  "mismatches": 0,
+  "fraction": 0.0,
+  "threshold": 12,
+  "per_run": [
+    {"run": 0, "rule_ids": [], "had_mismatch": false},
+    {"run": 1, "rule_ids": [], "had_mismatch": false},
+    {"run": 2, "rule_ids": [], "had_mismatch": false},
+    {"run": 3, "rule_ids": [], "had_mismatch": false},
+    {"run": 4, "rule_ids": [], "had_mismatch": false}
+  ],
+  "passed": false
+}
+```
+
 ### `measure_e4b_replan_latency.py` Latency
+
+#### Ibrahim, M1 16GB (2026-05-14, partial)
 
 | Metric                              | p50 (s) | p95 (s) | N  |
 |-------------------------------------|---------|---------|----|
 | Single attempt                      | 127.30  | 139.64  | 10 |
 
-**Capture Strategy Decision:** Since the p95 of an attempt loop is massively over our 8-second budget (clocking in at ~140 seconds on the target box), we MUST use a **jump-cut** strategy ("FAILED... [cut] ...PASSED") for the final video. Forcing the audience to watch over two minutes of inference during the Beat 3c 10-second window is not viable.
+#### Qasim, RTX A2000 8GB (2026-05-15, clean 10-iteration)
+
+| Metric                              | p50 (s) | p95 (s) | N  |
+|-------------------------------------|---------|---------|----|
+| Single attempt                      | 129.03  | 143.05  | 10 |
+
+**Capture Strategy Decision:** p95 ~143s on CUDA box, ~140s on M1. The 8-second camera-window budget is unachievable by ~18×. **Jump-cut** strategy is the only viable option.
+
+### Phase 3c Decision: CONFIRMED
+
+| Evidence | Result |
+|---|---|
+| Natural trigger rate (M1, 2 runs) | 0/2 (0%) |
+| Natural trigger rate (CUDA, 5 runs) | 0/5 (0%) |
+| Combined | **0/7 (0%)** — model cannot produce valid assignments |
+| Root cause | E4B exhausts all retry attempts → deterministic fallback |
+| Decision | **Ship Phase 3c `--inject-overcount-once`** (already implemented) with honest disclosure in WRITEUP.md §6.5 |
+| Owner of disclosure edit | Ibrahim |
