@@ -20,10 +20,10 @@
 **Visual:** Real news footage from the **Eaton Fire, Los Angeles, January 2025**. Anchor clips on mute, news chyrons visible, then NASA SVS imagery of the burn scar ([svs.gsfc.nasa.gov/5558](https://svs.gsfc.nasa.gov/5558/)). Three statistic overlays flash in sequence:
 
 > "Eaton Fire — January 2025"
-> "17 lives lost. 9,000+ structures destroyed."
+> "Nearly 20 lives lost. Over 9,000 structures destroyed."
 > "Cell coverage collapsed across the foothills in the first hour."
 
-**Audio:** Real news-anchor audio bleeds through low, then fades to a single beat of silence.
+**Audio:** Real news-anchor audio bleeds through low, then fades under a subtle music bed (urgent, no lyrics, ~-24 dB) that carries continuously into Ibrahim's first VO line. No silence beat — silence at second 10 reads as "paused video" to judges scrubbing through.
 
 ---
 
@@ -58,21 +58,23 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **Cut to B-roll:** brief shot of a rescue worker or someone trapped near rubble.
 
-**KHALEEL (VO, over B-roll):** So we built something to help close that gap,
+**KALEEL (VO, over B-roll):** So we built something to help close that gap,
 
-**Cut to webcam:** Khaleel.
+**Cut to webcam:** Kaleel.
 
-**KHALEEL (on camera):** Something that keeps working when nothing else does.
+**KALEEL (on camera):** Something that keeps working when nothing else does.
 
 ---
 
 ## [0:57 – 1:27]  HOW WE SOLVED IT *(30s)*
 
-**Visual:** Simple animated graphic — a cloud icon appears, gets crossed out, replaced by a drone with a tiny "AI" chip glowing inside it. Then three drones connected to each other (not to the cloud).
+**Visual (primary — AI-generated motion graphic):** ~5s clip generated via Veo 3 / Sora / Runway showing a cloud icon dissolving / getting crossed out, then a drone with a glowing "AI" chip inside it, then three drones connected to each other in a mesh (no cloud). **Hard time-box: 90 minutes for prompt iteration.** If the output doesn't land cleanly in that window, fall back to:
+
+**Visual (fallback — pre-made Lottie + paper-PDF inset):** Free Lottie animation from [lottiefiles.com](https://lottiefiles.com/) (search "edge AI" / "drone network" / "offline computing") composed with the Nguyen et al. 2026 paper PDF as a small inset (top-left or bottom-right). Caption overlay: *"Reference: Nguyen, Truong, Le 2026 (arXiv 2601.14437)"*. 30-min edit budget.
 
 **QASIM:** The way we did it is simple. Instead of having drones rely on the internet to think, we put the AI directly on the drones themselves.
 
-**IBRAHIM:** There's a paper from earlier this year that proposed something similar — but it needed cloud GPT-4. We took that architecture and made it run on Gemma 4 locally. Completely offline.
+**IBRAHIM:** There's a paper from earlier this year — Nguyen, Truong, Le, January 2026 — that proposed something similar but needed cloud GPT-4. We replaced every LLM with Gemma 4 running locally. **Same architecture. Zero cloud.**
 
 **IBRAHIM:** So now a swarm of drones can see, think, coordinate rescue work — without any internet at all.
 
@@ -115,37 +117,39 @@ report_finding(
 - **Attempt 1 — FAILED:** *"Your assignments cover 27 points but 25 are available. Reassign so every point is covered exactly once."*
 - **Attempt 2 — PASSED.**
 
-**THAYYIL (VO):** Here's a key moment. Gemma actually makes a mistake while re-coordinating — but the validation layer catches it and corrects it before any drone acts. In a real rescue, that's what keeps a bad decision from costing someone their life.
+**THAYYIL (VO):** Watch this — Gemma assigns 27 survey points across three drones. But there are only 25. The validator catches the over-count, re-prompts Gemma with the exact correction, and Gemma fixes itself in one retry. No drone ever flew the bad plan. That's Algorithm 1 from the reference paper, running entirely offline.
 
 ### Beat 5 — offline proof *(~15s)*
 
-**Visual:** Operator runs `sudo ifconfig en0 down`. EGS LINK SEVERED banner appears. Drone 3 gets a STANDALONE badge. Drone 3 keeps flying. Sidecar log shows "finding produced (buffered)." Then operator runs `sudo ifconfig en0 up` — banner clears, the buffered finding pops onto the dashboard, victim count chip ticks up by one.
+**Visual:** Operator runs `sudo ifconfig en0 down`. EGS LINK SEVERED banner appears across the top of the dashboard. All three drones grow `STANDALONE` badges. Drones keep flying. Drone 3's sidecar log shows "finding produced (buffered)." Then operator runs `sudo ifconfig en0 up` — banner clears, the buffered finding pops onto the dashboard, victim count chip ticks up by one.
 
-**THAYYIL (VO):** Now I'm dropping drone three's connection completely. It keeps flying, finds another survivor while it's offline, and the second it reconnects — that finding shows up on the dashboard. Nothing lost.
+**THAYYIL (VO):** Now we kill the entire ground station — not one drone, the whole coordinator. Watch — all three drones keep flying on their own Gemma 4 brains. Drone three even finds another survivor while it's offline, and the second the link comes back, that finding shows up on the dashboard. Nothing lost.
 
 ### Local-only proof *(~8s)*
 
 **Visual:** Cut to a terminal window. `ollama list` runs, output shows `gemma4:e2b` and `gemma4:e4b` cached locally. Airplane-mode icon still visible.
 
-**KHALEEL (VO):** And just to prove it — everything you just saw, every drone, every decision, ran right here on our laptop. No cloud, no internet, nothing.
+**KALEEL (VO):** And just to prove it — everything you just saw, every drone, every decision, ran right here on our laptop. No cloud, no internet, nothing.
 
 ---
 
 ## [2:27 – 3:00]  WHAT THIS COULD MEAN *(33s)*
 
-**Visual:** Cut to khaleel face.
+**Visual:** Cut to Kaleel's face.
 
-**KHALEEL:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
+**KALEEL:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
 
 **QASIM:** A swarm of drones that keeps coordinating offline — that could be the difference between someone being found in time, or not at all.
 
 **HAZIM:** And that's what we want to put in the hands of real rescue teams. Faster searches, smarter coordination, fewer people falling through the cracks.
 
-**THAYYIL:** (not sure what to say here, maybe I dont need to say anything)
+**THAYYIL:** For us, this isn't just a hackathon project. It's the kind of thing we'd want flying over our own families if something ever happened.
 
 **IBRAHIM:** This is our project, FieldAgent, built on Gemma 4.
 
 **End card:** Project name • GitHub URL • Apache-2.0 • *Built for the Gemma 4 Good Hackathon*
+
+**Attribution line** (small text, bottom of end card or trailing 2s slate): *"Footage: NASA SVS, Pexels. Used under public-domain / free-use licenses."*
 
 ---
 
@@ -157,10 +161,10 @@ Every speaker appears at least twice. Demo voice-over rotates speakers per beat 
 
 | Segment | Speakers (in order) | Notes |
 |---|---|---|
-| Why we built this (0:10) | Ibrahim → Thayyil → Hazim → Khaleel | Each person speaks both as VO over B-roll and on-camera. Ibrahim opens over aerial footage with the Eaton Fire stake — no team-name intro, voice is already going when we land. Thayyil lands the timing point. Hazim lands the scale + the gap-equals-lost-lives line. Khaleel closes with the lead-in to "how we solved it." |
-| How we solved it (0:57) | Qasim → Thayyil → Ibrahim | Qasim picks up directly from Khaleel ("keeps working when nothing else does" → "the way we did it is simple"). Thayyil drops the paper reframe casually. Ibrahim closes with the offline payoff that sets up the demo. |
-| Demo VO (1:27) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Khaleel | Beats cycle so the demo feels like a group narration, not a single host. Qasim's wow-moment line is the one place inside the demo where impact framing is foregrounded ("a bad decision costing someone their life"). |
-| Close (2:27) | Khaleel → Qasim → Hazim → Thayyil → Ibrahim | Impact-first, not us-first. Khaleel sets the stake. Qasim lands the lives-saved core line. Hazim names the user — real rescue teams. Thayyil and Ibrahim close clean. |
+| Why we built this (0:10) | Ibrahim → Thayyil → Hazim → Kaleel | Each person speaks both as VO over B-roll and on-camera. Ibrahim opens over aerial footage with the Eaton Fire stake — no team-name intro, voice is already going when we land. Thayyil lands the timing point. Hazim lands the scale + the gap-equals-lost-lives line. Kaleel closes with the lead-in to "how we solved it." |
+| How we solved it (0:57) | Qasim → Thayyil → Ibrahim | Qasim picks up directly from Kaleel ("keeps working when nothing else does" → "the way we did it is simple"). Thayyil drops the paper reframe casually. Ibrahim closes with the offline payoff that sets up the demo. |
+| Demo VO (1:27) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Kaleel | Beats cycle so the demo feels like a group narration, not a single host. Qasim's wow-moment line is the one place inside the demo where impact framing is foregrounded ("a bad decision costing someone their life"). |
+| Close (2:27) | Kaleel → Qasim → Hazim → Thayyil → Ibrahim | Impact-first, not us-first. Kaleel sets the stake. Qasim lands the lives-saved core line. Hazim names the user — real rescue teams. Thayyil and Ibrahim close clean. |
 
 ## Capture-day flags
 
@@ -182,7 +186,7 @@ Every speaker appears at least twice. Demo voice-over rotates speakers per beat 
 - [ ] Pull aerial drone footage of disaster aftermath (license-clean, ~10s clip)
 - [ ] Pull rooftop-survivor / aerial-distress shot (stock or staged)
 - [ ] Confirm GitHub repo URL for end card
-- [ ] Build the cloud-→-drone animation graphic for "How we solved it"
+- [ ] Generate AI motion-graphic (Veo 3 / Sora / Runway) for "How we solved it" — **90 min hard time-box**, then fall back to Lottie + paper-PDF inset
 - [ ] Test webcam framing for all 5 — agreed background / lighting / shirt color (avoid clashing logos)
 - [ ] Confirm `scripts/check_wow_moment.sh` and `--inject-overcount-once` flag both work on the capture machine
 - [ ] Confirm `scripts/run_beat5_capture.sh` runs cleanly end-to-end
@@ -231,12 +235,15 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 - [ ] Captions burned in (judges may watch muted)
 - [ ] Audio levels: dialogue at -12 dB, music bed at -24 dB
 - [ ] Color-grade pass on disaster B-roll (cooler, slightly desaturated for tonal contrast vs. the warm webcam shots)
+- [ ] Music bed runs continuously under the cold-open → "Why we built this" transition (no silence beat)
+- [ ] On-screen attribution line for NASA SVS / Pexels footage on the end card (or trailing 2s slate)
 
 ## Upload checklist
 
 - [ ] YouTube upload, **Public** (not Unlisted — judges shouldn't need a link forwarded)
 - [ ] Video title: "FieldAgent — Offline Disaster-Response Swarm Powered by Gemma 4"
 - [ ] Description includes GitHub repo URL, team names, hackathon track, reference paper citation (Nguyen, Truong, Le 2026, arXiv 2601.14437)
+- [ ] Description includes B-roll attribution: "Footage: NASA SVS (svs.gsfc.nasa.gov/5558), Pexels — used under public-domain / free-use licenses"
 - [ ] Thumbnail: validation banner (red→green) split-screen with team grid
 - [ ] Captions enabled (auto-generated is fine if reviewed for accuracy)
 - [ ] Confirm video plays without login from incognito session
@@ -255,4 +262,4 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 | Close | 33s | ~80 | ~145 wpm ✓ |
 | **Total** | **180s** | **~395** | Right at 3:00 cap — at casual ~150 wpm delivery we land at ~2:55. If anyone runs slow, cut Hazim's "Faster searches…" tail in the close. |
 
-**On the close timing:** if any take in the close runs long, the easiest cut is to merge Hazim's line into Khaleel's ("…that means a lot to all of us — and we'd love to take it to real hardware next").
+**On the close timing:** if any take in the close runs long, the easiest cut is to merge Hazim's line into Kaleel's ("…that means a lot to all of us — and we'd love to take it to real hardware next").
