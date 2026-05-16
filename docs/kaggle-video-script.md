@@ -29,56 +29,56 @@
 
 ## [0:10 – 0:55]  WHY WE BUILT THIS *(45s, B-roll and webcams interleaved)*
 
-The voice is already going when we land here — we don't introduce ourselves over silence and *then* cut to footage. The drone B-roll and the team webcams cross-cut throughout, so the segment plays as one continuous thought with our faces appearing and disappearing over the imagery.
+No "we're the team" introduction. The news audio from the cold open fades, and Ibrahim's voice is already going as the imagery transitions from news clips into drone aerials. The segment cross-cuts between B-roll and webcams throughout — when each person's face appears, the lower-third can show their name, but no one says "I'm so-and-so." We let the disaster carry the weight, and our faces just show that real people are behind this.
 
-**Visual opens on:** aerial drone footage over fire-damaged neighborhoods. Audio is already playing.
+**Visual opens on:** news footage dissolves into drone aerial footage over fire-damaged neighborhoods. News audio fades. Voice is already going.
 
-**IBRAHIM (VO, over B-roll):** Hey, we're the team behind FieldAgent.
+**IBRAHIM (VO, over B-roll):** When the Eaton Fire hit Los Angeles, cell coverage across the foothills collapsed within the first hour. The technology meant to help in moments like this — just stopped working.
 
-**Cut to webcams:** 5-up grid for ~1s, then settle on Ibrahim.
+**Cut to webcam:** Ibrahim. Lower-third with his name.
 
-**IBRAHIM (on camera):** And honestly, the reason we built this is pretty personal for all of us.
+**IBRAHIM (on camera):** And this happens in almost every major disaster.
 
 **Cut to B-roll:** drone POV slowly tilting down toward a person waving from a rooftop. Hold on the figure.
 
-**THAYYIL (VO, over B-roll):** Watching what happened with the Eaton Fire really got to us. All this tech built to help people in disasters, but the second the cell towers go down, it's basically useless.
+**THAYYIL (VO, over B-roll):** The first few hours after a disaster hits — that's when most rescues actually happen.
 
 **Cut to webcam:** Thayyil.
 
-**THAYYIL (on camera):** And that's not just an Eaton Fire problem — that's how every major disaster goes.
+**THAYYIL (on camera):** But that's also exactly when the network breaks down. So rescue teams end up operating blind, right when they need information the most.
 
 **Cut to B-roll:** aerial of collapsed structures, smoke rising. Text overlay fades in mid-shot:
 > 3.6 billion people live in disaster-vulnerable regions.
 
-**HAZIM (VO, over B-roll):** And that's the worst possible time for the tech to fail.
+**HAZIM (VO, over B-roll):** And this isn't a small problem. Billions of people live in places where this happens every year.
 
 **Cut to webcam:** Hazim.
 
-**HAZIM (on camera):** The first few hours after a disaster hits are when most rescues actually happen.
+**HAZIM (on camera):** The gap between when help is needed and when the tech can actually deliver — that's where lives get lost.
 
 **Cut to B-roll:** brief shot of a rescue worker or someone trapped near rubble.
 
-**KHALEEL (VO, over B-roll):** So we wanted to build something that actually still works when everything else breaks.
+**KHALEEL (VO, over B-roll):** So we built something to help close that gap.
 
 **Cut to webcam:** Khaleel.
 
-**KHALEEL (on camera):** Something that could genuinely help save lives.
+**KHALEEL (on camera):** Something that keeps working when nothing else does.
 
 ---
 
-## [0:55 – 1:23]  HOW WE SOLVED IT *(28s)*
+## [0:57 – 1:27]  HOW WE SOLVED IT *(30s)*
 
 **Visual:** Simple animated graphic — a cloud icon appears, gets crossed out, replaced by a drone with a tiny "AI" chip glowing inside it. Then three drones connected to each other (not to the cloud).
 
-**QASIM:** Honestly, the idea is pretty simple. Instead of having the drones rely on the internet to think, we just put the AI directly on the drones themselves.
+**QASIM:** The way we did it is simple. Instead of having drones rely on the internet to think, we put the AI directly on the drones themselves.
 
-**THAYYIL:** We actually found a paper from earlier this year that proposed a similar setup — but theirs needed cloud GPT-4 to work. We took the same architecture and made it run on Gemma 4 locally. Completely offline.
+**THAYYIL:** There's a paper from earlier this year that proposed something similar — but it needed cloud GPT-4. We took that architecture and made it run on Gemma 4 locally. Completely offline.
 
-**IBRAHIM:** So now the drones can see, think, talk to each other, coordinate rescue work — even with zero internet for miles.
+**IBRAHIM:** So now a swarm of drones can see, think, coordinate rescue work — without any internet at all.
 
 ---
 
-## [1:23 – 2:28]  THE DEMO *(65s — voice-over on screen recording)*
+## [1:27 – 2:27]  THE DEMO *(60s — voice-over on screen recording)*
 
 **Visual:** Live screen recording of the actual Flutter dashboard. Three drones tracking across the aerial base map. *"Software simulation"* caption in the bottom-right corner throughout this segment (honest disclosure per storyboard).
 
@@ -86,7 +86,7 @@ The voice is already going when we land here — we don't introduce ourselves ov
 
 **Visual overlay** (top-right, holds ~2s): real macOS/Windows airplane-mode icon, captured with wifi actually off.
 
-**IBRAHIM (VO):** Okay, so this is the actual system running. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
+**IBRAHIM (VO):** And here's what that actually looks like in action. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
 
 ### Drone spots a survivor *(~12s)*
 
@@ -115,7 +115,7 @@ report_finding(
 - **Attempt 1 — FAILED:** *"Your assignments cover 27 points but 25 are available. Reassign so every point is covered exactly once."*
 - **Attempt 2 — PASSED.**
 
-**QASIM (VO):** And this is one of our favorite moments. Gemma's planning a re-coordination and actually makes a mistake — but our validation layer catches it instantly and corrects it before anything ships.
+**QASIM (VO):** Here's a key moment. Gemma actually makes a mistake while re-coordinating — but the validation layer catches it and corrects it before any drone acts. In a real rescue, that's what keeps a bad decision from costing someone their life.
 
 ### Beat 5 — offline proof *(~15s)*
 
@@ -131,19 +131,19 @@ report_finding(
 
 ---
 
-## [2:28 – 2:56]  WHAT THIS COULD MEAN *(28s)*
+## [2:27 – 3:00]  WHAT THIS COULD MEAN *(33s)*
 
 **Visual:** Cut back to the 5-up team grid. Clean framing.
 
-**KHALEEL:** Honestly, building this has been one of the most meaningful things I've worked on. Knowing it could one day actually help save lives — that means a lot to all of us.
+**KHALEEL:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
 
-**QASIM:** We genuinely think this could change how emergency response works after a disaster. Faster rescues, fewer people slipping through the cracks.
+**QASIM:** A swarm of drones that keeps coordinating offline — that could be the difference between someone being found in time, or not at all.
 
-**HAZIM:** And this is just our v1 — we'd love to take it to real hardware and put it in the hands of teams who actually need it.
+**HAZIM:** And that's what we want to put in the hands of real rescue teams. Faster searches, smarter coordination, fewer people falling through the cracks.
 
-**THAYYIL:** Thanks so much for checking out our project.
+**THAYYIL:** This is just version one. There's a lot more we want to build.
 
-**IBRAHIM:** That's FieldAgent. The code's on GitHub — thanks for watching.
+**IBRAHIM:** FieldAgent. Built on Gemma 4. The code's on GitHub.
 
 **End card:** Project name • GitHub URL • Apache-2.0 • *Built for the Gemma 4 Good Hackathon*
 
@@ -157,10 +157,10 @@ Every speaker appears at least twice. Demo voice-over rotates speakers per beat 
 
 | Segment | Speakers (in order) | Notes |
 |---|---|---|
-| Why we built this (0:10) | Ibrahim → Thayyil → Hazim → Khaleel | Each person speaks both as VO over B-roll and on-camera. Ibrahim opens over aerial footage; Thayyil delivers the Eaton Fire personal hook; Hazim lands the timing stake; Khaleel closes on motivation. |
-| How we solved it (0:55) | Qasim → Thayyil → Ibrahim | Qasim explains the on-device idea; Thayyil mentions the paper reframe casually; Ibrahim closes with the offline payoff. |
-| Demo VO (1:23) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Khaleel | Beats cycle so the demo feels like a group narration, not a single host. |
-| Close (2:28) | Khaleel → Qasim → Hazim → Thayyil → Ibrahim | Personal-meaning → societal impact → next steps → thanks → sign-off. |
+| Why we built this (0:10) | Ibrahim → Thayyil → Hazim → Khaleel | Each person speaks both as VO over B-roll and on-camera. Ibrahim opens over aerial footage with the Eaton Fire stake — no team-name intro, voice is already going when we land. Thayyil lands the timing point. Hazim lands the scale + the gap-equals-lost-lives line. Khaleel closes with the lead-in to "how we solved it." |
+| How we solved it (0:57) | Qasim → Thayyil → Ibrahim | Qasim picks up directly from Khaleel ("keeps working when nothing else does" → "the way we did it is simple"). Thayyil drops the paper reframe casually. Ibrahim closes with the offline payoff that sets up the demo. |
+| Demo VO (1:27) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Khaleel | Beats cycle so the demo feels like a group narration, not a single host. Qasim's wow-moment line is the one place inside the demo where impact framing is foregrounded ("a bad decision costing someone their life"). |
+| Close (2:27) | Khaleel → Qasim → Hazim → Thayyil → Ibrahim | Impact-first, not us-first. Khaleel sets the stake. Qasim lands the lives-saved core line. Hazim names the user — real rescue teams. Thayyil and Ibrahim close clean. |
 
 ## Capture-day flags
 
@@ -249,10 +249,10 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 | Segment | Duration | Spoken words | Pace check |
 |---|---|---|---|
 | Cold open | 10s | 0 | n/a |
-| Why we built this (B-roll + webcams interleaved) | 45s | ~100 | ~133 wpm ✓ — comfortable for cross-cut pacing |
-| How we solved it | 28s | ~75 | ~160 wpm ✓ |
-| Demo VO | 65s | ~140 | ~130 wpm ✓ (slower, deliberate VO) |
-| Close | 28s | ~75 | ~160 wpm — slight push; trim Hazim line if needed |
-| **Total** | **176s** | **~390** | 4s buffer for transitions; well under 3:00 cap |
+| Why we built this (B-roll + webcams interleaved) | 47s | ~105 | ~134 wpm ✓ — comfortable for cross-cut pacing |
+| How we solved it | 30s | ~75 | ~150 wpm ✓ |
+| Demo VO | 60s | ~135 | ~135 wpm ✓ (slower, deliberate VO) |
+| Close | 33s | ~80 | ~145 wpm ✓ |
+| **Total** | **180s** | **~395** | Right at 3:00 cap — at casual ~150 wpm delivery we land at ~2:55. If anyone runs slow, cut Hazim's "Faster searches…" tail in the close. |
 
 **On the close timing:** if any take in the close runs long, the easiest cut is to merge Hazim's line into Khaleel's ("…that means a lot to all of us — and we'd love to take it to real hardware next").
