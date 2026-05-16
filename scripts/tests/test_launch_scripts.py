@@ -32,6 +32,8 @@ SCRIPTS = [
     SCRIPTS_DIR / "run_full_demo.sh",
     SCRIPTS_DIR / "run_resilience_scenario.sh",
     SCRIPTS_DIR / "run_hybrid_demo.sh",
+    SCRIPTS_DIR / "setup.sh",
+    SCRIPTS_DIR / "pull_models.sh",
 ]
 
 
@@ -485,10 +487,10 @@ def test_run_full_demo_forwards_duration_to_launch_swarm(tmp_path):
     """``run_full_demo.sh --duration=N --dry-run`` should hand the flag through
     to ``launch_swarm.sh`` so it lands on the sim runner invocations.
 
-    run_full_demo.sh wraps launch_swarm with a trailing ``tail -F``, which
-    runs forever even after a successful --dry-run. We start the script in
-    its own process group, capture launch_swarm's plan output, then SIGTERM
-    the whole group to take down ``tail -F`` and any trap-spawned children.
+    Process-group + SIGTERM dance retained as defence-in-depth in case the
+    --dry-run early-exit (`scripts/run_full_demo.sh` post-fix) ever
+    regresses to the historic behavior of hanging on ``tail -F``. The
+    happy path completes via the timeout=3 fast-return.
     """
     script = SCRIPTS_DIR / "run_full_demo.sh"
     log_dir = tmp_path / "logs"
@@ -516,6 +518,34 @@ def test_run_full_demo_forwards_duration_to_launch_swarm(tmp_path):
     frames_lines = [ln for ln in combined.splitlines() if "frame_server.py" in ln]
     assert any("--duration 42" in ln for ln in frames_lines), (
         f"expected --duration 42 forwarded to frame_server; saw:\n{combined}"
+    )
+
+
+def test_run_full_demo_dry_run_exits_cleanly_without_tail(tmp_path):
+    """``run_full_demo.sh --dry-run`` must exit 0 within a few seconds rather
+    than hanging on ``tail -F`` over a log file that never appears.
+
+    Pre-fix this script unconditionally invoked ``tail -F`` after
+    ``launch_swarm.sh`` returned, which meant --dry-run never terminated.
+    The submission-checklist Quick Start (``bash scripts/run_full_demo.sh``)
+    depends on dry-run being a fast smoke test. Regression guard.
+    """
+    script = SCRIPTS_DIR / "run_full_demo.sh"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env={**os.environ, "GG_NO_TMUX": "1", "GG_LOG_DIR": str(log_dir)},
+    )
+    assert result.returncode == 0, (
+        f"--dry-run did not exit cleanly: rc={result.returncode} "
+        f"stderr={result.stderr}"
+    )
+    assert "dry-run complete" in result.stdout, (
+        f"expected dry-run completion marker in stdout; saw:\n{result.stdout}"
     )
 
 
@@ -757,3 +787,76 @@ def test_shell_launcher_emits_venv_activation_when_present(script_name: str):
             f"{line!r}. Per F4, tmux subshells lose VIRTUAL_ENV and need "
             f"explicit activation. Prefix python3 with ${{ACTIVATE}} in this line."
         )
+
+
+# ---------------------------------------------------------------------------
+# scripts/setup.sh — submission-checklist Quick Start entry point.
+#
+# README and docs/23-submission-checklist.md (L65, L97) advertise
+# `bash scripts/setup.sh` as the single dependency-install step on a fresh
+# clone. These tests guard the contract:
+#   - --dry-run prints a plan and exits 0 (fast CI / cold-run smoke)
+#   - --extras=foo,bar → `uv sync --extra foo --extra bar --extra dev`
+#   - --all-extras default preserved when no --extras flag is passed
+#   - --pull-models adds the pull_models.sh step to the plan
+#   - unknown flags exit 2 (parity with launch_swarm.sh / pull_models.sh)
+# ---------------------------------------------------------------------------
+
+
+def test_setup_dry_run_defaults_to_all_extras():
+    script = SCRIPTS_DIR / "setup.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, f"setup --dry-run failed: stderr={result.stderr}"
+    assert "uv sync --all-extras" in result.stdout, (
+        f"expected `uv sync --all-extras` in default plan; saw:\n{result.stdout}"
+    )
+
+
+def test_setup_dry_run_role_extras_maps_to_uv_extra_flags():
+    """`--extras=sim,mesh` -> `uv sync --extra sim --extra mesh --extra dev`.
+
+    Role-scoped install matches docs/sim-reproduction.md §2 and is the fast
+    path when a developer owns only one slice. `dev` is always appended so
+    pytest/ruff land regardless of which role-extra was requested.
+    """
+    script = SCRIPTS_DIR / "setup.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "--extras=sim,mesh"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, f"setup --extras=... failed: stderr={result.stderr}"
+    plan_line = next(
+        (ln for ln in result.stdout.splitlines() if "uv sync" in ln), ""
+    )
+    assert plan_line, f"no uv sync plan line in:\n{result.stdout}"
+    assert "--extra sim" in plan_line, plan_line
+    assert "--extra mesh" in plan_line, plan_line
+    assert "--extra dev" in plan_line, plan_line
+
+
+def test_setup_dry_run_pull_models_emits_pull_models_step():
+    script = SCRIPTS_DIR / "setup.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--dry-run", "--pull-models"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0
+    assert "scripts/pull_models.sh" in result.stdout, (
+        f"expected pull_models.sh invocation in plan; saw:\n{result.stdout}"
+    )
+
+
+def test_setup_unknown_flag_exits_2():
+    script = SCRIPTS_DIR / "setup.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--not-a-real-flag"],
+        capture_output=True, text=True, timeout=5,
+    )
+    assert result.returncode == 2, (
+        f"unknown flag should exit 2 (bad CLI args); rc={result.returncode} "
+        f"stderr={result.stderr}"
+    )
+
