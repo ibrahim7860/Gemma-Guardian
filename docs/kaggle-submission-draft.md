@@ -128,15 +128,20 @@ Full writeup: WRITEUP.md in the linked repo.
 
 Page-verified rubric language for each:
 
-- **Ollama ($10K):** *"For the best project that **utilizes and showcases** the capabilities of Gemma 4 running locally via Ollama."* **CLAIM.** Every LLM call (drone E2B + EGS E4B) flows through local Ollama; zero cloud inference path. Deployment artifacts: [`../scripts/pull_models.sh`](../scripts/pull_models.sh) + [`../ollama/Modelfile.e2b`](../ollama/Modelfile.e2b) + [`../ollama/Modelfile.e4b`](../ollama/Modelfile.e4b). Falsifiable via writeup §5.6 (loopback-only network) and the demo's closing beat (Beat 5, no active network interface while system continues coordinating).
+- **Ollama ($10K):** *"For the best project that **utilizes and showcases** the capabilities of Gemma 4 running locally via Ollama."* **NOT CLAIMED.** Decision recorded 2026-05-15 after Qasim shipped C2 route (b) PEFT/HF for the C2A LoRA adapter. Background: Unsloth's GGUF vision-tower export regressed on [unsloth/unsloth#2290](https://github.com/unslothai/unsloth/issues/2290), making route (a) (Ollama Modelfile + GGUF) dead. The adapter therefore runs via PEFT/HF Transformers alongside, not through, Ollama. Base Gemma 4 tags (E2B drone-side + E4B EGS-side) DO still ship via Ollama and that narrative remains intact in `WRITEUP.md` §3 + §4, but the team chose not to claim Ollama on the strength of a base-tag-only story given the adapter detour weakens it. `scripts/pull_models.sh` still ships for base-tag deployment.
 
-- **Unsloth ($10K):** *"For the best fine-tuned Gemma 4 model created using Unsloth, **optimized for a specific, impactful task**."* Rubric judges on (a) used Unsloth in the training pipeline, (b) the resulting fine-tune is optimized for a *specific impactful task* (xBD post-disaster building damage classification fits this), (c) "best" — competitive against other Unsloth submissions.
-  - **Claim eligibility (independent of GATE 3 outcome):** if the Unsloth training pipeline ran to completion and produced an adapter, we are eligible to claim. The rubric does not require the adapter to beat the baseline — it requires *use of Unsloth optimized for a specific impactful task*.
-  - **Strength of the claim varies with outcome:**
-    - **GATE 3 GO + adapter beats baseline:** strongest. Claim + writeup §6 (cut) / §7.A (long). xBD test-split numbers in the writeup.
-    - **Training completed but adapter underperforms:** still claim. Honest writeup framing (hybrid §7.A methodology + "fine-tune is an enhancement, not load-bearing" framing from §7.B). Publish weights anyway per page guidance: "If training a model, publish your weights and benchmarks."
-    - **Training pipeline never completed (OOM, data prep failed, etc.):** do not claim. Ship §7.B verbatim.
-  - **Adapter publication:** required either way if we claim. Page says "publish your weights and benchmarks." Commit under `ml/adapters/` or host on Hugging Face / Kaggle Models with link in `ml/README.md` and the writeup.
+- **Unsloth ($10K):** *"For the best fine-tuned Gemma 4 model created using Unsloth, **optimized for a specific, impactful task**."* **CLAIM.** Rubric judges on (a) used Unsloth in the training pipeline, (b) fine-tune is optimized for a *specific impactful task*, (c) "best" — competitive against other Unsloth submissions.
+  - **Specific impactful task:** disaster-aerial victim detection. The adapter binary-classifies UAV imagery as `finding_type: victim | none`, structured to match the `report_finding` function-call schema the drone agent emits to the EGS. Direct on-mission utility: every victim detected on Gemma 4's onboard pass is one a base-model false-negative would have missed in the first hour when cell towers are down.
+  - **GATE 3 result (2026-05-15):** **PASS — 3/3 `finding_type: victim`** on `placeholder_victim_01.jpg` via PEFT/HF inference on RTX A2000 8GB CUDA. Detail in `TODOS.md` "GATE 3 acceptance test" (closed).
+  - **Eval numbers (v11, n=400 held-out):** binary accuracy **77.25%**, victim F1 **0.78** (precision 0.79 / recall 0.77), parse_rate **1.0**. Per-source: C2A **97.2%**, AIDER **77.5%**, SARD **55%** (SARD = held-out cross-domain, honestly bounds the in-domain claim).
+  - **Methodology:** Unsloth LoRA on `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`, `target_modules="all-linear"`, `finetune_vision_layers=True`, lr 2e-4 cosine, ~120 MB adapter. Trained on [C2A](https://www.kaggle.com/datasets/rgbnihal/c2a-dataset) (10,215 UAV images, ~360k human instances across four disaster scenarios). Schema collapsed to binary to match `report_finding`. Full writeup in `WRITEUP.md` §6.
+  - **Weights + benchmarks published** (page-required: *"If training a model, publish your weights and benchmarks"*):
+    - **Kaggle Model:** [`ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a`](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a) — variation `Transformers/lora-c2a-bf16/3` — **PUBLIC**
+    - **Training notebook:** [`gemma-4-e2b-victim-vision-lora-c2a-disaster`](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster) — **PUBLIC**
+    - **In-repo `ml/README.md`:** lands during Sat-AM J2 (Kaleel) with the same links.
+  - **Honesty caveats** (do not under-disclose):
+    - Unsloth's GGUF vision-tower export regressed on [#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter ships via PEFT/HF Transformers (not Ollama). Disclosed in `WRITEUP.md` §6 "Runtime".
+    - SARD cross-domain 55% honestly bounds the in-domain C2A 97.2% — neither number gets rounded up.
 
 ## 8. Team members
 
