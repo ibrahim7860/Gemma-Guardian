@@ -33,10 +33,14 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 - [x] **A6.** Update `docs/STATUS.md` L11 + Kaleel's section L34 + Risk Register row to reflect GATE 3 GO + eval numbers
 
 ### Track B — All hands — GATE 4 vote (~15 min)
-- [ ] **B1.** Run GATE 4 evaluation per `docs/17-feasibility-and-gates.md` L105-130 (5 multi-drone criteria)
-  - Hazim runs the 3-drone sim scenario; Qasim confirms EGS replanning; Ibrahim confirms dashboard reflects state; Thayyil scribes
+**Single-machine run on Qasim's CUDA box** (the demo box — C2A adapter is in-process PEFT/HF and needs CUDA; E4B latency was measured there; integrated GATE 3 3/3 passed there). Architecture is localhost-only (Redis `:6379`, WS bridge `:9090`, Ollama `:11434`) — no cross-machine networking exists in the codebase. The other three join via screen share (Zoom/Meet/Discord) and observe different surfaces of the same run.
+
+- [ ] **B1.** Run GATE 4 evaluation per `docs/17-feasibility-and-gates.md` L105-130 (5 multi-drone criteria) — **Qasim drives the keyboard on his CUDA box; team observes via screen share**
+  - **Qasim** starts the 3-drone scenario on his machine; watches EGS logs for replan + validation events
+  - **Hazim** observes the sim terminal (waypoint motion, scripted dropout, frame server) via screen share
+  - **Ibrahim** observes the dashboard tab (state updates, severed-banner, finding cards) via screen share
 - [ ] **B2.** Record PASS/FAIL decision in `docs/decisions.md` (per L178-185) — **Thayyil** writes up the decision
-- [ ] **B3.** If FAIL → drop to 2 drones, update storyboard — Ibrahim arbitrates, Hazim updates scenario YAML
+- [ ] **B3.** If FAIL → drop to 2 drones, update storyboard — Ibrahim arbitrates; **Hazim updates scenario YAML and pushes to main; Qasim re-runs on his box**
 
 ### Track C — STATUS: Buckets 1-3 closed Fri evening by Qasim. C6-disclosure (Ibrahim) + C7/C8 (Kaleel) remain.
 **Status as of 2026-05-15 PM:** Qasim cleared C1-C5 + C6-flag in 5 commits Fri evening. The C3 PR didn't need a Kaleel review roundtrip because the integrated 3/3 acceptance passed. Remaining: a one-paragraph writeup disclosure (Ibrahim) and Kaleel's two small parallel items if he hasn't started them.
@@ -63,12 +67,12 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 ### Track D2 — Ibrahim — Pull-forward into freed Fri time (~4-5 hr afternoon/evening)
 With C3 handed to Qasim, Ibrahim's Fri afternoon + Sat AM are free. Pull writeup + cleanup work forward so Sat PM is filming-only.
 - [x] **D2.1.** ~~Refresh `WRITEUP.md` §6 with published v11 numbers~~ → Done 2026-05-15 PM. `WRITEUP.md:86` now reads: binary 77.25% / F1 0.78 (precision 0.79, recall 0.77) / C2A 97.2% / AIDER 77.5% / SARD 55%.
-- [ ] **D2.2.** **TOP PRIORITY — write `WRITEUP.md` §6.5 disclosure** for the Phase 3c `--inject-overcount-once` flag (Qasim's bucket-3 ask). One paragraph: explain that E4B can't naturally over-count (0/7 trigger rate combined across M1 + CUDA evidence), so the demo deliberately injects one over-count once via the `--inject-overcount-once` flag to show the validation-and-retry loop working in the camera window. Frame honestly: the validation/retry mechanism is real and runs every cycle; only the *seed* of the hallucination is deterministic for the capture.
-- [ ] **D2.3.** Strip SUBMIT-DAY HTML comment at `WRITEUP.md:80` (G2).
-- [ ] **D2.4.** Strip Ollama special-prize claim from writeup (G4-late, confirmed required since route (b) shipped).
-- [ ] **D2.5.** Word-count check (≤1,500) (G3).
-- [ ] **D2.6.** Draft `README.md` skeleton (J1 prep) with placeholder for video URL — Sun evening just swaps the URL in.
-- [ ] **D2.7.** Pre-stage Kaggle Writeup body for Thayyil (L2 dependency) — gives him a clean text to publish Sun.
+- [x] **D2.2.** ~~Write `WRITEUP.md` §6.5 disclosure~~ → Shipped in commit `3db1ab4` (2026-05-15 PM). `WRITEUP.md:90` "Wow-Moment Disclosure: Deterministic Hallucination Seed" reads cleanly with the validation/retry-is-real, only-seed-is-deterministic framing.
+- [x] **D2.3.** ~~Strip SUBMIT-DAY HTML comment~~ → Done. `grep -n "SUBMIT-DAY\|<!--" WRITEUP.md` returns zero hits.
+- [x] **D2.4.** ~~Strip Ollama special-prize claim~~ → Done. `grep -in "special.prize\|ollama prize\|prize claim" WRITEUP.md` returns zero hits. The intentional base-Gemma-Ollama narrative remains at `WRITEUP.md:52` and `WRITEUP.md:88` per the plan ("Ollama-deployment narrative for the *base* Gemma 4 tags still stands; only the adapter-via-Ollama claim is dead").
+- [x] **D2.5.** ~~Word-count check (≤1,500)~~ → Trim landed 2026-05-16 AM (Sat). `wc -w WRITEUP.md` = **1495** (cut 237 words from 1732). All 10 `##` section headers preserved. Cuts: adjectives/hedges, repeated transitions, one §4 platform-list elaboration, redundant §1 scaffolding. Load-bearing preserved: §6 numbers (77.25/0.78/0.79/0.77/1.0/97.2/77.5/55), both Kaggle links, Unsloth #2290 link, full §6.5 disclosure (validator/re-prompt/seed framing + p95 numbers), §7 "no drone … has ever flown" verbatim, mocks-and-cuts pointer.
+- [x] **D2.6.** ~~Draft `README.md` skeleton (J1 prep)~~ → Done. `README.md:11-16` Submission Links block landed with `[TODO: insert YouTube URL after upload]` placeholder for Sun-evening swap.
+- [x] **D2.7.** ~~Pre-stage Kaggle Writeup body for Thayyil~~ → Done. `docs/submission/kaggle_writeup_body.md` (118 lines) mirrors WRITEUP.md sections + 2-3 sentence pitch + Links block.
 - [ ] **D2.8.** Dashboard polish if anything from H1 dress rehearsal shakes loose (Sat AM).
 
 ---

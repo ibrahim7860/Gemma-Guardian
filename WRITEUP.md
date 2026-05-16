@@ -4,25 +4,25 @@
 
 ## 1. Problem
 
-A Red Cross volunteer running point on the Eaton Fire response, January 2025. The first thing she lost was the cell tower at the foothills. The second was the Skydio relay her team had brought in. By hour two the only working radio was hers, and the AI tools her agency had paid for had become useless rectangles.
+A Red Cross volunteer at the Eaton Fire, January 2025. First the foothills cell tower failed. Then the Skydio relay. By hour two the only working radio was hers, and the AI tools her agency had paid for had become useless rectangles.
 
-Existing AI-powered drone platforms — Skydio, Shield AI, Auterion — require backhaul connectivity for any non-trivial reasoning. Even the most advanced published architecture for AI-driven disaster response, Nguyen, Truong & Le (2026, arXiv:2601.14437), assumes GPT-4.1 over the public internet at the edge ground station. That is a cloud dependency at the precise tier where the cloud isn't reachable.
+Existing AI-powered drone platforms (Skydio, Shield AI, Auterion) require backhaul connectivity for any non-trivial reasoning. Even the most advanced published architecture for AI-driven disaster response, Nguyen, Truong & Le (2026, arXiv:2601.14437), assumes GPT-4.1 over the public internet at the edge ground station: a cloud dependency at the tier where the cloud isn't reachable.
 
-We took that architecture and removed its cloud dependency. Every LLM in the system runs on a single laptop — no internet, no API keys. Same volunteer, same disaster, drones still thinking.
+We removed it. Every LLM runs on a single laptop: no internet, no API keys.
 
 ## 2. Reference and Our Contribution
 
-Nguyen et al. propose three architectures for LLM-powered UAV swarms. They recommend Architecture B (Edge-Enabled): TinyLLaMA-1.1B onboard each UAV plus GPT-4.1 at a mobile edge ground station. Their Algorithm 1 wraps every LLM call with a deterministic post-condition check and a constraint-conditioned retry; it lifts swarm coverage from 70–80% to near-100%.
+Nguyen et al. recommend Architecture B (Edge-Enabled): TinyLLaMA-1.1B onboard each UAV plus GPT-4.1 at a mobile edge ground station. Their Algorithm 1 wraps every LLM call with a deterministic post-condition check and a constraint-conditioned retry, lifting swarm coverage from 70–80% to near-100%.
 
-We adopt Architecture B verbatim — LangGraph orchestrator, five-node agent, Algorithm 1 retry loop. We do not adopt the cloud LLM. Five concrete substitutions:
+We adopt Architecture B verbatim (LangGraph orchestrator, five-node agent, Algorithm 1 retry loop). We do not adopt the cloud LLM. Five substitutions:
 
 - **Onboard LLM:** TinyLLaMA-1.1B int4 (text-only) → **Gemma 4 E2B** multimodal. Same model reasons *and* sees.
 - **EGS LLM:** GPT-4.1 via OpenAI API → **Gemma 4 E4B** via local Ollama. No API keys, no egress.
 - **Cloud dependency:** required at EGS tier → none anywhere; loopback only.
-- **Vision pipeline:** separate detection model in the paper → absorbed into Gemma 4's multimodal forward pass.
-- **Operator interface:** mentioned but not built in the paper → Flutter dashboard with a multilingual command box that round-trips through Gemma 4 E4B for natural-language → structured-task translation. No translation API.
+- **Vision pipeline:** separate detection model → absorbed into Gemma 4's multimodal forward pass.
+- **Operator interface:** unbuilt in the paper → Flutter dashboard with a multilingual command box that round-trips through Gemma 4 E4B for natural-language → structured-task translation. No translation API.
 
-Same architecture. Same agentic pattern. Same validation loop. Zero cloud.
+Same architecture, same validation loop, zero cloud.
 
 ## 3. System
 
@@ -39,25 +39,25 @@ Per-Drone Agents (×2–3) — Gemma 4 E2B + LangGraph 5-node agent
 Simulation — sim/waypoint_runner.py + frame_server.py (scenario YAML)
 ```
 
-Each drone runs a five-node LangGraph agent (Perception → Reasoning → Action → Memory → Coordination) driven by Gemma 4 E2B. The EGS is a LangGraph coordinator backed by Gemma 4 E4B that allocates survey points, replans on drone failure or link drop, translates operator commands, and dedupes findings. The dashboard is the only component a human ever touches. The system we ship is the system that would deploy, modulo replacing the simulation tier with hardware drivers.
+Each drone runs a five-node LangGraph agent (Perception → Reasoning → Action → Memory → Coordination) driven by Gemma 4 E2B. The EGS is a LangGraph coordinator backed by Gemma 4 E4B that allocates survey points, replans on drone failure or link drop, translates operator commands, and dedupes findings. The dashboard is the only component a human touches. What we ship is what would deploy, modulo swapping the simulation tier for hardware drivers.
 
 ## 4. Gemma 4 Capabilities — Load-Bearing, Not Decorative
 
-**Vision.** Each drone passes a JPEG frame from `drones.<id>.camera` directly into Gemma 4 E2B's multimodal forward pass. No YOLO, no LLaVA stage, no CLIP embedding. The same model that reasons about the scene looks at it; `report_finding.visual_description` is grounded in what the model actually saw.
+**Vision.** Each drone passes a JPEG from `drones.<id>.camera` directly into Gemma 4 E2B's multimodal forward pass. No YOLO, no LLaVA, no CLIP. The same model that reasons looks; `report_finding.visual_description` is grounded in what it saw.
 
 **Reasoning + function calling.** Every action-driving output is a structured function call validated against a JSON schema. Drones call one of `report_finding`, `mark_explored`, `request_assist`, `return_to_base`, `continue_mission`. The EGS calls `assign_survey_points` or `replan_mission`. Free-form prose is rejected; the validator triggers a corrective re-prompt. Function calling is the agentic backbone, not a postprocessing step.
 
-**Multilingual.** The operator command box accepts any of Gemma 4's 140+ trained languages. Gemma 4 E4B returns both an operator-visible response in the operator's language and the structured swarm task in canonical English. No translation API; a Spanish- or Arabic-speaking volunteer isn't waiting on Google Translate's reachability.
+**Multilingual.** The command box accepts any of Gemma 4's 140+ languages. E4B returns an operator-visible response in their language and the structured swarm task in canonical English. No translation API.
 
-**On-device, offline-falsifiable.** Both Gemma 4 instances run via local Ollama (E2B on drone, E4B on EGS) — Metal on Apple Silicon, CUDA on Linux/WSL2, CPU fallback. Every network call in FieldAgent is one of: Redis on `localhost:6379`, the WebSocket bridge on `localhost:9090`, or Ollama on `localhost:11434`. The demo's closing beat cuts to a terminal showing no active network interface alongside `ollama list` running both Gemma 4 variants.
+**On-device, offline-falsifiable.** Both Gemma 4 instances run via local Ollama (Metal, CUDA, or CPU fallback). Every network call is one of: Redis (`localhost:6379`), WebSocket bridge (`localhost:9090`), or Ollama (`localhost:11434`). The demo's closing beat cuts to a terminal showing no active network interface alongside `ollama list`.
 
-**Disconnection-tolerant findings.** When a drone crosses out of EGS range, its `LinkStateMonitor` flips a `BufferedPublisher` into standalone mode; every Contract-4 finding is appended to a per-drone JSONL queue. On link restore the buffer drains in FIFO order; the EGS dedupes by `finding_id` against a 5-minute window. A 60-second outage produces zero data loss in the dashboard.
+**Disconnection-tolerant findings.** When a drone crosses out of EGS range, its `LinkStateMonitor` flips a `BufferedPublisher` into standalone mode; every Contract-4 finding is appended to a per-drone JSONL queue. On restore the buffer drains FIFO; the EGS dedupes by `finding_id` against a 5-minute window. A 60-second outage produces zero data loss in the dashboard.
 
 ## 5. Validation-and-Retry Loop (Algorithm 1)
 
-Small LLMs hallucinate. In our domain that means a drone reports a "victim" at a GPS coordinate outside its assigned zone, or the EGS assigns the same survey point to two drones. None of these are catastrophic in isolation; all are catastrophic when the swarm trusts peer broadcasts and the operator trusts the swarm.
+Small LLMs hallucinate. In our domain that means a drone reports a "victim" at a GPS coordinate outside its zone, or the EGS assigns the same survey point to two drones. Not catastrophic alone; catastrophic when the swarm trusts peer broadcasts and the operator trusts the swarm.
 
-Algorithm 1 defines four invariants: hard constraints in the prompt, deterministic post-hoc validation, a corrective re-prompt including the failed attempt, and bounded retries with a safe fallback. We implement all four and apply them to three loci: per-drone function calls, EGS swarm-level assignment, operator command translation.
+Algorithm 1 defines four invariants: hard constraints in the prompt, deterministic post-hoc validation, a corrective re-prompt including the failed attempt, and bounded retries with a safe fallback. We implement all four across three loci: per-drone function calls, EGS swarm-level assignment, operator command translation.
 
 ```python
 for attempt in range(MAX_RETRIES):  # = 3
@@ -71,36 +71,36 @@ for attempt in range(MAX_RETRIES):  # = 3
 return continue_mission_call(reason="validation_exhausted")  # safe fallback
 ```
 
-A reliable demo trigger: the EGS assignment task is constrained with a deliberately awkward survey-point count (25 points / 3 drones / one partially out of mesh range), which produces over- or under-assignment with measurable frequency. The validation loop catches it; the corrective prompt fires; the second attempt succeeds. Terminal log streams to the dashboard so the audience sees catch and correction in the same frame.
+Demo trigger: the EGS assignment uses an awkward count (25 points / 3 drones / one partially out of range), producing mis-assignment with measurable frequency. The validation loop catches it; corrective prompt fires; second attempt succeeds. Terminal log streams to the dashboard so the audience sees catch and correction in one frame.
 
-The same loop has a second important property: when Gemma 4 E4B is slow or unreachable under VRAM pressure, the EGS falls through max-retries to a deterministic round-robin assignment instead of raising. The swarm keeps operating even when its LLM hangs.
+Second property: under VRAM pressure when E4B is slow or unreachable, the EGS falls through max-retries to deterministic round-robin instead of raising. The swarm keeps operating even when its LLM hangs.
 
 ## 6. Fine-Tuning
 
-GATE 3 was `report_finding(type='victim')` on the FEMA Hurricane Katrina aerial. Base Gemma 4 E2B reads it as a damaged building, not a victim — so we trained a vision LoRA purpose-built for human detection in disaster aerial imagery.
+GATE 3 was `report_finding(type='victim')` on a FEMA Hurricane Katrina aerial. Base Gemma 4 E2B reads it as a damaged building, so we trained a vision LoRA for human detection in disaster aerials.
 
-**Dataset.** [C2A](https://www.kaggle.com/datasets/rgbnihal/c2a-dataset) (10,215 UAV images, ~360k human instances across four disaster scenarios). Schema collapsed to binary `{finding_type: "victim" | "none", confidence, visual_evidence}` to match `report_finding`. Held-out cross-source eval on AIDER and SARD tests domain transfer.
+**Dataset.** [C2A](https://www.kaggle.com/datasets/rgbnihal/c2a-dataset) (10,215 UAV images, ~360k human instances across four disaster scenarios). Schema collapsed to binary `{finding_type: "victim" | "none", confidence, visual_evidence}` to match `report_finding`. Held-out eval on AIDER and SARD tests domain transfer.
 
-**Method.** Unsloth LoRA on `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`, `target_modules="all-linear"`, `finetune_vision_layers=True`, lr 2e-4 cosine. ~120 MB adapter, [public Kaggle Model](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a) under `Transformers/lora-c2a-bf16`; [training notebook](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster) also public.
+**Method.** Unsloth LoRA on `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`, `target_modules="all-linear"`, `finetune_vision_layers=True`, lr 2e-4 cosine. ~120 MB adapter; [public Kaggle Model](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a) under `Transformers/lora-c2a-bf16`; [training notebook](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster) also public.
 
-**Results (n=400 held-out).** Binary acc 77.25%, victim F1 0.78 (precision 0.79, recall 0.77), parse_rate 1.0. Per-source: C2A 97.2%, AIDER 77.5%, SARD 55% — the SARD result (held-out cross-domain) honestly bounds the in-domain claim.
+**Results (n=400 held-out).** Binary acc 77.25%, victim F1 0.78 (precision 0.79, recall 0.77), parse_rate 1.0. Per-source: C2A 97.2%, AIDER 77.5%, SARD 55%; SARD (held-out cross-domain) honestly bounds the in-domain claim.
 
-**Runtime.** Unsloth's GGUF vision-tower export regresses on [#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter runs through a PEFT/HF Transformers path; base Gemma 4 tags ship via Ollama. The adapter therefore runs alongside, not through, Ollama — softening but not invalidating the Ollama-deployment narrative.
+**Runtime.** Unsloth's GGUF vision-tower export regresses on [#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter runs via PEFT/HF Transformers while base Gemma 4 tags ship via Ollama. The adapter runs alongside, not through, Ollama, softening but not invalidating the deployment narrative.
 
 ## 6.5 Wow-Moment Disclosure: Deterministic Hallucination Seed
 
-The validation-and-retry loop is real and runs on every EGS replan cycle in production code. However, base Gemma 4 E4B does not naturally over-count survey-point assignments at a rate fit for a 8-second camera window: across 7 combined eval runs (2 on M1 16GB + 5 on RTX A2000 8GB CUDA, `eval_wow_moment_trigger.py`), the base model produced **0 `ASSIGNMENT_TOTAL_MISMATCH` triggers** — it exhausts max-retries and falls through to the deterministic round-robin fallback instead. For Beat 3c of the demo we therefore use a `--inject-overcount-once` flag on the EGS coordinator. This flag mutates the *first* replan attempt only; everything downstream — validation rule evaluation, the corrective re-prompt, the second-attempt Gemma 4 E4B inference, the validation pass — runs the real production code path. The validator and re-prompt mechanism are not staged. Only the *seed* of the hallucination is deterministic, for capture reproducibility. Without the flag the same code path still runs every cycle in production; it simply doesn't produce a hallucination on demand inside the camera window. Latency forces the framing: a single E4B replan attempt measures p95 ≈ 143s on RTX A2000 and ≈ 140s on M1 (`measure_e4b_replan_latency.py`, n=10) — roughly 18× over the 8s camera budget, which is also why Beat 3c jump-cuts from "validation rejected" to "second attempt accepted" instead of rolling in real time.
+The validation-and-retry loop is real and runs on every EGS replan cycle in production. However, base Gemma 4 E4B does not naturally over-count assignments at a rate fit for an 8-second camera window: across 7 combined eval runs (2 on M1 16GB + 5 on RTX A2000 8GB CUDA, `eval_wow_moment_trigger.py`), the base model produced **0 `ASSIGNMENT_TOTAL_MISMATCH` triggers** and falls through to the deterministic round-robin fallback. For Beat 3c we use a `--inject-overcount-once` flag on the EGS coordinator that mutates the *first* replan attempt only; everything downstream (validation rule evaluation, corrective re-prompt, second-attempt Gemma 4 E4B inference, validation pass) runs the real production code path. The validator and re-prompt mechanism are not staged. Only the *seed* of the hallucination is deterministic, for capture reproducibility. Without the flag the same code path still runs every cycle; it just doesn't produce a hallucination on demand inside the camera window. Latency forces the framing: a single E4B replan attempt measures p95 ≈ 143s on RTX A2000 and ≈ 140s on M1 (`measure_e4b_replan_latency.py`, n=10), roughly 18× over the 8s camera budget, which is why Beat 3c jump-cuts from "validation rejected" to "second attempt accepted" instead of rolling in real time.
 
 ## 7. Honest Limitations
 
-No drone in this project has ever flown. `sim/waypoint_runner.py` interpolates GPS along a YAML track; `sim/frame_server.py` serves pre-recorded JPEGs. The agent stack above the simulation tier is the same code that would run on a Jetson Orin NX per drone. Mesh is software dropout, not WiFi multipath. We run 2–3 drones, not the paper's 8 or 12 — scaling is a hardware question (one Jetson per drone), not an architectural one. Resilience events (drone failure, link drop, fire spread) are scripted in YAML so the demo is reproducible; the swarm's *response* to each event is genuine. Public-domain FEMA / USFWS aerials serve as the perception fixture set; none show visibly identifiable human bodies, so the validator-fallback path and the demo's mock-Ollama mode jointly guarantee a capture-day artifact even when the base model conservatively chooses `continue_mission`. Full accounting in `docs/16-mocks-and-cuts.md`.
+No drone in this project has ever flown. `sim/waypoint_runner.py` interpolates GPS along a YAML track; `sim/frame_server.py` serves pre-recorded JPEGs. The stack above the simulation tier is the same code that would run on a Jetson Orin NX per drone. Mesh is software dropout, not WiFi multipath. We run 2–3 drones, not the paper's 8 or 12; scaling is hardware, not architectural. Resilience events (drone failure, link drop, fire spread) are scripted YAML; the swarm's *response* is genuine. Public-domain FEMA / USFWS aerials serve as the fixture set; none show identifiable human bodies, so the validator-fallback path and mock-Ollama mode jointly guarantee a capture-day artifact when the base model conservatively chooses `continue_mission`. Full accounting in `docs/16-mocks-and-cuts.md`.
 
 ## 8. Reproducibility
 
-Hardware floor: any laptop with Python 3.11+, Redis 7+, and Ollama. NVIDIA GPU optional. Apple Silicon via Metal is fully supported with the tuning recipe in `docs/plans/2026-05-12-drone3-reliability-capture.md`. Setup is one command (`uv sync --all-extras`) plus `scripts/pull_models.sh` to fetch both Gemma 4 tags via Ollama. The demo launcher is one command (`scripts/run_full_demo.sh disaster_zone_v1`) and brings up Redis, sim, agents, EGS, bridge, and dashboard in a single tmux session. The runtime is Ollama — no API keys, no network egress, no cloud account. A judge with no internet connection can run the full system.
+Hardware floor: any laptop with Python 3.11+, Redis 7+, and Ollama. NVIDIA GPU optional; Apple Silicon via Metal supported with the tuning recipe in `docs/plans/2026-05-12-drone3-reliability-capture.md`. Setup is `uv sync --all-extras` plus `scripts/pull_models.sh` for both Gemma 4 tags. The launcher (`scripts/run_full_demo.sh disaster_zone_v1`) brings up Redis, sim, agents, EGS, bridge, and dashboard in one tmux session. No API keys, no egress, no cloud account. A judge with no internet can run the full system.
 
 ## 9. Conclusion
 
-Agentic search-and-rescue can run entirely on-device. The edge-enabled architecture from Nguyen et al. (2026) holds when the cloud LLM is replaced with on-device Gemma 4: the validation loop still catches hallucinations, the swarm still coordinates through dropout, the operator still drives the system in their own language. Billions of people live in climate-vulnerable regions, and the first hour of every disaster is the hour the cloud is unreachable.
+Agentic search-and-rescue can run entirely on-device. The edge-enabled architecture from Nguyen et al. (2026) holds when the cloud LLM is replaced with on-device Gemma 4: validation still catches hallucinations, the swarm still coordinates through dropout, the operator drives the system in their own language. The first hour of every disaster is the hour the cloud is unreachable.
 
 **Cell towers fail first. Brains shouldn't.**
