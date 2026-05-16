@@ -12,6 +12,18 @@ from agents.egs_agent.validation import EGSValidationNode
 
 logger = logging.getLogger(__name__)
 
+# Per-attempt timeout for Gemma 4 E4B operator-command translation calls.
+# Operator command translation runs E4B end-to-end (system prompt + state
+# summary + retries) and can legitimately need >30s on slow boxes — see
+# TODOS.md "command_translator.py:70". Mirrored from the same value that
+# used to live inline at the post() call.
+#
+# Sibling constant: agents/egs_agent/replanning.py:EGS_HTTPX_PER_ATTEMPT_TIMEOUT_S = 30.0
+# is intentionally tighter — replan attempts run inside an outer wait_for guard
+# (GH #32 fix, Hazim commit d86a7d9), while this operator-translation path has
+# no outer guard and may need the longer budget.
+COMMAND_TRANSLATOR_HTTPX_PER_ATTEMPT_TIMEOUT_S = 180.0
+
 async def translate_operator_command(
     operator_text: str,
     language: str,
@@ -67,7 +79,7 @@ Active drones: {list(egs_state.get('drones_summary', {}).keys())}
         
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.post(endpoint, json=payload, timeout=180.0)
+                resp = await client.post(endpoint, json=payload, timeout=COMMAND_TRANSLATOR_HTTPX_PER_ATTEMPT_TIMEOUT_S)
                 resp.raise_for_status()
                 data = resp.json()
                 

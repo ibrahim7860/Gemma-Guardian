@@ -8,6 +8,13 @@ In post-disaster zones, cell towers fail in the first hour. Drones with cloud-AI
 
 *Live capture: drone1's onboard Gemma 4 E2B fires `report_finding` on a CC0 FEMA Hurricane Katrina aerial; the finding traverses Redis → FastAPI bridge → Flutter dashboard. Capture procedure: [`docs/runbooks/mcp-dom-verification.md`](docs/runbooks/mcp-dom-verification.md).*
 
+## Submission links
+
+- **Kaggle Model (C2A victim-detection LoRA):** [`gemma4-e2b-victim-vision-lora-c2a`](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a)
+- **Kaggle Notebook (training):** [`gemma-4-e2b-victim-vision-lora-c2a-disaster`](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster)
+- **Demo video:** [TODO: insert YouTube URL after upload]
+- **Technical writeup:** [`WRITEUP.md`](WRITEUP.md)
+
 ## Demo video
 
 *Submission video link added once the Beat 5 capture is final (target: Day 15, May 17, 2026).* Storyboard and capture rig: [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md), [`scripts/run_beat5_capture.sh`](scripts/run_beat5_capture.sh).
@@ -32,6 +39,17 @@ scripts/run_dashboard_dev.sh
 Open the dashboard at [`http://localhost:8000/?ws=ws://127.0.0.1:9090/`](http://localhost:8000/?ws=ws://127.0.0.1:9090/). Clean up with `scripts/stop_demo.sh`.
 
 For the cold-start path from a fresh box (no prior repo context, no warm uv cache), follow [`docs/sim-reproduction.md`](docs/sim-reproduction.md). It's the doc Phase G is locked to; a v1 cold-run from a fresh clone was completed on M1 macOS on 2026-05-12, and a fresh-machine outside-tester pass on Linux/WSL2 lands Days 15–16.
+
+## C2A victim-detection adapter
+
+The drone agent loads the C2A LoRA adapter in-process via [`agents/drone_agent/c2a_inference.py`](agents/drone_agent/c2a_inference.py) (PEFT/HF Transformers route — Unsloth's GGUF vision-tower export is blocked on [unslothai/unsloth#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter runs alongside Ollama rather than through it). Point at the adapter directory with the `--c2a-adapter-path` CLI flag on `python -m agents.drone_agent`:
+
+```bash
+uv run python -m agents.drone_agent --drone-id drone1 \
+    --c2a-adapter-path kaggle_work_c2a/adapter/
+```
+
+Adapter weights live under [`kaggle_work_c2a/adapter/`](kaggle_work_c2a/) once the training notebook has been run, or can be pulled directly from the [Kaggle Model](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a) (~120 MB, `Transformers/lora-c2a-bf16` variant). On adapter load failure the agent falls back transparently to the Ollama reasoning path; see the docstring at the top of `c2a_inference.py` for the unwrap/rename fixes baked into the loader.
 
 ## Hardware requirements
 

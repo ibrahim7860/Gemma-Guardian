@@ -387,31 +387,186 @@ assignment / operator command) lives in §8 Table 2, populated from
 
 ## 7. Fine-Tuning
 
-We fine-tuned a LoRA on Gemma 4 E2B against the **xBD** dataset (Gupta et
-al., 2019) — the largest public benchmark for post-disaster building damage
-classification, covering 850,736 annotated buildings across 19 disasters
-(wildfires, hurricanes, earthquakes, floods, tornadoes, volcanic eruptions,
-tsunamis) with four Joint Damage Scale classes (no_damage, minor_damage,
-major_damage, destroyed). xBD is the established benchmark in this space;
-using it makes our results comparable to prior literature.
+### 7.1 Why C2A, why victim detection
 
-LoRA via **Unsloth special prize**: kernel-level speedups on the LoRA
-forward/backward path bring single-GPU multimodal fine-tuning into a
-single-day window. Following Unsloth's current Gemma 4 vision recipe, we
-start with `finetune_vision_layers=False` and tune the language, attention,
-and MLP modules first; the vision tower is enabled only if the visual task
-plateaus. Hyperparameters (per [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md)):
-rank 32, alpha 32, `target_modules="all-linear"`, learning rate 2e-4 with
-cosine schedule, batch size 2–4 with gradient accumulation 4–8, bf16, 1–3
-epochs over the cropped per-building patch set (~500k patches at 224×224),
-on a rented A10 / A4000 / A5000 instance.
+GATE 3 of our internal acceptance ladder was the simplest possible win-condition:
+`report_finding(type='victim')` 3/3 times on the wow-moment frame (a public-domain
+FEMA Hurricane Katrina aerial showing a stranded individual on a rooftop). Base
+Gemma 4 E2B, prompted with the production drone-agent system prompt, reads this
+image as a damaged building 1/3 of the time — it correctly *sees* the rooftop and
+the debris, but does not reliably recognise the human figure as the salient
+finding. Fine-tuning was scoped narrowly: unlock the third hit, with as small
+and honest an adapter as possible.
 
-Results (Table 5, §8): base Gemma 4 E2B vs fine-tuned LoRA, per-class F1 and
-overall accuracy on the held-out xBD test split (split by disaster, not
-random sample, for honest generalization). Sim-to-real caveat: the xBD
-imagery is high-altitude post-event satellite, while our simulation serves
-curated crops. The fine-tune helps the *model*; transferring its gains to
-live drone footage is future work.
+The original plan (drafted 2026-04-29, archived in
+[`12-fine-tuning-plan.md`](12-fine-tuning-plan.md)) was to fine-tune on the **xBD**
+dataset (Gupta et al., 2019) for post-disaster building damage classification.
+xBD is the established benchmark in this space, but its label space (no_damage /
+minor_damage / major_damage / destroyed) is one task removed from our actual
+GATE 3 bar. On 2026-05-14 we pivoted the primary path to **C2A**
+(`rgbnihal/c2a-dataset`), which is purpose-built for human detection in
+disaster aerial imagery. The xBD scaffold lives at `kaggle_work/` and was kept
+as belt-and-suspenders insurance, but is not loaded by the running demo.
+
+### 7.2 Dataset
+
+| Split | Source | Role | Count |
+|---|---|---|---|
+| Train (victim class) | C2A (`rgbnihal/c2a-dataset`) | 10,215 UAV images, ~360k human instances across four disaster scenarios (earthquake, flood, fire, collapsed-structure) | trained on subset |
+| Train (none class) | AIDER (`samik2005/aider-dataset`) | Disaster-context images with no human subjects | trained on subset |
+| Held-out cross-source | SARD (`nikolasgegenava/sard-search-and-rescue`) | Search-and-rescue imagery from outside C2A's distribution | n=100 in eval |
+
+The schema was collapsed from C2A's bounding-box annotations to a binary
+image-level decision that matches our `report_finding` contract verbatim:
+
+```json
+{"finding_type": "victim" | "none",
+ "confidence": <float ∈ [0,1]>,
+ "visual_evidence": "<one-line description>"}
+```
+
+This collapse is honest about the deployment context: an EGS coordinator
+allocating drone time does not need pixel-precise localisation, it needs a
+trustworthy yes/no plus a one-line rationale. Bounding-box recovery is a
+post-submission extension.
+
+### 7.3 Method
+
+Training stack: Unsloth `FastVisionModel` on `unsloth/gemma-4-E2B-it`. Final
+v11 hyperparameters (published in the Kaggle Model card):
+
+- LoRA variant: **DoRA** (`use_dora=True`)
+- Rank 16, alpha 32, dropout 0.05
+- `target_modules="all-linear"`, `finetune_vision_layers=True`
+- lr 2e-4, cosine schedule, fp16 (Kaggle T4 does not support bf16)
+- 300 steps, ~49 min wall-clock on a single Kaggle T4 free instance
+
+The Unsloth special-prize eligibility is real: the training pipeline runs on
+`FastVisionModel` end-to-end, and the kernel-level speedups bring single-GPU
+multimodal fine-tuning of a 4B-class vision-language model into a sub-hour
+window on a free-tier T4. The Ollama special-prize *adapter-via-Ollama* claim
+is dead (see §7.5); we do not pursue it.
+
+### 7.4 Results
+
+All numbers below come from `kaggle_out_c2a/adapter/eval_summary.json` on the
+n=400 held-out eval split (191 AIDER, 109 C2A, 100 SARD):
+
+| Metric | Value |
+|---|---|
+| Binary accuracy (overall) | **77.25%** |
+| Victim F1 | **0.78** (precision 0.79, recall 0.77) |
+| None F1 | 0.76 (precision 0.76, recall 0.77) |
+| Parse-rate (`ok`) | **100%** (400 / 400) |
+| C2A per-source accuracy | **97.2%** |
+| AIDER per-source accuracy | **77.5%** |
+| SARD per-source accuracy (held out) | **55%** |
+
+Reading the per-source numbers honestly: C2A 97.2% is **in-distribution** —
+the adapter has seen this dataset family in training, so this is an upper
+bound, not a ship claim. AIDER 77.5% is the binary `none` discrimination
+rate. **SARD 55% bounds the in-domain claim** — it is the cross-source
+domain-transfer measurement and the most defensible number to put in front
+of a judge. The +13pp SARD lift over our v9 run (42% → 55%) came from
+fixing a label-collapse bug in v10: fixed-string `visual_evidence` labels
+were producing a trivial shortcut (loss → 0.0004 in 25 steps), masquerading
+as a successful train. v10's fix used scenario-keyed varied evidence
+templates and varied confidence values, which broke the shortcut and
+recovered honest gradients.
+
+### 7.5 Inference integration
+
+Two routes were on the table:
+
+- **Route (a) — Ollama Modelfile.** Export the adapter merged into the base
+  via Unsloth's GGUF path, ship as a single `Modelfile` on Ollama. This was
+  the cleanest deployment story and would have unlocked the Ollama
+  special-prize narrative end-to-end. It is **dead** per
+  [Unsloth #2290](https://github.com/unslothai/unsloth/issues/2290) — the
+  vision-tower export regresses; there is no working GGUF path for Gemma 4
+  vision LoRA at submission time.
+- **Route (b) — PEFT/HF Transformers in-process.** Load the adapter directly
+  on top of `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit` inside the drone-agent
+  process. Higher RAM footprint, but the adapter runs alongside the
+  Ollama-served base. Shipped at `agents/drone_agent/c2a_inference.py`.
+
+Route (b) required two non-trivial Unsloth↔PEFT compatibility shims that
+are worth documenting because future trainings reusing this stack will hit
+the same wall:
+
+1. **`Gemma4ClippableLinear` unwrap.** Vanilla PEFT cannot inject LoRA
+   adapters into Unsloth's custom wrapper class around `nn.Linear`. We walk
+   the base model after load, identify all 232 wrapped layers, and
+   `setattr` the inner `nn.Linear` instance back onto the parent module
+   before PEFT touches it.
+2. **DoRA magnitude-vector key rename.** Unsloth saves DoRA tensors as
+   `…lora_magnitude_vector.default` (no `.weight` suffix). Vanilla
+   `PeftModel.from_pretrained` expects `…default.weight`. We load the
+   `adapter_model.safetensors` file in memory, rename the affected keys,
+   write to a temporary directory, and let PEFT load from there.
+
+Total shim surface area is ~50 lines, all transparent at load time. The
+drone-agent CLI flag `--c2a-adapter-path` defaults to `$C2A_ADAPTER_PATH`
+env var or `kaggle_work_c2a/adapter/`; if the adapter fails to load, the
+agent falls back to Ollama-only mode and the demo never crashes.
+
+### 7.6 Wow-moment disclosure
+
+The fine-tune is the GATE 3 unlock, but the *wow-moment* in the demo video
+is the Algorithm-1 validation-and-retry banner — and that has its own
+honesty disclosure that mirrors `WRITEUP.md` §6.5 verbatim:
+
+The validation-and-retry loop is real and runs on every EGS replan cycle in
+production code. Base Gemma 4 E4B does not naturally over-count
+survey-point assignments at a rate fit for an 8-second camera window:
+across 7 combined eval runs (2 on M1 16GB + 5 on RTX A2000 8GB CUDA,
+`ml/evaluation/eval_wow_moment_trigger.py`), the base model produced **0
+`ASSIGNMENT_TOTAL_MISMATCH` triggers** — it exhausts max-retries and falls
+through to the deterministic round-robin fallback instead. For Beat 3c of
+the demo we therefore use a `--inject-overcount-once` flag on the EGS
+coordinator. This flag mutates the *first* replan attempt only; everything
+downstream (validation rule evaluation, the corrective re-prompt, the
+second-attempt E4B inference, the validation pass) runs the real
+production code path. Latency forces the framing: a single E4B replan
+attempt measures p95 ≈ 143s on RTX A2000 and ≈ 140s on M1 (n=10), roughly
+18× over the 8s camera budget, which is also why Beat 3c jump-cuts from
+"validation rejected" to "second attempt accepted" instead of rolling in
+real time. Only the *seed* of the hallucination is deterministic, for
+capture reproducibility.
+
+### 7.7 Published artifacts
+
+- **Kaggle Model:** [`ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a`](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a)
+  under `Transformers/lora-c2a-bf16/3`. PUBLIC. ~120 MB adapter weights.
+- **Kaggle Notebook:** [`gemma-4-e2b-victim-vision-lora-c2a-disaster`](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster).
+  PUBLIC, with C2A + AIDER + SARD dataset citations rendered in the Inputs
+  panel of the notebook for judge reproducibility.
+- **In-repo eval artifact:** `kaggle_out_c2a/adapter/eval_summary.json`
+  (source of all numbers in §7.4).
+
+### 7.8 What didn't ship + Future Work
+
+- **xBD building-damage adapter.** The original plan (drafted 2026-04-29,
+  preserved in [`12-fine-tuning-plan.md`](12-fine-tuning-plan.md) under
+  "Historical xBD Plan") trained Gemma 4 E2B on xBD's four Joint Damage
+  Scale classes. The scaffold lives at `kaggle_work/` and is runnable, but
+  the resulting adapter is **not** loaded by the demo. Reasoning: the GATE
+  3 bar is victim detection, not building damage classification, and
+  shipping two adapters on a 4B-class base on a single Jetson Orin NX
+  exceeds our deployment-side memory budget. The xBD work transfers
+  indirectly (general aerial-damage perception) and the scaffold remains
+  for post-submission extension.
+- **Multi-finding-type adapters.** The system schema supports
+  `finding_type ∈ {victim, fire, smoke, damaged_structure, blocked_route}`.
+  Only `victim` is fine-tuned at submission time; the other four classes
+  rely on base Gemma 4 E2B perception. Per `TODOS.md`
+  "Multi-finding-type LoRA adapter", training the remaining four is
+  deferred to post-submission, with the C2A pipeline as the template.
+- **Ollama-served adapter.** Pending an upstream fix to Unsloth #2290, the
+  Ollama special-prize narrative is partial: training uses Unsloth,
+  base-model serving uses Ollama, but the adapter itself rides PEFT/HF
+  Transformers in-process. If #2290 lands before submission day we will
+  swap in the GGUF path; otherwise the writeup tells this story honestly.
 
 ---
 

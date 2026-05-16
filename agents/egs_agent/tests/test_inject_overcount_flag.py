@@ -100,7 +100,13 @@ async def test_inject_flag_on_fires_mismatch_on_attempt_one():
 
 @pytest.mark.asyncio
 async def test_inject_flag_on_only_mutates_attempt_one_then_recovers():
-    """End-to-end Beat 3c shape: attempt 1 injected → invalid; attempt 2 clean → valid."""
+    """End-to-end Beat 3c shape: attempt 1 injected → invalid; attempt 2 clean → valid.
+
+    NOTE: After the 2026-05-15 fix to `replanning.py` (Phase 3c shortcut
+    gated on `pending_overcount_injection`), attempt 1 bypasses the LLM
+    entirely and builds the seed locally — so mock_post is only awaited
+    on attempt 2 (where the real LLM call resumes per WRITEUP.md §6.5).
+    """
     sink: List[Dict[str, Any]] = []
     mock_post = AsyncMock(return_value=_resp(_valid_25pt_assignment()))
     with patch("httpx.AsyncClient.post", new=mock_post):
@@ -111,7 +117,7 @@ async def test_inject_flag_on_only_mutates_attempt_one_then_recovers():
             inject_overcount_first_attempt=True,
         )
 
-    assert mock_post.await_count == 2
+    assert mock_post.await_count == 1
     assert result.get("function") == "assign_survey_points"
     attempt1 = next(s for s in sink if s["attempt_n"] == 1)
     attempt2 = next(s for s in sink if s["attempt_n"] == 2)

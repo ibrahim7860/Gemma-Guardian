@@ -1,17 +1,82 @@
 # 12 — Fine-Tuning Plan
 
-> **2026-05-14 ADDENDUM — Hackathon focus pivoted to VICTIM DETECTION.** The
-> GATE 3 acceptance test is `report_finding(type='victim')` 3/3 on the wow-moment
-> frame (`placeholder_victim_01.jpg`). Base Gemma 4 E2B reliably emits this 2/3
-> times — fine-tuning is meant to unlock the third hit. The original xBD plan
-> below trains *building damage classification* (a related-but-different task);
-> we kept it as belt-and-suspenders insurance but the primary target moved to
-> the **C2A dataset** (`rgbnihal/c2a-dataset`) which is purpose-built for human
-> detection in disaster aerial imagery. See `kaggle_work_c2a/` for the active
-> scaffold. The xBD work in `kaggle_work/` produces a "general aerial-damage
-> perception" adapter that transfers indirectly. Multi-finding-type training
-> (fire / smoke / damaged_structure / blocked_route) is deferred to
-> post-submission; for the hackathon, victim detection is the only LoRA target.
+## What We Shipped (C2A victim-detection LoRA, 2026-05-15)
+
+### Final dataset choice
+- **Train (victim):** C2A (`rgbnihal/c2a-dataset`) — 10,215 UAV images, ~360k human
+  instances across four disaster scenarios.
+- **Train (none):** AIDER (`samik2005/aider-dataset`) — disaster-context images
+  with no human subjects.
+- **Held-out cross-source:** SARD (`nikolasgegenava/sard-search-and-rescue`) — for
+  honest domain-transfer evaluation. n=100 SARD samples included in the n=400
+  held-out eval split.
+- **Schema:** binary, `{finding_type: "victim" | "none", confidence, visual_evidence}`,
+  collapsing C2A's bounding-box annotations to image-level for our `report_finding`
+  contract.
+
+### Final hyperparameters (v11, published)
+- Base: `unsloth/gemma-4-E2B-it`
+- LoRA: DoRA enabled (`use_dora=True`), rank 16, alpha 32, dropout 0.05,
+  `target_modules="all-linear"`, `finetune_vision_layers=True`
+- Optimizer: lr 2e-4 cosine, fp16 (Kaggle T4 doesn't support bf16)
+- Training: 300 steps, ~49 min on a single Kaggle T4 free instance
+
+### Final results (n=400 held-out, `kaggle_out_c2a/adapter/eval_summary.json`)
+| Metric | Value |
+|---|---|
+| Binary accuracy | 77.25% |
+| Victim F1 | 0.78 (precision 0.79, recall 0.77) |
+| Parse-rate (ok) | 100% |
+| C2A per-source accuracy | 97.2% |
+| AIDER per-source accuracy | 77.5% |
+| SARD per-source accuracy (held out) | 55% |
+
+The +13pp SARD lift over v9 (42% → 55%) came from fixing a label-collapse bug
+in v10 — fixed-string `visual_evidence` labels were producing a trivial
+shortcut (loss → 0.0004 in 25 steps). v10's fix used scenario-keyed varied
+evidence templates and varied confidence values.
+
+### Published artifacts
+- Kaggle Model: [`gemma4-e2b-victim-vision-lora-c2a`](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a)
+  `Transformers/lora-c2a-bf16/3` — PUBLIC.
+- Kaggle Notebook: [`gemma-4-e2b-victim-vision-lora-c2a-disaster`](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster)
+  — PUBLIC, with C2A + AIDER + SARD dataset citations rendered in the Inputs panel.
+
+### Inference integration
+- Route (a) Ollama Modelfile is dead per [Unsloth #2290](https://github.com/unslothai/unsloth/issues/2290)
+  — vision-tower export regresses; no GGUF path for Gemma 4 vision LoRA today.
+- Route (b) PEFT/HF Transformers shipped in `agents/drone_agent/c2a_inference.py`.
+  Wired into `DroneAgent.step()` as fast-path before the Ollama reasoning call.
+- Two non-trivial Unsloth↔PEFT compat shims required:
+  - `Gemma4ClippableLinear` unwrap: vanilla PEFT can't inject LoRA into Unsloth's
+    custom wrapper class. We walk the base model post-load and `setattr` the
+    inner `nn.Linear` on every 232 wrapped layers.
+  - DoRA magnitude-vector key rename: Unsloth saves DoRA tensors as
+    `…lora_magnitude_vector.default` (no `.weight` suffix); vanilla
+    `PeftModel.from_pretrained` expects `.default.weight`. We load the
+    safetensors file, rename in memory, save to a temp dir, then load via PEFT.
+- CLI flag `--c2a-adapter-path` defaults to `$C2A_ADAPTER_PATH` env var or
+  `kaggle_work_c2a/adapter/`. Adapter-load failure → graceful fallback to
+  Ollama-only mode (demo never crashes).
+
+### Lessons learned
+- Unsloth + DoRA is the right training-time choice for hackathon timeboxes
+  (T4 fit in ~49 min, +13pp SARD over plain LoRA). The save/load contract
+  with vanilla PEFT is a known fragility; budget time for the inference-side
+  shims when planning future trainings.
+- Label-collapse bug pattern: when training-time labels are fixed strings,
+  loss can converge to a trivial shortcut. Vary evidence/confidence per
+  example.
+- SARD is the right honest domain-transfer benchmark — it's not in C2A's
+  training distribution and exposes overfit risk cleanly.
+
+---
+
+> **Note:** The plan below is the **original xBD building-damage path** drafted 2026-04-29. We ran it as belt-and-suspenders insurance, adapter scaffold lives at `kaggle_work/` but is not loaded by the running demo. The hackathon's primary GATE 3 path moved to C2A on 2026-05-14; see "What We Shipped" above for the canonical record.
+
+---
+
+## Historical xBD Plan (kept for archaeology)
 
 ## Why We Fine-Tune
 

@@ -158,10 +158,19 @@ Rules:
         }
 
         try:
-            if inject_overcount_first_attempt:
-                # Phase 3c shortcut: bypass the LLM entirely to avoid 3+ minute timeouts
-                # on the CUDA box. We return a perfect round-robin assignment; the
-                # mutation logic below will break it on attempt 1, and attempt 2 will pass cleanly.
+            if inject_overcount_first_attempt and pending_overcount_injection:
+                # Phase 3c shortcut, attempt 1 ONLY: bypass the LLM to avoid a 3+ min
+                # wait on the CUDA box for the seed of the hallucination. We build a
+                # deterministic clean 25-point assignment locally; the injection logic
+                # below mutates it to 27 points so the validator catches
+                # ASSIGNMENT_TOTAL_MISMATCH and fires the corrective re-prompt.
+                #
+                # Attempt 2 (and beyond) runs the real LLM call via the else branch
+                # — see WRITEUP.md §6.5 ("the second-attempt Gemma 4 E4B inference …
+                # runs the real production code path"). The gate on
+                # `pending_overcount_injection` (flipped False right after the
+                # injection block below runs once) ensures the shortcut applies
+                # exactly to attempt 1.
                 await asyncio.sleep(2.0)  # brief fake think time for the camera
                 fake_assignments = [{"drone_id": d, "survey_point_ids": []} for d in active_drones]
                 for i, pt in enumerate(available_points):
@@ -183,148 +192,148 @@ Rules:
                     # Normalize
                     canonical = normalize(data, layer="egs")
 
-                # Phase 3c (GATE 4 wow moment fallback): one-shot phantom-id
-                # injection on attempt 1 only. Local flag, not module state —
-                # tests pass via the kwarg; production passes via the
-                # coordinator-held boolean wired up from the CLI flag.
-                if pending_overcount_injection:
-                    pending_overcount_injection = False
-                    if canonical.get("function") == "assign_survey_points":
-                        a_assignments = canonical.get("arguments", {}).get("assignments", [])
-                        if a_assignments and isinstance(a_assignments, list):
-                            a_assignments[0].setdefault("survey_point_ids", []).extend(
-                                ["sp_phantom_1", "sp_phantom_2"]
-                            )
-                            logger.info(
-                                "Phase 3c: injected 2 phantom survey points "
-                                "into attempt-1 LLM response."
-                            )
+            # Phase 3c (GATE 4 wow moment fallback): one-shot phantom-id
+            # injection on attempt 1 only. Local flag, not module state —
+            # tests pass via the kwarg; production passes via the
+            # coordinator-held boolean wired up from the CLI flag.
+            if pending_overcount_injection:
+                pending_overcount_injection = False
+                if canonical.get("function") == "assign_survey_points":
+                    a_assignments = canonical.get("arguments", {}).get("assignments", [])
+                    if a_assignments and isinstance(a_assignments, list):
+                        a_assignments[0].setdefault("survey_point_ids", []).extend(
+                            ["sp_phantom_1", "sp_phantom_2"]
+                        )
+                        logger.info(
+                            "Phase 3c: injected 2 phantom survey points "
+                            "into attempt-1 LLM response."
+                        )
 
-                # Structural Validation
-                val_res = validation_node.validate_egs_function_call(canonical)
-                if not val_res.valid:
-                    rule = RULE_REGISTRY.get(val_res.failure_reason)
-                    correction = rule.corrective_template.format(
-                        field_path="", message=val_res.detail
-                    ) if rule else val_res.detail
-                    rule_id_str = (
-                        val_res.failure_reason.value
-                        if val_res.failure_reason is not None else None
-                    )
-                    _log_in_progress(
-                        attempt_n=attempt_n, valid=False,
-                        rule_id=rule_id_str,
-                        corrective_text=correction,
-                        canonical=canonical,
-                        details={"detail": val_res.detail},
-                    )
-                    messages.append({"role": "assistant", "content": json.dumps(canonical)})
-                    messages.append({"role": "user", "content": correction})
-                    retries += 1
-                    continue
-
-                # Semantic / Stateful Validation
-                if canonical.get("function") != "assign_survey_points":
-                    correction = "You must use the assign_survey_points function."
-                    _log_in_progress(
-                        attempt_n=attempt_n, valid=False,
-                        rule_id=None,
-                        corrective_text=correction,
-                        canonical=canonical,
-                    )
-                    messages.append({"role": "assistant", "content": json.dumps(canonical)})
-                    messages.append({"role": "user", "content": correction})
-                    retries += 1
-                    continue
-
-                args = canonical.get("arguments", {})
-                assignments = args.get("assignments", [])
-
-                # ASSIGNMENT_TOTAL_MISMATCH
-                assigned_pts = sum([len(a.get("survey_point_ids", [])) for a in assignments])
-                if assigned_pts != len(available_points):
-                    rule = RULE_REGISTRY[RuleID.ASSIGNMENT_TOTAL_MISMATCH]
-                    correction = rule.corrective_template.format(assigned=assigned_pts, total=len(available_points))
-                    _log_in_progress(
-                        attempt_n=attempt_n, valid=False,
-                        rule_id=RuleID.ASSIGNMENT_TOTAL_MISMATCH.value,
-                        corrective_text=correction,
-                        canonical=canonical,
-                        details={"assigned": assigned_pts, "total": len(available_points)},
-                    )
-                    messages.append({"role": "assistant", "content": json.dumps(canonical)})
-                    messages.append({"role": "user", "content": correction})
-                    retries += 1
-                    continue
-
-                # ASSIGNMENT_DUPLICATE_POINT
-                all_assigned = []
-                for a in assignments:
-                    all_assigned.extend(a.get("survey_point_ids", []))
-                if len(all_assigned) != len(set(all_assigned)):
-                    rule = RULE_REGISTRY[RuleID.ASSIGNMENT_DUPLICATE_POINT]
-                    # We could find the actual duplicate, but just use template
-                    seen = set()
-                    duplicate_id = "some_point"
-                    for pid in all_assigned:
-                        if pid in seen:
-                            duplicate_id = pid
-                            break
-                        seen.add(pid)
-                    correction = rule.corrective_template.format(point_id=duplicate_id)
-                    _log_in_progress(
-                        attempt_n=attempt_n, valid=False,
-                        rule_id=RuleID.ASSIGNMENT_DUPLICATE_POINT.value,
-                        corrective_text=correction,
-                        canonical=canonical,
-                        details={"duplicate_point_id": duplicate_id},
-                    )
-                    messages.append({"role": "assistant", "content": json.dumps(canonical)})
-                    messages.append({"role": "user", "content": correction})
-                    retries += 1
-                    continue
-
-                # ASSIGNMENT_DRONE_MISSING
-                assigned_drones = [a.get("drone_id") for a in assignments]
-                missing = [d for d in active_drones if d not in assigned_drones]
-                if missing:
-                    rule = RULE_REGISTRY[RuleID.ASSIGNMENT_DRONE_MISSING]
-                    correction = rule.corrective_template.format(drone_id=missing[0])
-                    _log_in_progress(
-                        attempt_n=attempt_n, valid=False,
-                        rule_id=RuleID.ASSIGNMENT_DRONE_MISSING.value,
-                        corrective_text=correction,
-                        canonical=canonical,
-                        details={"missing_drone_id": missing[0]},
-                    )
-                    messages.append({"role": "assistant", "content": json.dumps(canonical)})
-                    messages.append({"role": "user", "content": correction})
-                    retries += 1
-                    continue
-
-                # Everything valid! Emit terminal logs.
-                terminal_outcome = (
-                    "success_first_try" if attempt_n == 1 else "corrected_after_retry"
+            # Structural Validation
+            val_res = validation_node.validate_egs_function_call(canonical)
+            if not val_res.valid:
+                rule = RULE_REGISTRY.get(val_res.failure_reason)
+                correction = rule.corrective_template.format(
+                    field_path="", message=val_res.detail
+                ) if rule else val_res.detail
+                rule_id_str = (
+                    val_res.failure_reason.value
+                    if val_res.failure_reason is not None else None
                 )
-                if validation_logger is not None:
-                    validation_logger.log(
-                        agent_id="egs",
-                        layer="egs",
-                        function_or_command="assign_survey_points",
-                        attempt=attempt_n,
-                        valid=True,
-                        rule_id=None,
-                        outcome=terminal_outcome,
-                        raw_call=canonical,
-                    )
-                if log_sink is not None:
-                    log_sink(_build_attempt_record(
-                        attempt_n=attempt_n,
-                        valid=True,
-                        rule_id=None,
-                        corrective_text=None,
-                    ))
-                return canonical
+                _log_in_progress(
+                    attempt_n=attempt_n, valid=False,
+                    rule_id=rule_id_str,
+                    corrective_text=correction,
+                    canonical=canonical,
+                    details={"detail": val_res.detail},
+                )
+                messages.append({"role": "assistant", "content": json.dumps(canonical)})
+                messages.append({"role": "user", "content": correction})
+                retries += 1
+                continue
+
+            # Semantic / Stateful Validation
+            if canonical.get("function") != "assign_survey_points":
+                correction = "You must use the assign_survey_points function."
+                _log_in_progress(
+                    attempt_n=attempt_n, valid=False,
+                    rule_id=None,
+                    corrective_text=correction,
+                    canonical=canonical,
+                )
+                messages.append({"role": "assistant", "content": json.dumps(canonical)})
+                messages.append({"role": "user", "content": correction})
+                retries += 1
+                continue
+
+            args = canonical.get("arguments", {})
+            assignments = args.get("assignments", [])
+
+            # ASSIGNMENT_TOTAL_MISMATCH
+            assigned_pts = sum([len(a.get("survey_point_ids", [])) for a in assignments])
+            if assigned_pts != len(available_points):
+                rule = RULE_REGISTRY[RuleID.ASSIGNMENT_TOTAL_MISMATCH]
+                correction = rule.corrective_template.format(assigned=assigned_pts, total=len(available_points))
+                _log_in_progress(
+                    attempt_n=attempt_n, valid=False,
+                    rule_id=RuleID.ASSIGNMENT_TOTAL_MISMATCH.value,
+                    corrective_text=correction,
+                    canonical=canonical,
+                    details={"assigned": assigned_pts, "total": len(available_points)},
+                )
+                messages.append({"role": "assistant", "content": json.dumps(canonical)})
+                messages.append({"role": "user", "content": correction})
+                retries += 1
+                continue
+
+            # ASSIGNMENT_DUPLICATE_POINT
+            all_assigned = []
+            for a in assignments:
+                all_assigned.extend(a.get("survey_point_ids", []))
+            if len(all_assigned) != len(set(all_assigned)):
+                rule = RULE_REGISTRY[RuleID.ASSIGNMENT_DUPLICATE_POINT]
+                # We could find the actual duplicate, but just use template
+                seen = set()
+                duplicate_id = "some_point"
+                for pid in all_assigned:
+                    if pid in seen:
+                        duplicate_id = pid
+                        break
+                    seen.add(pid)
+                correction = rule.corrective_template.format(point_id=duplicate_id)
+                _log_in_progress(
+                    attempt_n=attempt_n, valid=False,
+                    rule_id=RuleID.ASSIGNMENT_DUPLICATE_POINT.value,
+                    corrective_text=correction,
+                    canonical=canonical,
+                    details={"duplicate_point_id": duplicate_id},
+                )
+                messages.append({"role": "assistant", "content": json.dumps(canonical)})
+                messages.append({"role": "user", "content": correction})
+                retries += 1
+                continue
+
+            # ASSIGNMENT_DRONE_MISSING
+            assigned_drones = [a.get("drone_id") for a in assignments]
+            missing = [d for d in active_drones if d not in assigned_drones]
+            if missing:
+                rule = RULE_REGISTRY[RuleID.ASSIGNMENT_DRONE_MISSING]
+                correction = rule.corrective_template.format(drone_id=missing[0])
+                _log_in_progress(
+                    attempt_n=attempt_n, valid=False,
+                    rule_id=RuleID.ASSIGNMENT_DRONE_MISSING.value,
+                    corrective_text=correction,
+                    canonical=canonical,
+                    details={"missing_drone_id": missing[0]},
+                )
+                messages.append({"role": "assistant", "content": json.dumps(canonical)})
+                messages.append({"role": "user", "content": correction})
+                retries += 1
+                continue
+
+            # Everything valid! Emit terminal logs.
+            terminal_outcome = (
+                "success_first_try" if attempt_n == 1 else "corrected_after_retry"
+            )
+            if validation_logger is not None:
+                validation_logger.log(
+                    agent_id="egs",
+                    layer="egs",
+                    function_or_command="assign_survey_points",
+                    attempt=attempt_n,
+                    valid=True,
+                    rule_id=None,
+                    outcome=terminal_outcome,
+                    raw_call=canonical,
+                )
+            if log_sink is not None:
+                log_sink(_build_attempt_record(
+                    attempt_n=attempt_n,
+                    valid=True,
+                    rule_id=None,
+                    corrective_text=None,
+                ))
+            return canonical
 
         except AdapterError as e:
             correction = f"Return a proper JSON object. Error: {e}"

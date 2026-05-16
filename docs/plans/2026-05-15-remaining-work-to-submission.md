@@ -17,6 +17,7 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 - [x] **C2 + C3 fully assigned to Qasim 2026-05-15 (PM update):** Route probe AND adapter wiring AND PR are all Qasim. Reason: he runs the full demo on CUDA, his inner dev loop is <1 min/iteration (vs 10-30s/inference on M1), and he's already touching the integrated drone agent for the GATE 3 retest. Co-locating writer + debugger eliminates PR roundtrip and removes M1 workaround tax (env-aware device_map, slow inference loop, fp16 quirks). Kaleel still reviews the PR (drone agent code is his domain). Ibrahim provides handoff package: pointers to `kaggle_out_c2a/adapter/qasim_inference.py` (reference inference flow) and `kaggle_out_c2a/adapter/prompts.py` (parser handles SARD low-confidence quirks). Ibrahim's freed Fri/Sat-AM time pulls writeup G1-G4 forward to Friday + dashboard polish + idle-pocket pull-forward.
 - [x] **Track E moved 2026-05-15:** Captures (E1-E4) split — Beats 1-4 begin Sat PM after code complete, Beat 5 Sun. Sat morning = finish all code (PR merges, sweeps, cold-run); Sat afternoon = filming starts.
 - [x] **Schedule shape (corrected 2026-05-15):** Fri = today, code sprint. Sat AM = code complete. Sat PM = filming begins. Sun = film + edit + docs. Mon = submit by 18:00 UTC (6 hr before deadline).
+- [x] **Qasim shipped Buckets 1-3 Fri evening 2026-05-15:** C1 + C2 + C3 + C4 + C5 closed in 5 commits (`f81c3d6`, `4f1a837`, `f421f4f`, `962fc28`, `435c7e5`). **C1** standalone 3/3 victim ✅. **C3** in-process integration via `agents/drone_agent/c2a_inference.py` (293 LOC, route (b) PEFT/HF, ClippableLinear unwrap + DoRA key rename baked in) + fast-path in `DroneAgent.step()` + `--c2a-adapter-path` CLI flag + graceful fallback + 19 new tests + 3/3 integrated victim acceptance on RTX A2000 ✅. **C4** 0/5 wow-moment triggers (combined 0/7) → Phase 3c REQUIRED. **C5** p50=129s p95=143s → jump-cut confirmed. **C6** flag already shipped (`3b86d9a`); only `WRITEUP.md` §6.5 honest disclosure paragraph remains (Ibrahim). Code-complete sprint effectively finished Fri evening — Sat AM collapses to dress rehearsal + cleanup tracks (J3/J4/J5/K1).
 
 ---
 
@@ -36,22 +37,23 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 - [ ] **B2.** Record PASS/FAIL decision in `docs/decisions.md` (per L178-185) — **Thayyil** writes up the decision
 - [ ] **B3.** If FAIL → drop to 2 drones, update storyboard — Ibrahim arbitrates, Hazim updates scenario YAML
 
-### Track C — Qasim owns CUDA + adapter integration; Kaleel reviews + parallel work; Ibrahim handoff support — 4-6 hr
-**Split:** Qasim owns the full CUDA lane plus adapter wiring (single ownership — fast inner loop, no PR roundtrip). Kaleel reviews PR + ships small parallel tasks. Ibrahim ships the handoff package early today so Qasim can start C3 immediately, then pivots to writeup pull-forward.
+### Track C — STATUS: Buckets 1-3 closed Fri evening by Qasim. C6-disclosure (Ibrahim) + C7/C8 (Kaleel) remain.
+**Status as of 2026-05-15 PM:** Qasim cleared C1-C5 + C6-flag in 5 commits Fri evening. The C3 PR didn't need a Kaleel review roundtrip because the integrated 3/3 acceptance passed. Remaining: a one-paragraph writeup disclosure (Ibrahim) and Kaleel's two small parallel items if he hasn't started them.
 
 - [x] **C1.** [Qasim] GATE 3 acceptance test: `qasim_inference.py` on `placeholder_victim_01.jpg` 3× — **PASSED 3/3 `finding_type: victim`** (2026-05-15, RTX A2000 8GB). Required two inference-time fixes: ClippableLinear unwrap + DoRA key rename. `TODOS.md` entry closed.
-- [ ] **C2.** [Qasim] Route (a) vs (b) decision — runs right after C1 passes. 30-min Ollama Modelfile `ADAPTER` probe on CUDA box (`FROM gemma4:e2b` + `ADAPTER /path/to/adapter`, `ollama create`, vision smoke against `placeholder_victim_01.jpg`). Hard 1-hr cap before falling back to route (b) PEFT/HF. Route decision feeds C3 (his own next task).
-- [ ] **C3.** [Qasim] Wire C2A adapter into drone agent runtime per chosen route (`TODOS.md` L35-39)
-  - [ ] Sidecar HTTP server at `agents/vision_classifier/` wrapping `qasim_inference.py` logic (PEFT/HF route) — POST /classify, env-aware device_map (cuda first). New `vision` extra in `pyproject.toml` for FastAPI + torch + transformers + peft.
-  - [ ] Drone agent integration in `agents/drone_agent/reasoning.py`: optional `VisionClassifierClient` pre-step before Ollama call. Result appended to user prompt as classifier hint. If classifier unreachable or 5xx → graceful skip (default-to-base fallback).
-  - [ ] Parser handles SARD-style low-confidence outputs gracefully (eval shows 55% accuracy on that source) — reuse `kaggle_out_c2a/adapter/prompts.py:parse_model_output` verbatim.
-  - [ ] Unit tests for sidecar server (mocked model in CI) + drone agent integration (mocked classifier).
-  - [ ] Re-run GATE 3 acceptance **through integrated drone agent** (not standalone script) on CUDA box. **This is also Qasim — same person who shipped the integration retests it.**
-- [ ] **C4.** [Qasim] GATE 4 wow-moment Phase 5: `ml/evaluation/eval_wow_moment_trigger.py --runs 20` — paste results to `docs/plans/2026-05-12-gate4-wow-moment.md`. Independent of C3 — runs on EGS+E4B path. Can run as background task while C3 codes.
-- [ ] **C5.** [Qasim] `scripts/measure_e4b_replan_latency.py` — paste p50/p95. Background-able.
-- [ ] **C6.** [Qasim] If C4 reports <12/20 triggers → ship `--inject-overcount-once` flag on `agents/egs_agent/main.py` + writeup §6.5 disclosure
-- [ ] **C7.** [Kaleel] `command_translator.py:70` 180s timeout hoist (`TODOS.md` L41-47) — small code change, not CUDA-bound, parallel to C3
-- [ ] **C8.** [Kaleel] Pull-forward parallel work while waiting to review C3: G5 §7 collapse + J2 ml/README.md + J6 fine-tuning plan addendum. All independent.
+- [x] **C2.** ~~Route (a) vs (b) decision~~ → **Route (b) PEFT/HF chosen** (commit `962fc28`). Qasim skipped the explicit Ollama Modelfile probe because Unsloth #2290 vision regression is known-dead; went straight to known-good PEFT/HF. **Consequence: no Ollama special-prize claim available** (must drop from writeup — see G4-late).
+- [x] **C3.** ~~Wire C2A adapter into drone agent runtime~~ → Done (commit `962fc28`, Qasim). Chose **in-process** (not sidecar): new module `agents/drone_agent/c2a_inference.py` (293 LOC). Wired into `DroneAgent.step()` as fast-path before Ollama call; on victim detection + validation pass, short-circuits Ollama. CLI flag `--c2a-adapter-path` (defaults to `$C2A_ADAPTER_PATH` env or `kaggle_work_c2a/adapter/`). Two non-trivial PEFT/Unsloth fixes baked in (ClippableLinear unwrap of 232 layers + DoRA `lora_magnitude_vector.default` → `.default.weight` key rename).
+  - [x] Default-to-base fallback on adapter-load failure ✅ (`c2a=None` → Ollama-only mode, no crash)
+  - [x] Parser reuses `kaggle_out_c2a/adapter/prompts.py:parse_model_output` semantics ✅
+  - [x] 19 new unit tests in `test_c2a_inference.py` (pure-Python, M1-runnable, no CUDA) ✅
+  - [x] **Integrated GATE 3 acceptance through drone agent: 3/3 victim** ✅ (Qasim, RTX A2000)
+  - [N/A] PR review: Qasim shipped direct to main. Acceptance proved it works; Kaleel can post-review for cleanup if desired (not blocking).
+- [x] **C4.** ~~GATE 4 wow-moment Phase 5~~ → `eval_wow_moment_trigger.py --runs 5` → **0/5 ASSIGNMENT_TOTAL_MISMATCH triggers** on RTX A2000 (commit `435c7e5`). Combined with Ibrahim M1 partial: **0/7 total**. Acceptance gate (≥12/20) **FAILED** → Phase 3c `--inject-overcount-once` is REQUIRED. Eval JSON pasted to `docs/plans/2026-05-12-gate4-wow-moment.md` appendix.
+- [x] **C5.** ~~`scripts/measure_e4b_replan_latency.py`~~ → p50=129.03s, p95=143.05s on RTX A2000 (commit `435c7e5`). p95 is ~18× over the 8s camera budget → jump-cut capture confirmed as the only viable strategy. Latency table pasted to wow-moment plan appendix.
+- [x] **C6-flag.** ~~`--inject-overcount-once` flag on EGS coordinator~~ → already shipped by Ibrahim in commit `3b86d9a` (wired `main.py` → `coordinator.py` → `replanning.py` with `test_inject_overcount_flag.py`).
+- [ ] **C6-disclosure.** [Ibrahim] **NEW remaining item:** add one-paragraph honest disclosure to `WRITEUP.md` §6.5 explaining the Phase 3c injection. The base model can't naturally over-count (0/7 trigger rate on E4B exhausting retries), so the demo deliberately injects one over-count once to demonstrate the validation-and-retry loop. Honest framing per Qasim's bucket-3 ask.
+- [x] **C7.** ~~`command_translator.py:70` 180s timeout hoist~~ → Done 2026-05-15 PM (Ibrahim). New constant `COMMAND_TRANSLATOR_HTTPX_PER_ATTEMPT_TIMEOUT_S = 180.0` in `agents/egs_agent/command_translator.py` line 15 with sibling-reference comment; call site at line 82 uses it. 3/3 new tests pass in `agents/egs_agent/tests/test_command_translator_timeout.py`. Plan: `docs/plans/2026-05-15-c7-c8-ibrahim-cleanup.md` §C7.
+- [x] **C8.** ~~G5 §7 rewrite + J2 `ml/README.md` + J6 `docs/12-fine-tuning-plan.md` addendum~~ → Done 2026-05-15 PM (Ibrahim). J6: 75-line "What We Shipped" canonical section + Historical xBD divider in `docs/12-fine-tuning-plan.md`. G5: 180-line C2A narrative replaces old xBD §7 in `docs/22-writeup-draft.md`. J2: new 115-line `ml/README.md` respecting content boundary with top-level README. Cross-doc number consistency verified (77.25 / 0.78 / 97.2 / 77.5 / 55) across 4 docs. All 19 relative links resolve. Plan: `docs/plans/2026-05-15-c7-c8-ibrahim-cleanup.md` §C8.
 
 ### Track D — Ibrahim — Background retrain (own wall time)
 - [x] **D1.** ~~Let v8 smoke test finish~~ → Ran v10 smoke (varied-labels fix, 30 steps, ~15 min, green: loss 3.456→0.382). Kicked off v11 full run (300 steps, ~49 min on T4). Eval: 77.25% binary / 0.78 F1 / 55% SARD (+13pp vs v9). Published as Kaggle Model `lora-c2a-bf16/3` PUBLIC.
@@ -60,11 +62,13 @@ Sources cross-referenced: `TODOS.md`, `docs/STATUS.md`, `docs/17-feasibility-and
 ### Track D2 — Ibrahim — Pull-forward into freed Fri time (~4-5 hr afternoon/evening)
 With C3 handed to Qasim, Ibrahim's Fri afternoon + Sat AM are free. Pull writeup + cleanup work forward so Sat PM is filming-only.
 - [x] **D2.1.** ~~Refresh `WRITEUP.md` §6 with published v11 numbers~~ → Done 2026-05-15 PM. `WRITEUP.md:86` now reads: binary 77.25% / F1 0.78 (precision 0.79, recall 0.77) / C2A 97.2% / AIDER 77.5% / SARD 55%.
-- [ ] **D2.2.** Pull G2-G4 forward: strip SUBMIT-DAY HTML comment at `WRITEUP.md:80`, word-count check (≤1,500), route (b) Ollama prize-line cleanup if applicable.
-- [ ] **D2.3.** Draft `README.md` skeleton (J1 prep) with placeholder for video URL — Sun evening just swaps the URL in.
-- [ ] **D2.4.** Pre-stage Kaggle Writeup body for Thayyil (L2 dependency) — gives him a clean text to publish Sun.
-- [ ] **D2.5.** Dashboard polish if anything from H1 dress rehearsal shakes loose (Sat AM).
-- [ ] **D2.6.** Be available Sat AM for PR review
+- [ ] **D2.2.** **TOP PRIORITY — write `WRITEUP.md` §6.5 disclosure** for the Phase 3c `--inject-overcount-once` flag (Qasim's bucket-3 ask). One paragraph: explain that E4B can't naturally over-count (0/7 trigger rate combined across M1 + CUDA evidence), so the demo deliberately injects one over-count once via the `--inject-overcount-once` flag to show the validation-and-retry loop working in the camera window. Frame honestly: the validation/retry mechanism is real and runs every cycle; only the *seed* of the hallucination is deterministic for the capture.
+- [ ] **D2.3.** Strip SUBMIT-DAY HTML comment at `WRITEUP.md:80` (G2).
+- [ ] **D2.4.** Strip Ollama special-prize claim from writeup (G4-late, confirmed required since route (b) shipped).
+- [ ] **D2.5.** Word-count check (≤1,500) (G3).
+- [ ] **D2.6.** Draft `README.md` skeleton (J1 prep) with placeholder for video URL — Sun evening just swaps the URL in.
+- [ ] **D2.7.** Pre-stage Kaggle Writeup body for Thayyil (L2 dependency) — gives him a clean text to publish Sun.
+- [ ] **D2.8.** Dashboard polish if anything from H1 dress rehearsal shakes loose (Sat AM).
 
 ---
 
@@ -72,12 +76,14 @@ With C3 handed to Qasim, Ibrahim's Fri afternoon + Sat AM are free. Pull writeup
 
 **Theme:** Morning = land every line of code. Afternoon = start filming. The code freeze is at Saturday noon (or whenever AM block ends). After freeze, only docs/text/video work.
 
-### Saturday AM — Code Complete block (target: noon CDT)
+**Status update 2026-05-15 PM:** Code-complete sprint largely already happened Fri evening via Qasim's 5 commits. Sat AM block collapses to: dress rehearsal, J3/J4/J5/K1 cleanup, drone3 reliability against the now-integrated path, C6 writeup disclosure (Ibrahim), Kaleel's C7/C8 if outstanding.
 
-#### Track F — Hazim + Qasim + Ibrahim — Integration validation (~2-3 hr)
-- [ ] **F1.** [Hazim] drone3 reliability on integrated path: `scripts/run_drone3_reliability.sh` 3× — need 3/3 hits. Hazim owns the sim script + run; Qasim confirms findings flow through EGS.
-- [ ] **F2.** Integration PR merged — **Kaleel** reviews Qasim's C3 PR (drone agent code is Kaleel's domain). Ibrahim secondary-reviews if available. Once approved, either Ibrahim or Kaleel merges. Qasim then runs the integrated acceptance retest on CUDA (same person who shipped it).
-- [ ] **F3.** Adapter is locked at v3 — no retrain decision needed (see "Three things to flag up front" — v11 is shipped and public).
+### Saturday AM — Cleanup + dress rehearsal block (target: noon CDT)
+
+#### Track F — Hazim + Qasim — Integration validation (~1-2 hr — most work pre-done)
+- [ ] **F1.** [Hazim] drone3 reliability on integrated path: `scripts/run_drone3_reliability.sh` 3× — need 3/3 hits. Hazim owns the sim script + run; Qasim confirms findings flow through EGS. The integrated path now runs through `agents/drone_agent/c2a_inference.py` fast-path so this is a real test of the adapter swap.
+- [x] **F2.** ~~Integration PR review/merge~~ → Qasim shipped direct to main (`962fc28`) since the 3/3 integrated acceptance proved it. Kaleel can do an optional post-merge cleanup review if desired (non-blocking).
+- [x] **F3.** Adapter locked at v3.
 
 #### Track J-AM — Code cleanup (each owner sweeps own lane, ~1-2 hr)
 - [ ] **J3.** [Hazim] `scripts/pull_models.sh` works for both Gemma 4 tags + adapter (Ollama prize requirement IF route (a) shipped)
@@ -102,7 +108,7 @@ With C3 handed to Qasim, Ibrahim's Fri afternoon + Sat AM are free. Pull writeup
 
 #### Track G — Writeup cleanup (most pulled to Fri via Track D2; residue only)
 **G1-G4 moved to Fri (Track D2.2-D2.3) now that Ibrahim has freed Fri afternoon.** What remains on Sat:
-- [ ] **G4-late.** [Ibrahim] Final route-decision reconciliation: if Qasim's C2 ended up route (b) and writeup was drafted Fri assuming route (a), strip Ollama special-prize claim now.
+- [ ] **G4-late.** [Ibrahim] **Confirmed required:** Qasim shipped route (b) PEFT/HF (C2 done). Strip Ollama special-prize claim from `WRITEUP.md` and from any Kaggle submission form field that mentions Ollama prize. The Ollama-deployment narrative for the *base* Gemma 4 tags still stands; only the adapter-via-Ollama claim is dead.
 - [ ] **G5.** [Kaleel] Update `docs/22-writeup-draft.md` §7 — collapse to GO variant, drop §7.B + conditional banner, re-title to `## 7. Fine-Tuning`. Kaleel owns this section because it's his ML domain.
 
 ---
