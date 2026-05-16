@@ -24,8 +24,6 @@ from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from agents.egs_agent.replanning import assign_survey_points
 from agents.egs_agent.validation import EGSValidationNode
 from shared.contracts.logging import ValidationEventLogger

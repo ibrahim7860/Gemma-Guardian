@@ -1,5 +1,4 @@
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from agents.egs_agent.command_translator import translate_operator_command
 from agents.egs_agent.validation import EGSValidationNode

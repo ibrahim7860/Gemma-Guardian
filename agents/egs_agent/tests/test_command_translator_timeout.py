@@ -5,7 +5,6 @@ timeout to a module constant, regression-test that future edits don't
 sneak the literal back into the call site.
 """
 import re
-from pathlib import Path
 import inspect
 
 from agents.egs_agent import command_translator

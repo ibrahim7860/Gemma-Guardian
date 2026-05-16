@@ -6,8 +6,6 @@ import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from agents.egs_agent.coordinator import EGSCoordinator
 from agents.egs_agent.scenario_state import build_initial_egs_state
 from agents.egs_agent.validation import EGSValidationNode

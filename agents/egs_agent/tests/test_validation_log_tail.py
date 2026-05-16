@@ -11,8 +11,6 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import pytest
-
 from agents.egs_agent.scenario_state import build_initial_egs_state
 from agents.egs_agent.validation_log_tail import tail
 from shared.contracts import VERSION, validate
