@@ -626,3 +626,22 @@ Clean execution on CUDA box. Every run exhausted retries and fell through to det
 | Root cause | E4B exhausts all retry attempts → deterministic fallback |
 | Decision | **Ship Phase 3c `--inject-overcount-once`** (already implemented) with honest disclosure in WRITEUP.md §6.5 |
 | Owner of disclosure edit | Ibrahim |
+
+---
+
+## Addendum: Phase 3c regression catch + fix (2026-05-15 PM, commit `3db1ab4`)
+
+The `--inject-overcount-once` Phase 3c flag was non-functional in main between Qasim's commit `24f533b "replanning fix attempt"` (Thu 2026-05-14) and the fix in `3db1ab4` (Fri 2026-05-15 PM). Caught during C7 verification of the egs_agent test sweep — `test_inject_overcount_flag.py::test_inject_flag_on_fires_mismatch_on_attempt_one` hung at the 30s pytest-timeout; reproduced solo (no parallelism), confirming a real deadlock not a Redis flake.
+
+**Root cause:** `24f533b` added the LLM-bypass shortcut as an `if inject_overcount_first_attempt:` branch alongside the existing HTTP call (now under `else:`), but left the injection + validation + return block indented inside the `else:`. When the shortcut path ran, `canonical` got set but nothing else fired — no injection, no validation, no `retries += 1`, no `return`. Infinite loop on `await asyncio.sleep(2.0)`. In production this would have deadlocked the EGS coordinator on Beat 3c capture day; the validation banner would never render.
+
+**Fix (`agents/egs_agent/replanning.py`):**
+
+1. Dedented lines 186-327 (injection + validation + return) out of the `else:` block so both branches feed into them.
+2. Gated the shortcut to attempt 1 only via `inject_overcount_first_attempt and pending_overcount_injection`. Attempt 2 now runs the real Gemma 4 E4B call via the else branch, matching WRITEUP.md §6.5's "second-attempt Gemma 4 E4B inference … runs the real production code path" claim. (Before this gating, the shortcut applied to BOTH attempts and the §6.5 disclosure was technically false.)
+
+**Test update:** `test_inject_flag_on_only_mutates_attempt_one_then_recovers` `mock_post.await_count` 2→1 with NOTE comment — attempt 1 is the deterministic-seed shortcut (no LLM call), attempt 2 hits the mocked LLM.
+
+**Verification:** 4/4 inject tests + 104/104 full `agents/egs_agent/tests/` suite green.
+
+**Implication for capture day:** the wow-moment now behaves exactly as `WRITEUP.md` §6.5 describes — attempt 1 is a deterministic seed (saves the ~3 min E4B wait), validation rule fires real, corrective re-prompt fires real, attempt 2 is a real Gemma 4 E4B call (~3 min, jump-cut in the edit). Without this fix, Sat AM dress rehearsal would have surfaced the deadlock cold.
