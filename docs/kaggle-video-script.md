@@ -127,7 +127,7 @@ report_finding(
 
 **Visual:** Cut to a terminal window. `ollama list` runs, output shows `gemma4:e2b` and `gemma4:e4b` cached locally. Airplane-mode icon still visible.
 
-**KHALEEL (VO):** Every model. Every decision. All running locally. No cloud anywhere.
+**KHALEEL (VO):** And just to prove it — everything you just saw, every drone, every decision, ran right here on our laptop. No cloud, no internet, nothing.
 
 ---
 
@@ -135,15 +135,15 @@ report_finding(
 
 **Visual:** Cut back to the 5-up team grid. Clean framing.
 
-**KHALEEL:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
+**KHALEEL:** The next big disaster is going to happen eventually. And when it does, rescue teams shouldn't be losing people just because the cell network went down.
 
-**QASIM:** A swarm of drones that keeps coordinating offline — that could be the difference between someone being found in time, or not at all.
+**QASIM:** Having drones that can keep coordinating even when there's no internet — that could be what makes the difference between finding someone in time, or not.
 
-**HAZIM:** And that's what we want to put in the hands of real rescue teams. Faster searches, smarter coordination, fewer people falling through the cracks.
+**HAZIM:** And that's what we want to actually get into the hands of real rescue teams someday. Faster searches, fewer people slipping through.
 
-**THAYYIL:** This is just version one. There's a lot more we want to build.
+**THAYYIL:** Yeah, we're nowhere near done with this either. There's a ton more we want to build.
 
-**IBRAHIM:** FieldAgent. Built on Gemma 4. The code's on GitHub.
+**IBRAHIM:** If you want to check out the code, everything's up on GitHub. Thanks for watching.
 
 **End card:** Project name • GitHub URL • Apache-2.0 • *Built for the Gemma 4 Good Hackathon*
 
