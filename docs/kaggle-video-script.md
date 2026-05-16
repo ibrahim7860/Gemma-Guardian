@@ -1,126 +1,161 @@
 # Kaggle Submission Video — Script
 
-**Target runtime:** 2:55 (180s ceiling, 5s buffer)
+**Target runtime:** 2:53 (180s ceiling)
 **Hackathon:** Gemma 4 Good Hackathon — Kaggle × Google DeepMind
 **Submission deadline:** May 18, 2026, 23:59 UTC
 **Hosting:** YouTube (public, no login required)
 
-This is the v1 script. Companion shot list / capture day plan lives below the script.
+**Tone:** Five young developers who built something they're excited about, talking to the judges. Story-first. Technical detail only inside the demo segment. Casual, personal, every speaker finishes their own thought.
+
+**Narrative anchors** (pulled from `docs/21-demo-storyboard.md`):
+- One named recent disaster (Eaton Fire, Los Angeles, January 2025) instead of a generic montage
+- The academic-paper reframe (someone published this architecture this year using cloud GPT-4 — we made it offline with Gemma 4)
+- Proper Beat 5 offline-proof in the demo (drone keeps flying after link drop, buffers a finding, syncs on reconnect — not just an airplane-mode icon flash)
+- Multilingual Spanish command moment inside the demo (mandatory visual per storyboard)
 
 ---
 
-## [0:00 – 0:12]  COLD OPEN — Disaster Montage *(12s, no narration)*
+## [0:00 – 0:10]  COLD OPEN — Disaster News *(10s, no narration)*
 
-**Visual:** Rapid cuts of real disaster footage — Türkiye-Syria earthquake rubble, Maui wildfires, Helene flooding. News-anchor audio bleeds through low and clipped. Three text overlays flash, one per cut:
+**Visual:** Real news footage from the **Eaton Fire, Los Angeles, January 2025**. Anchor clips on mute, news chyrons visible, then NASA SVS imagery of the burn scar ([svs.gsfc.nasa.gov/5558](https://svs.gsfc.nasa.gov/5558/)). Three statistic overlays flash in sequence:
 
-> "Cell towers down across 4 counties."
-> "Search teams operating blind."
-> "First 72 hours are critical."
+> "Eaton Fire — January 2025"
+> "17 lives lost. 9,000+ structures destroyed."
+> "Cell coverage collapsed across the foothills in the first hour."
 
-**Audio:** News chatter fades to a single beat of silence.
+**Audio:** Real news-anchor audio bleeds through low, then fades to a single beat of silence.
 
 ---
 
-## [0:12 – 0:25]  STAKES — Drone POV *(13s)*
+## [0:10 – 0:22]  STAKES — Drone POV *(12s, no narration)*
 
-**Visual:** Aerial drone footage over collapsed buildings. Slow tilt-down reveals a person on a rooftop waving for help. Hold on the figure.
+**Visual:** Aerial drone footage over fire-damaged neighborhoods and collapsed buildings. Slow tilt-down reveals a person on a rooftop or near rubble, waving for help. Hold on the figure for two beats.
 
 **Text overlay (large, centered):**
-> 3.6 billion people live in climate-vulnerable regions.
-> When the network dies, so does coordination.
+> 3.6 billion people live in disaster-vulnerable regions.
+> And when disaster hits, the cell towers go first.
 
 ---
 
-## [0:25 – 0:55]  TEAM + PROBLEM *(30s)*
+## [0:22 – 0:52]  WHY WE BUILT THIS *(30s)*
 
-**Visual:** Cut to a 5-up grid of all team webcams for ~2s, then settle on the speaker.
+**Visual:** 5-up grid of all team webcams for ~2s, then cuts to whoever is speaking.
 
-**IBRAHIM:** Hey, we're the team behind FieldAgent. So the thing that kept bugging us — basically every serious disaster-response AI out there runs in the cloud. Which works great, until a hurricane takes out the cell towers.
+**IBRAHIM:** Hey, we're the team behind FieldAgent.
 
-**THAYYIL:** Which is the worst possible time for it to fail, right? The first 72 hours after a disaster hits are when most rescues actually happen.
+**THAYYIL:** Watching what happened with the Eaton Fire really got to us. Like — all this technology built to help people in disasters, and the second the cell towers go down, it's basically useless.
 
-**HAZIM:** So we figured, what if you just put the AI directly on the drones themselves? That way it doesn't really matter what the network is doing — everything just keeps working.
+**HAZIM:** And that's the worst possible time for it to fail. The first few hours after a disaster hits are when most rescues actually happen.
 
-**Lower-third:** *FieldAgent — fully offline disaster response, powered by Gemma 4*
-
----
-
-## [0:55 – 1:30]  HOW IT WORKS *(35s)*
-
-**Visual:** Simple architecture diagram animates in — drones (Layer 1) → Edge Ground Station (Layer 2) → operator dashboard (Layer 3). A cloud icon appears, then is crossed out with a red ✕.
-
-**QASIM:** So under the hood, every drone is running Gemma 4 E2B for the vision and reasoning, all on the device itself. Then the bigger E4B model sits at our edge ground station handling the swarm-level coordination. Both completely offline.
-
-**KHALEEL:** We also fine-tuned a victim-detection adapter on real disaster aerial imagery. So when a drone actually spots a survivor, Gemma fires off a structured call and the operator sees it on their dashboard pretty much instantly.
-
-**THAYYIL:** And the part we're really proud of is the validation layer. Every output Gemma generates gets checked against a set of hard rules — so if it hallucinates something, we catch it and make it retry before anything actually ships.
-
-**Visual cut:** function-call JSON appears → red ✕ → corrective re-prompt → green ✓
+**KHALEEL:** So we wanted to build something that actually still works when everything else breaks. Something that could genuinely help save lives.
 
 ---
 
-## [1:30 – 2:30]  LIVE DEMO *(60s — voice-over only, screen recording)*
+## [0:52 – 1:20]  HOW WE SOLVED IT *(28s)*
 
-**Visual:** Screen recording of the actual Flutter dashboard. Three drones tracking across the aerial base map.
+**Visual:** Simple animated graphic — a cloud icon appears, gets crossed out, replaced by a drone with a tiny "AI" chip glowing inside it. Then three drones connected to each other (not to the cloud).
 
-**IBRAHIM (VO):** Okay, so what you're looking at here is three drones surveying a simulated disaster zone. The whole demo is running with the wifi off — everything's happening locally on our laptop.
+**QASIM:** Honestly, the idea is pretty simple. Instead of having the drones rely on the internet to think, we just put the AI directly on the drones themselves.
 
-**Visual overlay** (top-right, ~2s): macOS/Windows airplane-mode indicator — *real* wifi-off icon, captured for real.
+**THAYYIL:** We actually found a paper from earlier this year that proposed a similar setup — but theirs needed cloud GPT-4 to work. We took the same architecture and made it run on Gemma 4 locally. Completely offline.
 
-**IBRAHIM (VO):** And there — drone one just picked up a survivor.
-
-**Visual:** C2A adapter fires. Camera frame highlights the victim. Finding card pops on dashboard — severity, GPS, confidence, image.
-
-**THAYYIL (VO):** The cool part is that detection happened entirely on the drone itself. No server, no API call, no internet — just Gemma running on the device.
-
-**Visual:** Operator clicks approve. Card moves to *Approved*.
-
-**IBRAHIM (VO):** Now I'm going to take drone three offline and see how the swarm reacts.
-
-**Visual:** Drone 3 marker turns red. EGS triggers a replan. The validation banner flashes red at the top — *ASSIGNMENT_TOTAL_MISMATCH detected* — then green — *retry succeeded*.
-
-**HAZIM (VO):** And that banner at the top is the part we love — that's Gemma 4 actually catching its own mistake during the replan. The validation layer rejected the first plan, sent it back with the constraint, and the corrected version went out to the remaining drones.
-
-**Visual:** Drones one and two redistribute survey points and continue. Path closes in on the survivor's location.
+**IBRAHIM:** So now the drones can see, think, talk to each other, coordinate rescue work — even with zero internet for miles.
 
 ---
 
-## [2:30 – 2:55]  CLOSE *(25s)*
+## [1:20 – 2:25]  THE DEMO *(65s — voice-over on screen recording)*
 
-**Visual:** Cut back to the 5-up team grid. Clean, even framing.
+**Visual:** Live screen recording of the actual Flutter dashboard. Three drones tracking across the aerial base map. *"Software simulation"* caption in the bottom-right corner throughout this segment (honest disclosure per storyboard).
 
-**KHALEEL:** Honestly, working on this has been one of the coolest things I've done. Knowing it could actually help in a real disaster — that means a lot.
+### Setup *(0:00–0:05 of demo, ~5s)*
 
-**QASIM:** Yeah, our whole bet was that on-device AI is finally ready for safety-critical work. And working with Gemma 4 kind of proved that to us.
+**Visual overlay** (top-right, holds ~2s): real macOS/Windows airplane-mode icon, captured with wifi actually off.
 
-**HAZIM:** This is just our v1 too — we'd love to take it further and get it onto real hardware.
+**IBRAHIM (VO):** Okay, so this is the actual system running. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
 
-**THAYYIL:** Thanks so much for checking out our project, we really appreciate it.
+### Drone spots a survivor *(~12s)*
 
-**IBRAHIM:** Yeah that's FieldAgent. Thanks for watching.
+**Visual:** Drone one's camera frame highlights a victim. Finding card pops on the dashboard. Inset overlay shows the actual Gemma function call:
+```
+report_finding(
+  type="victim",
+  severity=4,
+  confidence=0.78,
+  visual_description="Person prone,
+    partially covered by debris..."
+)
+```
 
-**End card:** Project name • GitHub URL • *Built for the Gemma 4 Good Hackathon*
+**THAYYIL (VO):** Right there — drone one just picked up a survivor. That's Gemma analyzing the camera frame, deciding it's a person who needs help, and producing a structured report — the operator sees it on the dashboard instantly.
+
+### Multilingual command *(~10s)*
+
+**Visual:** Operator types in Spanish: *"drone 2, regresa a la base"*. Dashboard shows Gemma's translation popping out as a structured `recall_drone()` call. Drone 2 turns around and heads home.
+
+**HAZIM (VO):** Now the operator's typing a command in Spanish. Gemma understands it, translates it into the right action, and sends drone two back to base.
+
+### The wow moment *(~15s)*
+
+**Visual:** Drone 3 marker turns red. EGS triggers a replan. The validation banner appears at the top:
+- **Attempt 1 — FAILED:** *"Your assignments cover 27 points but 25 are available. Reassign so every point is covered exactly once."*
+- **Attempt 2 — PASSED.**
+
+**QASIM (VO):** And this is one of our favorite moments. Gemma's planning a re-coordination and actually makes a mistake — but our validation layer catches it instantly and corrects it before anything ships.
+
+### Beat 5 — offline proof *(~15s)*
+
+**Visual:** Operator runs `sudo ifconfig en0 down`. EGS LINK SEVERED banner appears. Drone 3 gets a STANDALONE badge. Drone 3 keeps flying. Sidecar log shows "finding produced (buffered)." Then operator runs `sudo ifconfig en0 up` — banner clears, the buffered finding pops onto the dashboard, victim count chip ticks up by one.
+
+**IBRAHIM (VO):** Now I'm dropping drone three's connection completely. It keeps flying, finds another survivor while it's offline, and the second it reconnects — that finding shows up on the dashboard. Nothing lost.
+
+### Local-only proof *(~8s)*
+
+**Visual:** Cut to a terminal window. `ollama list` runs, output shows `gemma4:e2b` and `gemma4:e4b` cached locally. Airplane-mode icon still visible.
+
+**KHALEEL (VO):** Every model. Every decision. All running locally. No cloud anywhere.
+
+---
+
+## [2:25 – 2:53]  WHAT THIS COULD MEAN *(28s)*
+
+**Visual:** Cut back to the 5-up team grid. Clean framing.
+
+**KHALEEL:** Honestly, building this has been one of the most meaningful things I've worked on. Knowing it could one day actually help save lives — that means a lot to all of us.
+
+**QASIM:** We genuinely think this could change how emergency response works after a disaster. Faster rescues, fewer people slipping through the cracks.
+
+**HAZIM:** And this is just our v1 — we'd love to take it to real hardware and put it in the hands of teams who actually need it.
+
+**THAYYIL:** Thanks so much for checking out our project.
+
+**IBRAHIM:** That's FieldAgent. The code's on GitHub — thanks for watching.
+
+**End card:** Project name • GitHub URL • Apache-2.0 • *Built for the Gemma 4 Good Hackathon*
 
 ---
 
 # Production Notes
 
-## Speaker assignments
+## Speaker distribution
 
-| Segment | Speakers | Role rationale |
+Every speaker appears at least twice. Demo voice-over rotates speakers per beat so the demo doesn't feel like one person narrating a movie.
+
+| Segment | Speakers (in order) | Notes |
 |---|---|---|
-| Team + Problem (0:25) | Ibrahim → Thayyil → Hazim | Ibrahim opens (project lead). Thayyil + Hazim land the stakes punch. |
-| How it works (0:55) | Qasim → Khaleel → Thayyil | Qasim on architecture. Khaleel on the LoRA. Thayyil on validation. |
-| Demo VO (1:30) | Ibrahim + Thayyil + Hazim | Ibrahim narrates beats. Thayyil + Hazim drop the credibility lines. |
-| Close (2:30) | All five, one line each | Everyone lands. |
+| Why we built this (0:22) | Ibrahim → Thayyil → Hazim → Khaleel | Ibrahim opens; Thayyil delivers the Eaton Fire personal hook; Hazim lands the timing stake; Khaleel closes the segment on motivation. |
+| How we solved it (0:52) | Qasim → Thayyil → Ibrahim | Qasim explains the on-device idea; Thayyil mentions the paper reframe casually; Ibrahim closes with the offline payoff. |
+| Demo VO (1:20) | Ibrahim → Thayyil → Hazim → Qasim → Ibrahim → Khaleel | Beats cycle so the demo feels like a group narration, not a single host. |
+| Close (2:25) | Khaleel → Qasim → Hazim → Thayyil → Ibrahim | Personal-meaning → societal impact → next steps → thanks → sign-off. |
 
-Khaleel's segment-3 line is a placeholder — assign to whoever owns the C2A LoRA workstream. Same for any other swap.
+## Capture-day flags
 
-## Three flags for capture day
-
-1. **News clips & disaster B-roll must be license-clean.** Pull from Pexels, Coverr, NASA, USGS, or Reuters' free-use archive. Do not lift directly from CNN / BBC / Al Jazeera broadcasts. The rooftop-survivor shot needs to be either stock or staged.
-2. **The "airplane mode" overlay must be real.** Actually toggle wifi off on the demo machine and screen-record it. The credibility moment costs nothing and proves the offline claim — judges will look for exactly this.
-3. **The wow-moment validation banner uses the deterministic-injection path.** Per `docs/STATUS.md`, natural triggers landed 0/7 on the RTX A2000. Use the `--inject-overcount-once` flag for capture. The validation *behavior* is real; only the trigger is deterministic. Disclose this in the writeup, not the video.
+1. **Eaton Fire footage must be license-clean.** Use NASA SVS imagery directly ([svs.gsfc.nasa.gov/5558](https://svs.gsfc.nasa.gov/5558/) is U.S. government work, free to use). For news anchor B-roll, use AP / Reuters free-use archive or Pexels disaster stock — don't lift directly from CNN / KTLA broadcasts.
+2. **The airplane-mode overlay must be real.** Toggle wifi off on the demo machine and screen-record it for real. Free credibility moment.
+3. **The wow-moment banner has three capture options** (from storyboard `docs/21-demo-storyboard.md` Sub-beat 3c):
+   - Live trigger via `scripts/check_wow_moment.sh` (preferred — natural)
+   - Synth-WS PNGs already committed: [`docs_assets/dashboard-validation-wow-failed.png`](../docs_assets/dashboard-validation-wow-failed.png) + [`docs_assets/dashboard-validation-wow-passed.png`](../docs_assets/dashboard-validation-wow-passed.png) — splice in as still frames if live trigger fails
+   - `agents/egs_agent/main.py --inject-overcount-once` for deterministic live capture
+4. **Beat 5 capture rig already exists.** [`scripts/run_beat5_capture.sh`](../scripts/run_beat5_capture.sh) drives the wifi-down/wifi-up sequence; verifier is [`scripts/check_beat5.py`](../scripts/check_beat5.py). Reference video at [`docs_assets/beat5-offline-proof.mp4`](../docs_assets/beat5-offline-proof.mp4).
 
 ---
 
@@ -128,31 +163,35 @@ Khaleel's segment-3 line is a placeholder — assign to whoever owns the C2A LoR
 
 ## Pre-capture checklist (do the day before)
 
-- [ ] Pull stock disaster B-roll (Pexels / Coverr / NASA) — minimum 6 clips, 5–10s each
-- [ ] Pull rooftop-survivor / aerial drone shot (stock or staged)
+- [ ] Pull NASA SVS Eaton Fire imagery + supporting news B-roll
+- [ ] Pull aerial drone footage of disaster aftermath (license-clean, ~10s clip)
+- [ ] Pull rooftop-survivor / aerial-distress shot (stock or staged)
 - [ ] Confirm GitHub repo URL for end card
-- [ ] Build architecture-diagram graphic (3 layers + crossed-out cloud)
-- [ ] Build function-call JSON → ✕ → ✓ animation graphic
-- [ ] Test webcam framing for all 5 — agree on background / lighting / shirt color (avoid clashing logos)
-- [ ] Confirm `--inject-overcount-once` flag works on capture machine
+- [ ] Build the cloud-→-drone animation graphic for "How we solved it"
+- [ ] Test webcam framing for all 5 — agreed background / lighting / shirt color (avoid clashing logos)
+- [ ] Confirm `scripts/check_wow_moment.sh` and `--inject-overcount-once` flag both work on the capture machine
+- [ ] Confirm `scripts/run_beat5_capture.sh` runs cleanly end-to-end
 - [ ] Smoke-test full demo path on capture machine, wifi off, three drones
 - [ ] Pre-record one practice take of every spoken line for pacing
+- [ ] Confirm `ollama list` shows both `gemma4:e2b` and `gemma4:e4b` cached
 
 ## Capture order (shoot what's hardest first)
 
 ### Block A — Demo screen recording (60–90 min)
 Hardest to get right. Shoot first while operator is fresh.
 
-1. **Take 1 — clean baseline.** wifi off, three drones, run scenario end-to-end. Even if it's not the keeper, you'll know the timing.
-2. **Take 2 — wow-moment.** Same scenario, fire `--inject-overcount-once` at the replan moment. Capture the banner red→green.
-3. **Take 3 — backup.** One more clean run for safety.
-4. **Cutaway shots.** Zoom-in on the finding card, the airplane-mode indicator, the validation banner. Shoot these isolated for B-roll inserts.
+1. **Take 1 — clean baseline.** Wifi off, three drones, full scenario end-to-end. Even if it's not the keeper, you'll know the timing.
+2. **Take 2 — Spanish moment isolated.** Run multilingual scenario cleanly.
+3. **Take 3 — wow moment.** Run `scripts/check_wow_moment.sh` until it greenlights, or fire `--inject-overcount-once` at the replan moment. Capture the red→green banner.
+4. **Take 4 — Beat 5 offline-proof.** Use `scripts/run_beat5_capture.sh`. Capture the full F1→F8 sequence.
+5. **Take 5 — backup clean run.** One more end-to-end for safety.
+6. **Cutaway shots.** Zoom in on the finding card, airplane-mode indicator, validation banner, the `report_finding()` JSON overlay, `ollama list` terminal output. Shoot isolated for B-roll inserts.
 
 ### Block B — Webcam talking heads (45 min)
 All 5 in one session if possible. Pin one Zoom-style window per person.
 
 1. Each person reads their line 3× (cold, warm, best). Capture all takes.
-2. Capture the 5-up grid silent footage for the 0:25 intro and the 2:30 close.
+2. Capture the 5-up grid silent footage for the 0:22 intro and the 2:25 close.
 3. Capture each person nodding / listening for cutaways during voice-over sections.
 
 ### Block C — Voice-over (30 min)
@@ -160,9 +199,16 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 
 ## Edit pass checklist
 
-- [ ] Total runtime ≤ 3:00 (target 2:55)
+- [ ] Total runtime ≤ 3:00 (target 2:53)
+- [ ] Eaton Fire date stamp visible for ≥ 1.5s
 - [ ] Airplane-mode indicator visible for ≥ 1.5s
-- [ ] Validation banner red→green visible for ≥ 2s
+- [ ] `report_finding()` JSON visible on screen for ≥ 2s
+- [ ] Spanish command text visible on screen
+- [ ] Validation banner red → green visible for ≥ 2s, corrective text legible
+- [ ] EGS LINK SEVERED banner + STANDALONE badge clearly visible
+- [ ] Victim-count chip ticking from N to N+1 after reconnect — hold ≥ 1.5s (the money shot)
+- [ ] `ollama list` output legible for ≥ 2s
+- [ ] "Software simulation" subtle caption present throughout demo segment
 - [ ] All five team members appear on camera
 - [ ] All five team members speak at least one line
 - [ ] End card holds for ≥ 3s with GitHub URL legible
@@ -174,7 +220,7 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 
 - [ ] YouTube upload, **Public** (not Unlisted — judges shouldn't need a link forwarded)
 - [ ] Video title: "FieldAgent — Offline Disaster-Response Swarm Powered by Gemma 4"
-- [ ] Description includes GitHub repo URL, team names, hackathon track
+- [ ] Description includes GitHub repo URL, team names, hackathon track, reference paper citation (Nguyen, Truong, Le 2026, arXiv 2601.14437)
 - [ ] Thumbnail: validation banner (red→green) split-screen with team grid
 - [ ] Captions enabled (auto-generated is fine if reviewed for accuracy)
 - [ ] Confirm video plays without login from incognito session
@@ -186,12 +232,12 @@ Re-record demo VO clean over a quiet mic, even if the original demo audio is fin
 
 | Segment | Duration | Spoken words | Pace check |
 |---|---|---|---|
-| Cold open | 12s | 0 | n/a |
-| Stakes | 13s | 0 | n/a |
-| Team + Problem | 30s | ~75 | ~150 wpm ✓ (casual, conversational) |
-| How it works | 35s | ~95 | ~163 wpm — slightly brisk, trim if needed |
-| Demo VO | 60s | ~135 | ~135 wpm ✓ (slower deliberate VO over screen) |
-| Close | 25s | ~70 | ~168 wpm — tight; if anyone runs long, trim Hazim or Khaleel |
-| **Total** | **175s** | **~375** | 5s buffer for transitions; casual delivery is forgiving |
+| Cold open | 10s | 0 | n/a |
+| Stakes | 12s | 0 | n/a |
+| Why we built this | 30s | ~75 | ~150 wpm ✓ |
+| How we solved it | 28s | ~75 | ~160 wpm ✓ |
+| Demo VO | 65s | ~140 | ~130 wpm ✓ (slower, deliberate VO) |
+| Close | 28s | ~75 | ~160 wpm — slight push; trim Hazim line if needed |
+| **Total** | **173s** | **~365** | 7s buffer for transitions and breathing |
 
-**On the close timing:** five people in 25s is genuinely tight. If a take feels rushed, you've got two outs — extend the close to 30s by trimming the demo VO by 5s (drop the "And there — drone one just picked up a survivor" beat and let the visual carry it), or cut Hazim's close line since he already speaks in the demo VO.
+**On the close timing:** if any take in the close runs long, the easiest cut is to merge Hazim's line into Khaleel's ("…that means a lot to all of us — and we'd love to take it to real hardware next").
