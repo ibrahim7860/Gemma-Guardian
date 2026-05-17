@@ -1,4 +1,4 @@
-# FieldAgent — Technical Writeup
+# FieldAgent
 
 *Gemma 4 Good Hackathon submission. Repo: [`github.com/ibrahim7860/Gemma-Guardian`](https://github.com/ibrahim7860/Gemma-Guardian). Team: Ibrahim Ahmed, Hazim Kuniyil, Muhammad Kaleelurrahman, Qasim Bhutta, Muhammad Thayyil.*
 
@@ -75,7 +75,13 @@ Demo trigger: the EGS assignment uses an awkward count (25 points / 3 drones / o
 
 Second property: under VRAM pressure when E4B is slow or unreachable, the EGS falls through max-retries to deterministic round-robin instead of raising. The swarm keeps operating even when its LLM hangs.
 
-## 6. Fine-Tuning
+**Demo disclosure.** For Beat 3c we use a `--inject-overcount-once` flag on the EGS coordinator — base Gemma 4 E4B produced 0 natural `ASSIGNMENT_TOTAL_MISMATCH` triggers across 7 eval runs (M1 + RTX A2000), so the flag deterministically seeds the first attempt's over-count (27 of 25 points). Downstream — rule firing, corrective re-prompt, second-attempt inference, validation pass — runs production code; only the seed is scripted. A full E4B retry-loop replan measures p50 ≈ 30s on RTX 3090 (`measure_e4b_replan_latency.py`, n=10), still exceeding the 8s camera budget, so Beat 3c jump-cuts from "validation rejected" to "second attempt accepted" rather than rolling in real time.
+
+## 6. Engineering Challenges
+
+Three problems shaped the implementation. **(1) Small-LLM hallucination under structured output** — Algorithm 1 with corrective re-prompts (§5). **(2) Base Gemma 4 E2B reads our wow-moment fixture as a damaged building, not a victim** — C2A LoRA fine-tune (§7). **(3) Unsloth's GGUF vision-tower export regresses on `unslothai/unsloth#2290`**, so the C2A adapter loads via PEFT/HF Transformers in-process while base Gemma 4 tags ship via Ollama; two Unsloth↔PEFT shims required (`Gemma4ClippableLinear` unwrap + DoRA magnitude-vector key rename).
+
+## 7. Fine-Tuning
 
 GATE 3 was `report_finding(type='victim')` on a FEMA Hurricane Katrina aerial. Base Gemma 4 E2B reads it as a damaged building, so we trained a vision LoRA for human detection in disaster aerials.
 
@@ -87,19 +93,15 @@ GATE 3 was `report_finding(type='victim')` on a FEMA Hurricane Katrina aerial. B
 
 **Runtime.** Unsloth's GGUF vision-tower export regresses on [#2290](https://github.com/unslothai/unsloth/issues/2290), so the adapter runs via PEFT/HF Transformers while base Gemma 4 tags ship via Ollama. The adapter runs alongside, not through, Ollama, softening but not invalidating the deployment narrative.
 
-## 6.5 Wow-Moment Disclosure: Deterministic Hallucination Seed
-
-The validation-and-retry loop is real and runs on every EGS replan cycle in production. However, base Gemma 4 E4B does not naturally over-count assignments at a rate fit for an 8-second camera window: across 7 combined eval runs (2 on M1 16GB + 5 on RTX A2000 8GB CUDA, `eval_wow_moment_trigger.py`), the base model produced **0 `ASSIGNMENT_TOTAL_MISMATCH` triggers** and falls through to the deterministic round-robin fallback. For Beat 3c we use a `--inject-overcount-once` flag on the EGS coordinator that mutates the *first* replan attempt only; everything downstream (validation rule evaluation, corrective re-prompt, second-attempt Gemma 4 E4B inference, validation pass) runs the real production code path. The validator and re-prompt mechanism are not staged. Only the *seed* of the hallucination is deterministic, for capture reproducibility. Without the flag the same code path still runs every cycle; it just doesn't produce a hallucination on demand inside the camera window. Latency forces the framing: a single E4B full-retry-loop replan measures p50 ≈ 30.34s / p95 ≈ 32.44s on a 24GB RTX 3090 (`measure_e4b_replan_latency.py`, n=10, 4.3× faster than the RTX A2000 8GB baseline of p50 129s / p95 143s, where VRAM swap thrash dominated). Even with proper VRAM headroom the full retry loop still exceeds the 8s camera budget, so Beat 3c jump-cuts from "validation rejected" to "second attempt accepted" instead of rolling in real time.
-
-## 7. Honest Limitations
+## 8. Honest Limitations
 
 No drone in this project has ever flown. `sim/waypoint_runner.py` interpolates GPS along a YAML track; `sim/frame_server.py` serves pre-recorded JPEGs. The stack above the simulation tier is the same code that would run on a Jetson Orin NX per drone. Mesh is software dropout, not WiFi multipath. We run 2–3 drones, not the paper's 8 or 12; scaling is hardware, not architectural. Resilience events (drone failure, link drop, fire spread) are scripted YAML; the swarm's *response* is genuine. Public-domain FEMA / USFWS aerials serve as the fixture set; none show identifiable human bodies, so the validator-fallback path and mock-Ollama mode jointly guarantee a capture-day artifact when the base model conservatively chooses `continue_mission`. Full accounting in `docs/16-mocks-and-cuts.md`.
 
-## 8. Reproducibility
+## 9. Reproducibility
 
 Hardware floor: any laptop with Python 3.11+, Redis 7+, and Ollama. NVIDIA GPU optional; Apple Silicon via Metal supported with the tuning recipe in `docs/plans/2026-05-12-drone3-reliability-capture.md`. Setup is `uv sync --all-extras` plus `scripts/pull_models.sh` for both Gemma 4 tags. The launcher (`scripts/run_full_demo.sh disaster_zone_v1`) brings up Redis, sim, agents, EGS, bridge, and dashboard in one tmux session. No API keys, no egress, no cloud account. A judge with no internet can run the full system.
 
-## 9. Conclusion
+## 10. Conclusion
 
 Agentic search-and-rescue can run entirely on-device. The edge-enabled architecture from Nguyen et al. (2026) holds when the cloud LLM is replaced with on-device Gemma 4: validation still catches hallucinations, the swarm still coordinates through dropout, the operator drives the system in their own language. The first hour of every disaster is the hour the cloud is unreachable.
 
