@@ -39,7 +39,7 @@ Per-Drone Agents (×2–3) — Gemma 4 E2B + LangGraph 5-node agent
 Simulation — sim/waypoint_runner.py + frame_server.py (scenario YAML)
 ```
 
-Each drone runs a five-node LangGraph agent (Perception → Reasoning → Action → Memory → Coordination) driven by Gemma 4 E2B. The EGS is a LangGraph coordinator backed by Gemma 4 E4B that allocates survey points, replans on drone failure or link drop, translates operator commands, and dedupes findings. The dashboard is the only component a human touches. What we ship is what would deploy, modulo swapping the simulation tier for hardware drivers.
+Each drone runs a five-node LangGraph agent (Perception → Reasoning → Validation → Action → Memory) driven by Gemma 4 E2B. The EGS is a LangGraph coordinator backed by Gemma 4 E4B that allocates survey points, replans on drone failure or link drop, translates operator commands, and dedupes findings. The dashboard is the only component a human touches. What we ship is what would deploy, modulo swapping the simulation tier for hardware drivers.
 
 ## 4. Gemma 4 Capabilities — Load-Bearing, Not Decorative
 
