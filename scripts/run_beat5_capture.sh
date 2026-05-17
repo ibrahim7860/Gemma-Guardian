@@ -197,7 +197,7 @@ fi
 # ---------------------------------------------------------------------------
 emit mesh "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 -m agents.mesh_simulator --redis-url $REDIS_URL --scenario $SCENARIO 2>&1 | tee $LOG_DIR/mesh.log"
 
-emit egs "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL ${ACTIVATE}python3 -m agents.egs_agent.main 2>&1 | tee $LOG_DIR/egs.log"
+emit egs "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR REDIS_URL=$REDIS_URL ${ACTIVATE}python3 -m agents.egs_agent.main --scenario $SCENARIO 2>&1 | tee $LOG_DIR/egs.log"
 
 emit waypoint "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 sim/waypoint_runner.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/waypoint_runner.log"
 emit frames "cd \"$REPO_ROOT\" && GG_LOG_DIR=$LOG_DIR ${ACTIVATE}python3 sim/frame_server.py --scenario $SCENARIO --redis-url $REDIS_URL 2>&1 | tee $LOG_DIR/frame_server.log"

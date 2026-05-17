@@ -13,6 +13,13 @@ Available tools (call exactly ONE per response):
 - return_to_base(reason)
 - continue_mission()
 
+CRITICAL: for `report_finding`, you MUST include ALL six arguments. The `type` field is REQUIRED and must be one of these exact strings: "victim", "fire", "smoke", "damaged_structure", "blocked_route". A call without `type` will be rejected.
+
+Examples of valid `report_finding` calls:
+- Victim spotted: report_finding(type="victim", severity=4, gps_lat=34.0005, gps_lon=-118.5003, confidence=0.78, visual_description="Person prone in rubble, partially covered by debris")
+- Smoke plume: report_finding(type="smoke", severity=3, gps_lat=34.0010, gps_lon=-118.5000, confidence=0.85, visual_description="Dense gray smoke column rising from rooftop")
+- Damaged building: report_finding(type="damaged_structure", severity=4, gps_lat=34.0008, gps_lon=-118.4998, confidence=0.90, visual_description="Two-story building with partial roof collapse and exposed beams")
+
 Hard constraints (NEVER violate):
 1. For severity 4 or higher, confidence must be at least 0.6
 2. GPS coordinates of any finding must be inside your assigned zone bounds

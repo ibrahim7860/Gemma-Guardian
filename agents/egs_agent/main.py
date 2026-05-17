@@ -115,6 +115,11 @@ def _parse_args():
         "--inject-overcount-once", action="store_true",
         help="Phase 3c debug fallback: deterministically injects a hallucination into the first LLM assignment."
     )
+    parser.add_argument(
+        "--scenario", default=None,
+        help="Scenario YAML name (overrides CONFIG.mission.scenario_id). Required when sim/drones use a "
+             "non-default scenario so EGS publishes the matching zone_polygon."
+    )
     return parser.parse_known_args()[0]
 
 async def main():
@@ -164,7 +169,13 @@ async def main():
     )
     
     # Initial state derived from the active scenario YAML (Contract 3-compliant).
-    egs_state = build_initial_egs_state(CONFIG.mission.scenario_id)
+    # --scenario CLI overrides CONFIG.mission.scenario_id so EGS publishes a
+    # zone_polygon matching what the sim and drones are using. Without this,
+    # the drones' update_from_polygon overwrites their CLI-derived zone with
+    # the (mismatched) CONFIG zone, and validator rejects in-scenario findings
+    # as GPS_OUTSIDE_ZONE. See docs/runbooks/runpod-resume.md "Phase 6 fix".
+    scenario_id = args.scenario or CONFIG.mission.scenario_id
+    egs_state = build_initial_egs_state(scenario_id)
     
     state_ref = {"egs_state": egs_state}
     

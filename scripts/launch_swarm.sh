@@ -180,18 +180,31 @@ emit_if_exists mesh "agents/mesh_simulator/main.py" \
 # ModuleNotFoundError under the bare-script form. Mirrors the drone agent's
 # `python3 -m agents.drone_agent` pattern on line 165 and the working EGS
 # invocation in scripts/run_beat5_capture.sh.
-EGS_ARGS=""
+EGS_ARGS="--scenario $SCENARIO"
 if [ "${INJECT_OVERCOUNT_ONCE:-0}" -eq 1 ]; then
-  EGS_ARGS="--inject-overcount-once"
+  EGS_ARGS="$EGS_ARGS --inject-overcount-once"
 fi
 emit_if_exists egs "agents/egs_agent/main.py" \
   "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m agents.egs_agent.main $EGS_ARGS 2>&1 | tee $LOG_DIR/egs.log"
 
 # --- Drone agents (Kaleel) -------------------------------------------------
+# GG_DRONE_STAGGER_S: pause between successive drone agent launches. C2A
+# loads eagerly in DroneRuntime.__init__ (~7.4 GB steady, plus a transient
+# spike during bitsandbytes 4-bit quantization of the HF base). Launching
+# 3 agents back-to-back stacks the transient loads and can OOM even when
+# the steady state fits. Default 0 for fast dev/CI; set to 60 on capture
+# day for safe sequential warm-up.
+DRONE_STAGGER_S="${GG_DRONE_STAGGER_S:-0}"
 IFS=',' read -ra DRONE_ARRAY <<< "$DRONES"
+_first_drone=1
 for ID in "${DRONE_ARRAY[@]}"; do
+  if [ "$_first_drone" -eq 0 ] && [ "$DRONE_STAGGER_S" -gt 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+    echo "[stagger] sleeping ${DRONE_STAGGER_S}s before launching drone $ID (GG_DRONE_STAGGER_S)"
+    sleep "$DRONE_STAGGER_S"
+  fi
   emit_if_exists "$ID" "agents/drone_agent/__main__.py" \
     "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m agents.drone_agent --drone-id $ID --scenario $SCENARIO 2>&1 | tee $LOG_DIR/$ID.log"
+  _first_drone=0
 done
 
 # --- WebSocket bridge (Ibrahim) ---------------------------------------------
