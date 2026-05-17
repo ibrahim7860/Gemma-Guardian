@@ -211,8 +211,13 @@ done
 # Launch via uvicorn — frontend/ws_bridge/main.py only constructs the FastAPI
 # app and exits if invoked as a script (no embedded server). Same form used by
 # scripts/run_hybrid_demo.sh and scripts/launch_dashboard_dev.sh.
+# GG_WS_BRIDGE_HOST: bind address for the WS bridge. Default 127.0.0.1 (local
+# dev / on-box dashboard). Set to 0.0.0.0 when the dashboard runs on a
+# different machine and reaches the bridge through a reverse proxy (e.g., the
+# RunPod HTTPS proxy for capture-day cloud topology).
+WS_BRIDGE_HOST="${GG_WS_BRIDGE_HOST:-127.0.0.1}"
 emit_if_exists ws_bridge "frontend/ws_bridge/main.py" \
-  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m uvicorn frontend.ws_bridge.main:app --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
+  "cd \"$REPO_ROOT\" && ${ACTIVATE}python3 -m uvicorn frontend.ws_bridge.main:app --host $WS_BRIDGE_HOST --port 9090 --log-level info 2>&1 | tee $LOG_DIR/ws_bridge.log"
 
 if [ "$DRY_RUN" -eq 0 ] && [ "${GG_NO_TMUX:-0}" != "1" ]; then
   # Drop the placeholder window now that real ones exist.
