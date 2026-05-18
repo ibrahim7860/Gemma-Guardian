@@ -101,6 +101,9 @@ class ActionNode:
             "validation_retries": 0,
             "operator_status": "pending",
         }
+        bbox = args.get("pixel_bbox")
+        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            finding["pixel_bbox"] = [float(v) for v in bbox]
         validate_or_raise("finding", finding)
         self.publisher.publish(per_drone_findings_channel(self.drone_id), finding)
 

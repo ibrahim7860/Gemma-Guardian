@@ -179,6 +179,29 @@ class MissionState extends ChangeNotifier {
   List<dynamic> activeDrones = const [];
   String connectionStatus = "disconnected";
 
+  /// Rolling buffer of the most recent findings, deduped by finding_id.
+  /// The EGS evicts findings from its transient ``active_findings`` list
+  /// after some time, but the Findings panel body should still show recent
+  /// detections so judges/operators see a populated list when the counter
+  /// is non-zero. Capacity bounds memory; oldest evicted first.
+  static const int maxRecentFindings = 20;
+  final List<Map<String, dynamic>> _recentFindings = [];
+  List<Map<String, dynamic>> get recentFindings => List.unmodifiable(_recentFindings);
+
+  /// Cumulative set of unique finding_ids ever seen, by type. Survives
+  /// rolling-buffer eviction so the SURVIVORS counter keeps climbing as
+  /// new victims are detected across long missions.
+  final Set<String> _seenVictimIds = <String>{};
+
+  /// Tier-2: per-drone breadcrumb trails. Capped to the last N positions
+  /// so the polyline stays readable even on long missions. Each entry is
+  /// [lat, lon]. The map renders the trail as a fading polyline behind
+  /// the drone marker; oldest segments fade to near-transparent.
+  static const int maxTrailLength = 40;
+  final Map<String, List<List<double>>> _droneTrails = {};
+  List<List<double>> droneTrail(String droneId) =>
+      List.unmodifiable(_droneTrails[droneId] ?? const []);
+
   /// Transient per-attempt log of the EGS replan retry loop. Populated only
   /// while a replan is mid-flight; cleared 3 seconds after the replan
   /// completes (clear is owned server-side by EGSCoordinator, not here).
@@ -197,6 +220,7 @@ class MissionState extends ChangeNotifier {
   // an egs_state envelope for >egsHeartbeatStaleAfter while the WS itself
   // is still connected (a disconnected WS is reported separately).
   DateTime? _egsLastSeenAt;
+  String? _lastEgsInnerTimestamp;
   bool _egsLinkSeveredCached = false;
   Timer? _egsHeartbeatTimer;
   final DateTime Function() _now;
@@ -300,6 +324,10 @@ class MissionState extends ChangeNotifier {
   CommandState? commandState(String commandId) => _commandActions[commandId];
   Map<String, dynamic>? commandTranslation(String commandId) =>
       _commandTranslations[commandId];
+  /// Number of distinct command translations seen in this session. Used by
+  /// the Hero Moments timeline to fire the "multilingual command translated"
+  /// beat as soon as Gemma 4 E4B returns its first translation.
+  int get commandTranslationCount => _commandTranslations.length;
 
   // ---- map marker selection ----------------------------------------------
   //
@@ -627,8 +655,18 @@ class MissionState extends ChangeNotifier {
     contractVersion = envelope["contract_version"] as String?;
     egsState = envelope["egs_state"] as Map<String, dynamic>?;
     if (egsState != null) {
-      _egsLastSeenAt = _now();
-      if (_egsLinkSeveredCached) _egsLinkSeveredCached = false;
+      // Track freshness via the EGS-published inner timestamp, NOT the outer
+      // bridge-stamped envelope timestamp. The bridge re-emits its cached
+      // egs_state every tick, so if we used the outer timestamp the banner
+      // would never fire even when the real EGS coordinator was dead.
+      // The aggregator preserves the inner egs_state.timestamp from the last
+      // real EGS publish, so its age is what we want to track.
+      final innerTs = egsState!["timestamp"];
+      if (innerTs is String && innerTs != _lastEgsInnerTimestamp) {
+        _lastEgsInnerTimestamp = innerTs;
+        _egsLastSeenAt = _now();
+        if (_egsLinkSeveredCached) _egsLinkSeveredCached = false;
+      }
     }
     // Parse the transient replan attempt log. Defaults to empty when the
     // field is absent (legacy / pre-1.1.0 envelopes) or when no replan is
@@ -654,8 +692,80 @@ class MissionState extends ChangeNotifier {
     if (!_replanLogsEqual(_replanInFlightAttemptLog, nextLog)) {
       _replanInFlightAttemptLog = nextLog;
     }
+    // γ-MAX++: detect newly-arrived findings → freeze source drone's camera
+    // tile for 4s on the frame that produced it (with detections overlay).
+    final prevFindingIds = activeFindings
+        .whereType<Map>()
+        .map((f) => f["finding_id"]?.toString())
+        .where((s) => s != null)
+        .cast<String>()
+        .toSet();
     activeFindings = (envelope["active_findings"] as List?) ?? const [];
     activeDrones = (envelope["active_drones"] as List?) ?? const [];
+    // Tier-2 breadcrumb trail: append each drone's current position to
+    // its trail. Skip if position is missing or identical to the last
+    // entry (avoids dotted-zero rendering when sim stalls).
+    for (final d in activeDrones) {
+      if (d is! Map) continue;
+      final id = d["drone_id"]?.toString();
+      final pos = d["position"];
+      if (id == null || pos is! Map) continue;
+      final lat = (pos["lat"] as num?)?.toDouble();
+      final lon = (pos["lon"] as num?)?.toDouble();
+      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) continue;
+      final trail = _droneTrails.putIfAbsent(id, () => <List<double>>[]);
+      if (trail.isEmpty || trail.last[0] != lat || trail.last[1] != lon) {
+        trail.add([lat, lon]);
+      }
+      while (trail.length > maxTrailLength) {
+        trail.removeAt(0);
+      }
+    }
+    // Bug 3 fix: maintain a rolling deduped buffer so the Findings panel
+    // body stays populated even after EGS evicts items from active_findings.
+    final existingIds = _recentFindings.map((f) => f["finding_id"]).toSet();
+    for (final raw in activeFindings) {
+      if (raw is! Map<String, dynamic>) continue;
+      final fid = raw["finding_id"];
+      if (fid == null || existingIds.contains(fid)) continue;
+      _recentFindings.add(Map<String, dynamic>.from(raw));
+      existingIds.add(fid);
+      if (raw["type"] == "victim") {
+        _seenVictimIds.add(fid.toString());
+      }
+    }
+    // Update existing entries (operator_status changes etc.) without
+    // disturbing insertion order.
+    for (int i = 0; i < _recentFindings.length; i++) {
+      final fid = _recentFindings[i]["finding_id"];
+      for (final raw in activeFindings) {
+        if (raw is! Map<String, dynamic>) continue;
+        if (raw["finding_id"] == fid) {
+          _recentFindings[i] = Map<String, dynamic>.from(raw);
+          break;
+        }
+      }
+    }
+    while (_recentFindings.length > maxRecentFindings) {
+      _recentFindings.removeAt(0);
+    }
+    for (final f in activeFindings) {
+      if (f is! Map) continue;
+      final fid = f["finding_id"]?.toString();
+      if (fid == null || prevFindingIds.contains(fid)) continue;
+      // NEW finding — fire freeze + chip flash
+      final srcDrone = f["source_drone_id"]?.toString();
+      if (srcDrone != null) {
+        final frame = _latestCameraFrame[srcDrone];
+        if (frame != null) {
+          _frozenFrame[srcDrone] = frame;
+          _frozenDetections[srcDrone] =
+              List<Map<String, dynamic>>.from(_latestDetections[srcDrone] ?? const []);
+          _freezeEndsAt[srcDrone] = _now().add(freezeOnFindingDuration);
+        }
+        _lastFindingFireAt[srcDrone] = _now();
+      }
+    }
     // Promote any non-confirmed/non-dismissed state to confirmed when
     // upstream marks the finding approved. Forward-compat: if the EGS
     // echo (via state_update with approved=true) arrives BEFORE the
@@ -713,6 +823,12 @@ class MissionState extends ChangeNotifier {
           handleEcho(decoded);
         } else if (t == "command_translation") {
           applyTranslation(decoded);
+        } else if (t == "drone_camera") {
+          applyDroneCamera(decoded);
+        } else if (t == "drone_task_assignment") {
+          applyTaskAssignment(decoded);
+        } else if (t == "validation_event_tick") {
+          applyValidationTick(decoded);
         } else {
           applyStateUpdate(decoded);
         }
@@ -722,6 +838,141 @@ class MissionState extends ChangeNotifier {
         debugPrint("[MissionState] failed to decode frame: $e");
       }
     }
+  }
+
+  /// Path γ-lite: latest camera frame (raw JPEG bytes) per drone.
+  /// Updated from `drone_camera` WS frames at ≤ 1 fps per drone (bridge
+  /// throttles upstream). Rendered by `CameraStrip` via Image.memory.
+  final Map<String, Uint8List> _latestCameraFrame = {};
+  Uint8List? latestCameraFrame(String droneId) => _latestCameraFrame[droneId];
+  List<String> get knownCameraDroneIds =>
+      _latestCameraFrame.keys.toList()..sort();
+
+  // Path γ-MAX++: per-drone detections (bbox + label) — populated by
+  // applyDroneCamera when the frame has matched the bbox sidecar. Used by
+  // CameraStrip's bbox overlay.
+  final Map<String, List<Map<String, dynamic>>> _latestDetections = {};
+  List<Map<String, dynamic>> latestDetections(String droneId) =>
+      _latestDetections[droneId] ?? const [];
+
+  // Path γ-MAX++: freeze-on-finding — when a finding fires for a drone, we
+  // freeze its camera tile for 4 seconds on the frame that was visible at
+  // that moment. Map: drone_id → DateTime when freeze ends.
+  final Map<String, DateTime> _freezeEndsAt = {};
+  final Map<String, Uint8List> _frozenFrame = {};
+  final Map<String, List<Map<String, dynamic>>> _frozenDetections = {};
+  static const Duration freezeOnFindingDuration = Duration(seconds: 4);
+
+  bool isFrozen(String droneId) {
+    final ends = _freezeEndsAt[droneId];
+    return ends != null && _now().isBefore(ends);
+  }
+
+  Uint8List? frozenFrame(String droneId) =>
+      isFrozen(droneId) ? _frozenFrame[droneId] : null;
+
+  List<Map<String, dynamic>> frozenDetections(String droneId) =>
+      isFrozen(droneId) ? (_frozenDetections[droneId] ?? const []) : const [];
+
+  // Path γ-MAX++: GEMMA E2B chip flash — track when each drone last fired
+  // a finding so the chip animates briefly. ~1 second after fire.
+  final Map<String, DateTime> _lastFindingFireAt = {};
+  Duration? sinceLastFindingFire(String droneId) {
+    final t = _lastFindingFireAt[droneId];
+    return t == null ? null : _now().difference(t);
+  }
+
+  void applyDroneCamera(Map<String, dynamic> envelope) {
+    if (envelope["type"] != "drone_camera") return;
+    final droneId = envelope["drone_id"];
+    final b64 = envelope["frame_b64"];
+    if (droneId is! String || b64 is! String) return;
+    try {
+      final bytes = base64Decode(b64);
+      // Bug 1 debug: log every camera frame arrival so we can see in
+      // browser console which drones reach this code path.
+      // ignore: avoid_print
+      print("[CAM] drone=$droneId bytes=${bytes.length}");
+      _latestCameraFrame[droneId] = bytes;
+      // γ-MAX++ detections
+      final detsRaw = envelope["detections"];
+      if (detsRaw is List) {
+        _latestDetections[droneId] = detsRaw
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList();
+      } else {
+        _latestDetections[droneId] = const [];
+      }
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) debugPrint("[MissionState] camera decode failed: $e");
+    }
+  }
+
+  // Path γ-MAX++: task assignment cache for map overlay. Map drone_id →
+  // {task_id, assigned_survey_points: [{id, lat, lon}, ...]}
+  final Map<String, Map<String, dynamic>> _taskAssignments = {};
+  Map<String, Map<String, dynamic>> get taskAssignments => _taskAssignments;
+
+  void applyTaskAssignment(Map<String, dynamic> envelope) {
+    if (envelope["type"] != "drone_task_assignment") return;
+    final droneId = envelope["drone_id"];
+    if (droneId is! String) return;
+    _taskAssignments[droneId] = {
+      "task_id": envelope["task_id"],
+      "task_type": envelope["task_type"],
+      "assigned_survey_points": envelope["assigned_survey_points"] ?? const [],
+    };
+    notifyListeners();
+  }
+
+  // Path γ-MAX++: validation event ticker — bounded ring buffer, newest first.
+  static const int validationTickerCapacity = 12;
+  final List<Map<String, dynamic>> _validationTicks = [];
+  List<Map<String, dynamic>> get validationTicks =>
+      List.unmodifiable(_validationTicks);
+
+  void applyValidationTick(Map<String, dynamic> envelope) {
+    if (envelope["type"] != "validation_event_tick") return;
+    _validationTicks.insert(0, Map<String, dynamic>.from(envelope));
+    while (_validationTicks.length > validationTickerCapacity) {
+      _validationTicks.removeLast();
+    }
+    notifyListeners();
+  }
+
+  // Path γ-MAX++: survivors-located stat — counts approved + confirmed
+  // findings of type=victim. Denominator from scenario ground-truth if
+  // egs_state carries it; null otherwise (UI hides denominator).
+  int get survivorsLocated {
+    // Cumulative count: every unique victim finding_id ever observed.
+    // Survives rolling-buffer eviction so the chip keeps climbing across
+    // long missions. Falls back to the rolling buffer for the very first
+    // frames before any state_update has populated the seen-set.
+    if (_seenVictimIds.isNotEmpty) {
+      return _seenVictimIds.length;
+    }
+    final source = _recentFindings.isNotEmpty
+        ? _recentFindings
+        : activeFindings.whereType<Map>().toList();
+    int n = 0;
+    for (final f in source) {
+      if (f is! Map) continue;
+      if (f["type"] != "victim") continue;
+      n++;
+    }
+    return n;
+  }
+
+  int? get survivorsEstimatedTotal {
+    // EGS scenario YAML can optionally include expected_victim_count;
+    // not part of contract today, so this is best-effort. Return null to
+    // hide denominator in UI if not present.
+    final raw = egsState?["expected_victim_count"];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return null;
   }
 
   static bool _replanLogsEqual(List<ReplanAttempt> a, List<ReplanAttempt> b) {

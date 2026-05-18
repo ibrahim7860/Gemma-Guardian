@@ -29,6 +29,12 @@ DRONE_TOOLS = [
                     "gps_lon": {"type": "number"},
                     "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "visual_description": {"type": "string", "minLength": 10},
+                    "pixel_bbox": {
+                        "type": "array",
+                        "items": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                        "minItems": 4,
+                        "maxItems": 4,
+                    },
                 },
             },
         },

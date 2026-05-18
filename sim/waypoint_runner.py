@@ -240,7 +240,7 @@ class WaypointRunner:
             "velocity": {"vx": vx, "vy": vy, "vz": vz},
             "battery_pct": battery_pct,
             "heading_deg": ds.heading_deg,
-            "current_task": None,
+            "current_task": "survey",
             "current_waypoint_id": current_waypoint_id,
             "assigned_survey_points_remaining": remaining,
             "last_action": "none",
@@ -276,6 +276,12 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="Self-terminate cleanly after N seconds. Omit to run forever (until SIGINT).",
+    )
+    parser.add_argument(
+        "--loop-period",
+        type=float,
+        default=None,
+        help="If set, scenario time wraps every N seconds (drones revisit waypoints). For continuous demo playback.",
     )
     return parser.parse_args(list(argv) if argv is not None else None)
 
@@ -323,15 +329,32 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     )
     start = time.monotonic()
     duration = args.duration
+    loop_period = args.loop_period
+    loop_iter = 0
     try:
         while True:
-            t = time.monotonic() - start
-            if duration is not None and t >= duration:
+            elapsed = time.monotonic() - start
+            if duration is not None and elapsed >= duration:
                 print(f"[waypoint_runner] reached --duration={duration}s; exiting cleanly.", flush=True)
                 return 0
+            # --loop-period: when set, scenario time wraps and runner
+            # state is recreated each cycle so batteries + waypoint
+            # indices reset. Detects wrap by comparing integer cycle id.
+            if loop_period is not None:
+                current_iter = int(elapsed // loop_period)
+                if current_iter > loop_iter:
+                    print(f"[waypoint_runner] loop-period wrap (#{current_iter}) @ t={elapsed:.1f}s — fresh runner state", flush=True)
+                    runner = WaypointRunner(scenario, redis_client, battery_drain_pct_per_sec=args.battery_drain)
+                    loop_iter = current_iter
+                t = elapsed % loop_period
+            else:
+                t = elapsed
             runner.tick(t_seconds=t)
             # Sleep until next tick boundary, but never past the deadline.
-            next_boundary = start + (math.floor(t / period) + 1) * period
+            # Use real elapsed (not the loop-wrapped t) so the boundary always
+            # advances monotonically; otherwise after a wrap the boundary would
+            # be in the past and the loop would spin at thousands of Hz.
+            next_boundary = start + (math.floor(elapsed / period) + 1) * period
             sleep_for = max(0.0, next_boundary - time.monotonic())
             if duration is not None:
                 remaining = (start + duration) - time.monotonic()

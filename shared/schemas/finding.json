@@ -24,6 +24,13 @@
     "image_path": {"type": "string", "minLength": 1},
     "validated": {"type": "boolean"},
     "validation_retries": {"type": "integer", "minimum": 0, "maximum": 3},
-    "operator_status": {"$ref": "_common.json#/$defs/operator_status"}
+    "operator_status": {"$ref": "_common.json#/$defs/operator_status"},
+    "pixel_bbox": {
+      "type": "array",
+      "items": {"type": "number", "minimum": 0, "maximum": 1},
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "Optional normalized [x, y, w, h] bbox in image space, emitted by the C2A vision adapter when it localizes a victim."
+    }
   }
 }

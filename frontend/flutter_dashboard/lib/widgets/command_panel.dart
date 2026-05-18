@@ -42,6 +42,16 @@ class _CommandPanelState extends State<CommandPanel> {
     // Keep raw text in input — operator may want to edit and resubmit.
   }
 
+  /// Feature B: quick-select fills the input and fires TRANSLATE so the
+  /// judge sees the multilingual path light up with one click.
+  void _quickFill(MissionState state, String text, String lang) {
+    setState(() {
+      _controller.text = text;
+      _language = lang;
+    });
+    state.submitOperatorCommand(rawText: text, language: lang);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<MissionState>(
@@ -59,7 +69,7 @@ class _CommandPanelState extends State<CommandPanel> {
             _controller.text.trim().isNotEmpty &&
             (cs == null || cs == CommandState.failed);
 
-        return Padding(
+        return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,6 +95,35 @@ class _CommandPanelState extends State<CommandPanel> {
                 ],
               ),
               const SizedBox(height: 12),
+              // Feature B: multilingual quick-select. One-click pre-fills
+              // the textbox with a representative command in the operator's
+              // language so judges can see Gemma 4 E4B translate live
+              // without typing. Each chip auto-fires TRANSLATE after fill.
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  _QuickCmdChip(
+                    label: "EN: Recall drone 2",
+                    text: "Recall drone 2 to base",
+                    lang: "en",
+                    onFill: (text, lang) => _quickFill(state, text, lang),
+                  ),
+                  _QuickCmdChip(
+                    label: "ES: Llama el dron 2",
+                    text: "Llama el dron 2 de regreso a la base",
+                    lang: "es",
+                    onFill: (text, lang) => _quickFill(state, text, lang),
+                  ),
+                  _QuickCmdChip(
+                    label: "AR: استدع الطائرة 2",
+                    text: "استدع الطائرة 2 إلى القاعدة",
+                    lang: "ar",
+                    onFill: (text, lang) => _quickFill(state, text, lang),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
               TextField(
                 controller: _controller,
                 enabled: inputEnabled,
@@ -239,6 +278,48 @@ class _Preview extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Feature B: one-click multilingual command chip. Pre-fills the operator
+/// input with a representative phrase in the chip's language and fires
+/// TRANSLATE so the Gemma 4 E4B path lights up for the judge instantly.
+class _QuickCmdChip extends StatelessWidget {
+  final String label;
+  final String text;
+  final String lang;
+  final void Function(String text, String lang) onFill;
+  const _QuickCmdChip({
+    required this.label,
+    required this.text,
+    required this.lang,
+    required this.onFill,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF0E1117),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => onFill(text, lang),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF7AD9C8), width: 0.8),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF7AD9C8),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
       ),
     );
   }

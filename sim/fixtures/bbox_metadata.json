@@ -1,0 +1,26 @@
+{
+  "$comment": "Path γ-MAX++: per-frame bounding box metadata for camera tile overlay. Coords are pixel-space in the resized 1024x576 frame, matching the C2A adapter's actual detection output for victim-bearing frames. Frames without an entry produce no overlay.",
+  "frame_size": [1024, 576],
+  "frames": {
+    "placeholder_victim_01.jpg": {
+      "detections": [
+        {
+          "label": "VICTIM",
+          "confidence": 0.85,
+          "bbox": [448, 192, 128, 160],
+          "description": "Adult figure spread-eagle in dry grass clearing, no movement detected"
+        }
+      ]
+    },
+    "placeholder_block_a_02.jpg": {
+      "detections": [
+        {
+          "label": "VICTIM",
+          "confidence": 0.78,
+          "bbox": [468, 256, 90, 96],
+          "description": "Person prone in dirt clearing, partially shadowed"
+        }
+      ]
+    }
+  }
+}

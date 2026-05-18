@@ -8,7 +8,10 @@
     {"$ref": "#/$defs/operator_command"},
     {"$ref": "#/$defs/command_translation"},
     {"$ref": "#/$defs/operator_command_dispatch"},
-    {"$ref": "#/$defs/finding_approval"}
+    {"$ref": "#/$defs/finding_approval"},
+    {"$ref": "#/$defs/drone_camera"},
+    {"$ref": "#/$defs/drone_task_assignment"},
+    {"$ref": "#/$defs/validation_event_tick"}
   ],
   "$defs": {
     "state_update": {
@@ -70,6 +73,71 @@
         "finding_id": {"$ref": "_common.json#/$defs/finding_id"},
         "action": {"enum": ["approve", "dismiss"]},
         "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      }
+    },
+    "drone_camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "drone_id", "frame_b64", "ts"],
+      "properties": {
+        "type": {"const": "drone_camera"},
+        "drone_id": {"type": "string", "minLength": 1},
+        "frame_b64": {"type": "string", "minLength": 1},
+        "ts": {"type": "number"},
+        "detections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "confidence", "bbox"],
+            "properties": {
+              "label": {"type": "string"},
+              "confidence": {"type": "number"},
+              "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+              "description": {"type": "string"},
+              "source": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "drone_task_assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "drone_id", "task_id", "assigned_survey_points"],
+      "properties": {
+        "type": {"const": "drone_task_assignment"},
+        "drone_id": {"type": "string", "minLength": 1},
+        "task_id": {"type": "string", "minLength": 1},
+        "task_type": {"type": "string"},
+        "assigned_survey_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "lat", "lon"],
+            "properties": {
+              "id": {"type": "string"},
+              "lat": {"type": "number"},
+              "lon": {"type": "number"},
+              "priority": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "validation_event_tick": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "agent_id", "rule_id", "outcome", "function_or_command", "ts"],
+      "properties": {
+        "type": {"const": "validation_event_tick"},
+        "agent_id": {"type": "string"},
+        "layer": {"type": "string"},
+        "rule_id": {"type": "string"},
+        "outcome": {"type": "string"},
+        "function_or_command": {"type": "string"},
+        "valid": {"type": "boolean"},
+        "ts": {"type": "number"}
       }
     }
   }

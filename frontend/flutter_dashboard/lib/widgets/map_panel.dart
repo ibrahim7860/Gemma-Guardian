@@ -90,6 +90,14 @@ class _MapPanelState extends State<MapPanel> {
         final colors = palettePreview([
           for (final d in drones) (d["drone_id"] as String?) ?? "?",
         ]);
+        // Tier-2: per-drone breadcrumb trails. Pre-snapshot from
+        // MissionState so the painter doesn't reach back into the
+        // Provider (CustomPainter shouldn't depend on InheritedWidgets).
+        final trails = <String, List<List<double>>>{
+          for (final d in drones)
+            ((d["drone_id"] as String?) ?? "?"):
+                mission.droneTrail((d["drone_id"] as String?) ?? "?"),
+        };
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -148,6 +156,7 @@ class _MapPanelState extends State<MapPanel> {
                     findings: findings,
                     bbox: bbox,
                     colors: colors,
+                    trails: trails,
                   ),
                 ),
                 // Tap order: findings UNDER drones, so drones win when
@@ -589,12 +598,14 @@ class _ProjectionPainter extends CustomPainter {
   final List<Map<String, dynamic>> findings;
   final _Bbox bbox;
   final Map<String, Color> colors;
+  final Map<String, List<List<double>>> trails;
 
   _ProjectionPainter({
     required this.drones,
     required this.findings,
     required this.bbox,
     required this.colors,
+    this.trails = const {},
   });
 
   @override
@@ -603,6 +614,43 @@ class _ProjectionPainter extends CustomPainter {
     // below this one (D2). This painter is foreground-only.
 
     Offset? project(num? la, num? lo) => _project(la, lo, bbox, size);
+
+    // Tier-2: per-drone breadcrumb trails painted first (under everything
+    // else). Each segment fades with age so the operator sees direction
+    // at a glance. Oldest segment ~30% opacity, newest 100%; thicker
+    // stroke + thin white outline make trails legible over the photographic
+    // aerial overlay.
+    for (final entry in trails.entries) {
+      final droneId = entry.key;
+      final pts = entry.value;
+      if (pts.length < 2) continue;
+      final color = colors[droneId] ?? Colors.indigo;
+      for (int i = 1; i < pts.length; i++) {
+        final p0 = project(pts[i - 1][0], pts[i - 1][1]);
+        final p1 = project(pts[i][0], pts[i][1]);
+        if (p0 == null || p1 == null) continue;
+        final ageFrac = i / pts.length; // 0..1, newer = larger
+        final alpha = 0.30 + 0.70 * ageFrac;
+        // White halo behind colored stroke for marker contrast on
+        // photographic backgrounds.
+        canvas.drawLine(
+          p0, p1,
+          Paint()
+            ..color = Colors.white.withValues(alpha: alpha * 0.7)
+            ..strokeWidth = 5.0
+            ..strokeCap = StrokeCap.round
+            ..isAntiAlias = true,
+        );
+        canvas.drawLine(
+          p0, p1,
+          Paint()
+            ..color = color.withValues(alpha: alpha)
+            ..strokeWidth = 3.0
+            ..strokeCap = StrokeCap.round
+            ..isAntiAlias = true,
+        );
+      }
+    }
 
     // Findings under drones.
     for (final f in findings) {
@@ -655,7 +703,7 @@ class _ProjectionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ProjectionPainter old) {
-    return drones != old.drones || findings != old.findings || bbox != old.bbox;
+    return drones != old.drones || findings != old.findings || bbox != old.bbox || trails != old.trails;
   }
 }
 

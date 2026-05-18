@@ -20,44 +20,56 @@ base_image_extents:
   lon_max: -118.4990
 
 drones:
+  # Tier-2: wider patrol routes per drone so the dashboard breadcrumb
+  # trails are visibly tracing each drone's coverage zone. Each route is
+  # length-bounded so the drone completes one full sweep in <40s at
+  # speed_mps=5, leaving headroom inside the 50s loop-period wrap.
   - drone_id: drone1
     home: {lat: 34.0001, lon: -118.5001, alt: 0}
     waypoints:
-      - {id: sp_001, lat: 34.0002, lon: -118.5002, alt: 25}
-      - {id: sp_002, lat: 34.0004, lon: -118.5002, alt: 25}
-      - {id: sp_003, lat: 34.0006, lon: -118.5004, alt: 25}
-      - {id: sp_004, lat: 34.0008, lon: -118.5004, alt: 25}
+      - {id: sp_001, lat: 34.0001, lon: -118.5006, alt: 25}
+      - {id: sp_002, lat: 34.0005, lon: -118.5006, alt: 25}
+      - {id: sp_003, lat: 34.0005, lon: -118.5001, alt: 25}
+      - {id: sp_004, lat: 34.0003, lon: -118.5001, alt: 25}
     speed_mps: 5
 
   - drone_id: drone2
     home: {lat: 34.0001, lon: -118.4990, alt: 0}
     waypoints:
-      - {id: sp_010, lat: 34.0002, lon: -118.4991, alt: 25}
-      - {id: sp_011, lat: 34.0004, lon: -118.4992, alt: 25}
-      - {id: sp_012, lat: 34.0006, lon: -118.4994, alt: 25}
+      - {id: sp_010, lat: 34.0003, lon: -118.4993, alt: 25}
+      - {id: sp_011, lat: 34.0006, lon: -118.4995, alt: 25}
+      - {id: sp_012, lat: 34.0008, lon: -118.4992, alt: 25}
+      - {id: sp_013, lat: 34.0005, lon: -118.4991, alt: 25}
     speed_mps: 5
 
   - drone_id: drone3
     home: {lat: 34.0009, lon: -118.5001, alt: 0}
     waypoints:
-      - {id: sp_020, lat: 34.0008, lon: -118.4995, alt: 25}
-      - {id: sp_021, lat: 34.0006, lon: -118.4997, alt: 25}
-      - {id: sp_022, lat: 34.0004, lon: -118.4999, alt: 25}
+      - {id: sp_020, lat: 34.0007, lon: -118.4998, alt: 25}
+      - {id: sp_021, lat: 34.0004, lon: -118.4998, alt: 25}
+      - {id: sp_022, lat: 34.0003, lon: -118.5002, alt: 25}
+      - {id: sp_023, lat: 34.0006, lon: -118.5002, alt: 25}
     speed_mps: 5
 
 frame_mappings:
+  # Path γ-MAX++ retiming (2026-05-17): KILLER survivor frame pinned to
+  # drone1's first 30s so the demo screen recording captures the survivor
+  # beat at video-script t≈10-22s. Secondary victim shown to drone2 in same
+  # window so the multi-drone coordination story has two real findings.
   drone1:
-    - {tick_range: [0, 30],   frame_file: placeholder_block_a_01.jpg}
-    - {tick_range: [31, 60],  frame_file: placeholder_block_a_02.jpg}
-    - {tick_range: [61, 90],  frame_file: placeholder_victim_01.jpg}
-    - {tick_range: [91, 240], frame_file: placeholder_intact_01.jpg}
+    - {tick_range: [0, 9],    frame_file: placeholder_block_a_01.jpg}    # terrain ramp-in
+    - {tick_range: [10, 30],  frame_file: placeholder_victim_01.jpg}     # KILLER VICTIM
+    - {tick_range: [31, 60],  frame_file: placeholder_block_a_02.jpg}    # secondary victim (different person)
+    - {tick_range: [61, 240], frame_file: placeholder_intact_01.jpg}     # search continues
   drone2:
-    - {tick_range: [0, 60],   frame_file: placeholder_block_b_01.jpg}
-    - {tick_range: [61, 120], frame_file: placeholder_fire_01.jpg}
-    - {tick_range: [121, 240], frame_file: placeholder_smoke_01.jpg}
+    - {tick_range: [0, 15],   frame_file: placeholder_block_b_01.jpg}    # terrain
+    - {tick_range: [16, 35],  frame_file: placeholder_block_a_02.jpg}    # SECONDARY VICTIM (drone2 also finds)
+    - {tick_range: [36, 75],  frame_file: placeholder_fire_01.jpg}       # disaster terrain
+    - {tick_range: [76, 240], frame_file: placeholder_smoke_01.jpg}      # flood
   drone3:
-    - {tick_range: [0, 90],   frame_file: placeholder_debris_01.jpg}
-    - {tick_range: [91, 240], frame_file: placeholder_intact_01.jpg}
+    - {tick_range: [0, 45],    frame_file: placeholder_debris_01.jpg}    # debris terrain
+    - {tick_range: [46, 120],  frame_file: placeholder_block_b_01.jpg}   # earthquake aerial (distinct from drone1)
+    - {tick_range: [121, 240], frame_file: placeholder_debris_01.jpg}    # back to debris sweep
 
 scripted_events:
   - {t: 45,  type: drone_failure, drone_id: drone1, detail: battery_depleted}

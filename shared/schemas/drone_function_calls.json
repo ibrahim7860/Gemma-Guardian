@@ -27,7 +27,13 @@
             "gps_lat": {"$ref": "_common.json#/$defs/lat"},
             "gps_lon": {"$ref": "_common.json#/$defs/lon"},
             "confidence": {"$ref": "_common.json#/$defs/confidence"},
-            "visual_description": {"type": "string", "minLength": 10}
+            "visual_description": {"type": "string", "minLength": 10},
+            "pixel_bbox": {
+              "type": "array",
+              "items": {"type": "number", "minimum": 0, "maximum": 1},
+              "minItems": 4,
+              "maxItems": 4
+            }
           }
         }
       }

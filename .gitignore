@@ -26,3 +26,10 @@ kaggle_out_c2a/
 .idea/
 .DS_Store
 .playwright-mcp/
+
+# Local video work area (3GB raw footage, contains .env)
+video/
+
+# Playwright artifacts
+snapshot-translate.yml
+.playwright-mcp/

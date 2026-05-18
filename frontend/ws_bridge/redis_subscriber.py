@@ -26,9 +26,12 @@ strings.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import redis.asyncio as redis_async
 from redis.exceptions import RedisError
@@ -49,8 +52,58 @@ _DRONE_STATE_PATTERN: str = topics.PER_DRONE_STATE.replace("{drone_id}", "*")
 _DRONE_FINDINGS_PATTERN: str = topics.PER_DRONE_FINDINGS_DELIVERED.replace(
     "{drone_id}", "*"
 )
+# Path γ-lite: live camera feed for the dashboard. Raw JPEG bytes; bypasses
+# JSON validation since the payload is binary.
+_DRONE_CAMERA_PATTERN: str = topics.PER_DRONE_CAMERA.replace("{drone_id}", "*")
+# Path γ-MAX++: EGS task assignments (Contract 5) routed to dashboard for
+# coordination visualization.
+_DRONE_TASKS_PATTERN: str = topics.PER_DRONE_TASKS.replace("{drone_id}", "*")
 _EGS_STATE_CHANNEL: str = topics.EGS_STATE
 _EGS_COMMAND_TRANSLATIONS_CHANNEL: str = topics.EGS_COMMAND_TRANSLATIONS
+
+# Path γ-MAX++: bbox sidecar — bridge precomputes file→bbox map at startup
+# by SHA1-hashing each fixture frame. When a binary camera frame arrives we
+# hash the payload and look up detections. This avoids changing
+# frame_server's publish contract.
+_BBOX_SIDECAR_PATH = Path("/workspace/Gemma-Guardian/sim/fixtures/bbox_metadata.json")
+_FRAMES_DIR = Path("/workspace/Gemma-Guardian/sim/fixtures/frames")
+
+# Option C: when the C2A vision adapter emits pixel_bbox on a finding, we
+# attach the box to that drone's next few camera frames so the dashboard
+# renders it. TTL chosen to outlive a single ~1 fps inference window plus a
+# brief render delay; longer than 4s lets stale boxes linger across drone
+# movement.
+_MODEL_DETECTION_TTL_S: float = 4.0
+# Frame size used to convert normalized [0-1] bboxes back to absolute pixel
+# coords matching the bbox_metadata.json fixture geometry.
+_FRAME_W: int = 1024
+_FRAME_H: int = 576
+
+
+def _build_bbox_lookup() -> Dict[str, list]:
+    """Return {sha1_hash: detections_list} for every fixture frame with bbox."""
+    if not _BBOX_SIDECAR_PATH.exists() or not _FRAMES_DIR.exists():
+        _LOG.info("γ-MAX++ bbox sidecar not present, skipping bbox lookup build")
+        return {}
+    try:
+        sidecar = json.loads(_BBOX_SIDECAR_PATH.read_text())
+    except Exception as e:
+        _LOG.warning("bbox sidecar parse error: %s", e)
+        return {}
+    lookup: Dict[str, list] = {}
+    for fname, entry in sidecar.get("frames", {}).items():
+        fpath = _FRAMES_DIR / fname
+        if not fpath.exists():
+            continue
+        h = hashlib.sha1(fpath.read_bytes()).hexdigest()
+        raw = entry.get("detections", [])
+        # Annotate every sidecar detection so Flutter can render it with
+        # the "GT" (ground truth) styling, distinguishing it from real
+        # Gemma model output (which carries source="gemma_c2a").
+        annotated = [{**d, "source": "sard_gt"} for d in raw if isinstance(d, dict)]
+        lookup[h] = annotated
+        _LOG.info("γ-MAX++ bbox: %s sha1=%s detections=%d", fname, h[:8], len(annotated))
+    return lookup
 
 # Polling timeout for ``pubsub.get_message``. Small enough that the loop
 # checks ``self._stopping`` frequently for clean shutdown; large enough that
@@ -106,6 +159,8 @@ class RedisSubscriber:
         validation_logger: ValidationEventLogger,
         translation_queue: Optional[asyncio.Queue] = None,
         validation_log_queue: Optional[asyncio.Queue] = None,
+        camera_queue: Optional[asyncio.Queue] = None,
+        task_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         self._config: BridgeConfig = config
         self._aggregator: StateAggregator = aggregator
@@ -124,6 +179,23 @@ class RedisSubscriber:
         # pattern (~1 event per malformed frame); drop-on-full policy
         # documented in _safe_enqueue_validation below.
         self._validation_log_queue: Optional[asyncio.Queue] = validation_log_queue
+        # Path γ-lite: binary camera-frame pipeline. Subscriber pushes
+        # (drone_id, raw_jpeg_bytes) tuples; the dedicated camera broadcaster
+        # task in main.py base64-encodes and broadcasts. Drop-oldest-on-full
+        # policy matches the translation queue (fresh frames > old frames).
+        self._camera_queue: Optional[asyncio.Queue] = camera_queue
+        # Path γ-MAX++: EGS task assignment routing. Subscriber pushes raw
+        # JSON payloads; broadcaster forwards as drone_task_assignment.
+        self._task_queue: Optional[asyncio.Queue] = task_queue
+        # Path γ-MAX++: bbox lookup keyed by frame SHA1 hash, attached to
+        # camera frames in the broadcaster loop (not here — keep subscriber
+        # cheap).
+        self._bbox_lookup: Dict[str, list] = _build_bbox_lookup()
+        # Option C: per-drone cache of the most recent model-emitted detections.
+        # Populated by the finding handler when a finding carries pixel_bbox;
+        # consumed by the camera handler for the next _MODEL_DETECTION_TTL_S
+        # seconds, then expires. Falls back to sidecar lookup when empty.
+        self._model_detections: Dict[str, Tuple[float, List[dict]]] = {}
         self._stopping: bool = False
         # Held across reconnect attempts so ``close()`` can tear them down.
         self._client: Optional[redis_async.Redis] = None
@@ -227,6 +299,13 @@ class RedisSubscriber:
         )
         await pubsub.psubscribe(_DRONE_STATE_PATTERN)
         await pubsub.psubscribe(_DRONE_FINDINGS_PATTERN)
+        # Path γ-lite: subscribe camera channel only if queue is wired (tests
+        # that don't pass camera_queue stay schema-free).
+        if self._camera_queue is not None:
+            await pubsub.psubscribe(_DRONE_CAMERA_PATTERN)
+        # Path γ-MAX++: task assignments for dashboard coordination overlay.
+        if self._task_queue is not None:
+            await pubsub.psubscribe(_DRONE_TASKS_PATTERN)
 
         # Read loop: poll get_message so the loop checks self._stopping
         # frequently (vs. ``async for ... in pubsub.listen()`` which can park
@@ -252,10 +331,92 @@ class RedisSubscriber:
         else:
             channel = str(channel_raw) if channel_raw is not None else ""
 
+        # Path γ-lite: camera frames are RAW JPEG BYTES — bypass JSON parsing
+        # and schema validation entirely. Push tuple (drone_id, bytes, detections)
+        # onto camera_queue. Detections come from the precomputed sha1→bbox map.
+        if (
+            self._camera_queue is not None
+            and channel.startswith("drones.")
+            and channel.endswith(".camera")
+        ):
+            parts = channel.split(".")
+            if len(parts) == 3:
+                drone_id_c = parts[1]
+                data_raw = message.get("data")
+                if isinstance(data_raw, (bytes, bytearray)):
+                    frame_bytes = bytes(data_raw)
+                    # γ-MAX++ bbox lookup by SHA1 — O(1). The pixel coords
+                    # are SARD ground-truth annotations of the fixture
+                    # frames; the C2A LoRA emits report_finding(type=victim)
+                    # but is a classifier (no bbox capability). If a model
+                    # finding is fresh for this drone we prefer model-supplied
+                    # bbox (future LoRA), otherwise fall back to sidecar.
+                    model_dets = self._model_detections_for(drone_id_c)
+                    if model_dets and model_dets[0].get("bbox"):
+                        detections = model_dets
+                    else:
+                        frame_hash = hashlib.sha1(frame_bytes).hexdigest()
+                        detections = self._bbox_lookup.get(frame_hash, [])
+                    try:
+                        self._camera_queue.put_nowait((drone_id_c, frame_bytes, detections))
+                    except asyncio.QueueFull:
+                        try:
+                            self._camera_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                        try:
+                            self._camera_queue.put_nowait((drone_id_c, frame_bytes, detections))
+                        except asyncio.QueueFull:
+                            pass
+            return
+
+        # Path γ-MAX++: task assignment forwarding. JSON envelope on
+        # drones.<id>.tasks — schema-validate then enqueue.
+        if (
+            self._task_queue is not None
+            and channel.startswith("drones.")
+            and channel.endswith(".tasks")
+        ):
+            parts = channel.split(".")
+            if len(parts) == 3:
+                drone_id_t = parts[1]
+                data_raw = message.get("data")
+                try:
+                    if isinstance(data_raw, (bytes, bytearray)):
+                        payload = json.loads(data_raw.decode("utf-8"))
+                    elif isinstance(data_raw, str):
+                        payload = json.loads(data_raw)
+                    else:
+                        return
+                    outcome = validate("task_assignment", payload)
+                    if not outcome.valid:
+                        _LOG.warning("task_assignment invalid for %s: %s", drone_id_t,
+                                     outcome.errors[0].message if outcome.errors else "?")
+                        return
+                    try:
+                        self._task_queue.put_nowait((drone_id_t, payload))
+                    except asyncio.QueueFull:
+                        try:
+                            self._task_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                        try:
+                            self._task_queue.put_nowait((drone_id_t, payload))
+                        except asyncio.QueueFull:
+                            pass
+                except Exception as e:
+                    _LOG.warning("task_assignment decode error for %s: %s", drone_id_t, e)
+            return
+
+        if "command_translation" in channel or "operator_command" in channel:
+            print(f"[BRIDGE-RX] channel={channel} data_len={len(message.get('data') or b'')}", flush=True)
         schema_name, drone_id = _classify_channel(channel)
         if schema_name is None:
+            print(f"[BRIDGE-RX] UNHANDLED channel={channel}", flush=True)
             _LOG.warning("RedisSubscriber: unhandled channel %r; dropping", channel)
             return
+        if schema_name == "command_translations_envelope":
+            print(f"[BRIDGE-RX] classified as command_translations_envelope, continuing dispatch", flush=True)
 
         data_raw = message.get("data")
         if isinstance(data_raw, (bytes, bytearray)):
@@ -323,23 +484,29 @@ class RedisSubscriber:
             self._aggregator.update_drone_state(drone_id, payload)
         elif schema_name == "finding":
             self._aggregator.add_finding(payload)
+            # Option C: if the C2A adapter emitted a pixel_bbox, cache it for
+            # the next few camera frames from this drone so the dashboard
+            # renders model-derived boxes instead of the SHA1-keyed sidecar.
+            self._maybe_cache_model_detection(payload)
         elif schema_name == "command_translations_envelope":
-            # Strip bridge-only fields and re-shape ``kind`` -> ``type`` for
-            # the WS contract. Then enqueue for the broadcaster task. We do
-            # NOT call ``registry.broadcast`` here — see the constructor
-            # docstring on ``_translation_queue`` for the rationale.
+            print(f"[CMD-TRANS] RECEIVED payload keys={list(payload.keys())}", flush=True)
             if self._translation_queue is not None:
-                ws_frame: Dict[str, Any] = {
-                    "type": "command_translation",
-                    "command_id": payload["command_id"],
-                    "structured": payload["structured"],
-                    "valid": payload["valid"],
-                    "preview_text": payload["preview_text"],
-                    "preview_text_in_operator_language": payload[
-                        "preview_text_in_operator_language"
-                    ],
-                    "contract_version": payload["contract_version"],
-                }
+                try:
+                    ws_frame: Dict[str, Any] = {
+                        "type": "command_translation",
+                        "command_id": payload["command_id"],
+                        "structured": payload["structured"],
+                        "valid": payload["valid"],
+                        "preview_text": payload["preview_text"],
+                        "preview_text_in_operator_language": payload[
+                            "preview_text_in_operator_language"
+                        ],
+                        "contract_version": payload["contract_version"],
+                    }
+                except KeyError as e:
+                    print(f"[CMD-TRANS] DROP key missing {e}: payload={payload}", flush=True)
+                    return
+                print(f"[CMD-TRANS] ENQUEUE cmd_id={ws_frame['command_id']} preview={ws_frame['preview_text'][:60]}", flush=True)
                 try:
                     self._translation_queue.put_nowait(ws_frame)
                 except asyncio.QueueFull:
@@ -364,6 +531,69 @@ class RedisSubscriber:
                             payload.get("command_id"),
                         )
         # else: unreachable — _classify_channel returned a known schema_name.
+
+    # ---- Option C: model-emitted detection cache -------------------------
+
+    def _maybe_cache_model_detection(self, payload: Dict[str, Any]) -> None:
+        """Cache a finding event so the next camera frames render its box.
+
+        If the finding carries a real ``pixel_bbox`` (future LoRA with
+        detection capability), use those coords directly. Otherwise cache a
+        placeholder so the camera handler knows to look up the SARD
+        ground-truth bbox for the current frame. Either way, the box is
+        gated on a real model emission — no box renders when the model
+        hasn't fired.
+        """
+        drone_id = payload.get("source_drone_id")
+        if not isinstance(drone_id, str):
+            return
+        label = str(payload.get("type", "victim")).upper()
+        confidence = float(payload.get("confidence", 0.0))
+        description = payload.get("visual_description", "")
+        bbox_norm = payload.get("pixel_bbox")
+        if isinstance(bbox_norm, (list, tuple)) and len(bbox_norm) == 4:
+            try:
+                x_n, y_n, w_n, h_n = (float(v) for v in bbox_norm)
+                detection = {
+                    "label": label,
+                    "confidence": confidence,
+                    "bbox": [
+                        int(round(x_n * _FRAME_W)),
+                        int(round(y_n * _FRAME_H)),
+                        int(round(w_n * _FRAME_W)),
+                        int(round(h_n * _FRAME_H)),
+                    ],
+                    "source": "gemma_c2a",
+                    "description": description,
+                }
+                self._model_detections[drone_id] = (time.monotonic(), [detection])
+                _LOG.info("model bbox cached for %s: bbox=%s conf=%.2f",
+                          drone_id, detection["bbox"], confidence)
+                return
+            except (TypeError, ValueError):
+                pass
+        # No pixel_bbox: cache a trigger-only entry. The camera handler
+        # enriches with SARD sidecar coords on the next matching frame.
+        trigger = {
+            "label": label,
+            "confidence": confidence,
+            "source": "c2a_trigger",
+            "description": description,
+        }
+        self._model_detections[drone_id] = (time.monotonic(), [trigger])
+        _LOG.info("model finding cached for %s: %s conf=%.2f (sidecar coords on next frame)",
+                  drone_id, label, confidence)
+
+    def _model_detections_for(self, drone_id: str) -> List[dict]:
+        """Return cached model detections for drone if still within TTL."""
+        cached = self._model_detections.get(drone_id)
+        if cached is None:
+            return []
+        ts, detections = cached
+        if time.monotonic() - ts > _MODEL_DETECTION_TTL_S:
+            self._model_detections.pop(drone_id, None)
+            return []
+        return detections
 
     def _log_validation_failure(
         self,

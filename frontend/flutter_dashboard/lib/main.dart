@@ -9,16 +9,29 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'generated/contract_version.dart' as gen;
 import 'generated/topics.dart';
 import 'state/mission_state.dart';
+import 'widgets/camera_strip.dart';
 import 'widgets/command_panel.dart';
 import 'widgets/drone_status_panel.dart';
 import 'widgets/findings_panel.dart';
+import 'widgets/hero_moments.dart';
 import 'widgets/map_panel.dart';
+import 'widgets/survivor_stat.dart';
+import 'widgets/validation_ticker.dart';
 import 'widgets/validation_wow_banner.dart';
 
 String _wsBridgeUrl() {
   if (kIsWeb) {
     final fromQuery = Uri.base.queryParameters['ws'];
     if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+    // When the dashboard is served from the bridge itself (same origin),
+    // default to that origin so cloud / proxy access works without a query
+    // param. Local `flutter run` keeps the codegen default of ws://localhost:9090.
+    final base = Uri.base;
+    if (base.host.isNotEmpty && base.host != 'localhost' && base.host != '127.0.0.1') {
+      final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+      final port = base.hasPort ? ':${base.port}' : '';
+      return '$scheme://${base.host}$port';
+    }
   }
   return Channels.wsEndpoint;
 }
@@ -151,7 +164,11 @@ class _DashboardShellState extends State<_DashboardShell> {
         children: const [
           EgsLinkSeveredBanner(),
           ValidationWowBanner(),
+          HeroMoments(),
+          SurvivorStat(),
+          CameraStrip(),
           Expanded(child: _FourPanelGrid()),
+          ValidationTicker(),
         ],
       ),
     );

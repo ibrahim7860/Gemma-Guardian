@@ -99,8 +99,30 @@ def parse_c2a_output(raw: str) -> dict:
         "finding_type": ft,
         "confidence": obj.get("confidence"),
         "visual_evidence": obj.get("visual_evidence"),
+        "bbox_norm": _coerce_bbox(obj.get("bbox_norm")),
         "raw": raw,
     }
+
+
+def _coerce_bbox(raw_bbox: Any) -> Optional[list]:
+    """Coerce raw bbox into a [x, y, w, h] list of floats in [0, 1].
+
+    Returns None for null/missing/malformed. Clamps values into [0, 1] but
+    rejects entries that aren't 4 numbers — those signal model confusion.
+    """
+    if raw_bbox is None:
+        return None
+    if not isinstance(raw_bbox, (list, tuple)) or len(raw_bbox) != 4:
+        return None
+    out: list[float] = []
+    for v in raw_bbox:
+        if not isinstance(v, (int, float)):
+            return None
+        out.append(max(0.0, min(1.0, float(v))))
+    # Reject zero-area boxes — pure noise.
+    if out[2] <= 0.0 or out[3] <= 0.0:
+        return None
+    return out
 
 
 def translate_to_report_finding(
@@ -126,16 +148,20 @@ def translate_to_report_finding(
     # Ensure visual_description meets the minLength=10 schema constraint.
     if len(visual_evidence) < 10:
         visual_evidence = visual_evidence + " " * (10 - len(visual_evidence))
+    arguments: dict = {
+        "type": "victim",
+        "severity": 4,
+        "gps_lat": lat,
+        "gps_lon": lon,
+        "confidence": confidence,
+        "visual_description": visual_evidence,
+    }
+    bbox = c2a_result.get("bbox_norm")
+    if bbox is not None:
+        arguments["pixel_bbox"] = bbox
     return {
         "function": "report_finding",
-        "arguments": {
-            "type": "victim",
-            "severity": 4,
-            "gps_lat": lat,
-            "gps_lon": lon,
-            "confidence": confidence,
-            "visual_description": visual_evidence,
-        },
+        "arguments": arguments,
     }
 
 

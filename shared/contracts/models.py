@@ -357,6 +357,7 @@ class Finding(_StrictModel):
     validated: bool
     validation_retries: int = Field(ge=0, le=3)
     operator_status: OperatorStatus
+    pixel_bbox: Optional[list[float]] = Field(default=None, min_length=4, max_length=4)
 
 
 # -- Contract 5: task_assignment ----------------------------------------------

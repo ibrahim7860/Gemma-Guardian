@@ -35,6 +35,30 @@ class DroneStatusPanel extends StatelessWidget {
                 title: Row(
                   children: [
                     Expanded(child: Text("$droneId — $agentStatus")),
+                    // γ-MAX++: model badge proving each drone runs its own
+                    // Gemma 4 E2B + C2A LoRA — the published Kaggle adapter.
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0E1117),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(color: const Color(0xFF7AD9C8), width: 0.8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.memory, color: Color(0xFF7AD9C8), size: 9),
+                          SizedBox(width: 3),
+                          Text("gemma4:e2b + c2a-lora",
+                              style: TextStyle(
+                                  color: Color(0xFF7AD9C8),
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.4)),
+                        ],
+                      ),
+                    ),
                     if (isStandalone) _StandaloneBadge(droneId: droneId),
                   ],
                 ),

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agents.drone_agent.action import ActionNode, StdoutPublisher
+from agents.drone_agent.localize import detect_persons
 from agents.drone_agent.memory import MemoryStore
 from agents.drone_agent.perception import PerceptionBundle, PerceptionNode
 from agents.drone_agent.reasoning import ReasoningNode, render_user_message
@@ -68,6 +69,14 @@ class DroneAgent:
                     lon=bundle.state.lon,
                     alt=bundle.state.alt,
                 )
+                if c2a_call is not None:
+                    # DEMO MODE: localizer disabled to free Ollama GPU for
+                    # the Gemma 4 E4B multilingual command translation path
+                    # (translations were taking 30-40s due to queue
+                    # contention). Bridge falls back to SARD sidecar
+                    # bbox lookup for visualization. C2A LoRA confirmation
+                    # still drives the SURVIVORS counter and finding cards.
+                    pass
                 if c2a_call is not None:
                     c2a_result = self.validation.validate(c2a_call, bundle)
                     if c2a_result.valid:

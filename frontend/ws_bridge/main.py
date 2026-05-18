@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -186,6 +187,9 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     subscriber: RedisSubscriber = app.state.subscriber
     translation_broadcaster = app.state.translation_broadcaster
     validation_log_writer = app.state.validation_log_writer
+    camera_broadcaster = app.state.camera_broadcaster
+    task_broadcaster = app.state.task_broadcaster
+    validation_tick_broadcaster = app.state.validation_tick_broadcaster
 
     emit_task = asyncio.create_task(
         _emit_loop(registry=registry, aggregator=aggregator, tick_s=config.tick_s)
@@ -199,6 +203,12 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     # (put_nowait) and written to disk by this dedicated task. Decoupling
     # means slow disk I/O cannot back-pressure the Redis subscribe loop.
     validation_log_task = asyncio.create_task(validation_log_writer())
+    # Path γ-lite: camera broadcaster — drains binary frames from camera_queue
+    # and broadcasts base64-encoded WS frames at ≤ 1 fps per drone.
+    camera_task = asyncio.create_task(camera_broadcaster())
+    # Path γ-MAX++: task assignment broadcaster + validation event tailer.
+    task_task = asyncio.create_task(task_broadcaster())
+    validation_tick_task = asyncio.create_task(validation_tick_broadcaster())
     try:
         yield
     finally:
@@ -222,8 +232,11 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
         subscribe_task.cancel()
         translation_task.cancel()
         validation_log_task.cancel()
+        camera_task.cancel()
+        task_task.cancel()
+        validation_tick_task.cancel()
         for task in (
-            emit_task, subscribe_task, translation_task, validation_log_task,
+            emit_task, subscribe_task, translation_task, validation_log_task, camera_task, task_task, validation_tick_task,
         ):
             try:
                 await task
@@ -266,6 +279,14 @@ def create_app() -> FastAPI:
     # drop-oldest-on-full policy provides hard back-pressure relief.
     translation_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
+    # Path γ-lite: camera frame pipeline. maxsize=16 because we throttle to
+    # 1 fps/drone in the broadcaster anyway.
+    camera_queue: asyncio.Queue = asyncio.Queue(maxsize=16)
+
+    # Path γ-MAX++: EGS task assignments + validation event ticker queues.
+    task_queue: asyncio.Queue = asyncio.Queue(maxsize=32)
+    validation_tick_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+
     async def _translation_broadcaster_loop() -> None:
         """Drain ``translation_queue`` and broadcast via ``registry``.
 
@@ -287,11 +308,9 @@ def create_app() -> FastAPI:
                 # corrupt the WS clients.
                 outcome = validate("websocket_messages", frame)
                 if not outcome.valid:
-                    logger.error(
-                        "BUG: dropped translation frame post-strip: %s",
-                        outcome.errors,
-                    )
+                    print(f"[CMD-TRANS] DROP post-validate: {outcome.errors[0].message if outcome.errors else '?'} frame={frame}", flush=True)
                     continue
+                print(f"[CMD-TRANS] BROADCAST cmd_id={frame.get('command_id')}", flush=True)
                 await registry.broadcast(frame)
             except asyncio.CancelledError:
                 raise
@@ -347,12 +366,134 @@ def create_app() -> FastAPI:
                     exc,
                 )
 
+    async def _camera_broadcaster_loop() -> None:
+        """Drain ``camera_queue``, base64-encode JPEGs, broadcast to WS clients.
+
+        γ-MAX++: also forwards ``detections`` from bbox sidecar so the dashboard
+        can render bounding boxes on victim-bearing frames.
+        Rate-limited to 1 frame per second per drone.
+        """
+        import base64
+        import time as _time
+        last_emit: Dict[str, float] = {}
+        min_interval_s = 1.0
+        while True:
+            try:
+                drone_id, frame_bytes, detections = await camera_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                now = _time.monotonic()
+                last = last_emit.get(drone_id, 0.0)
+                if now - last < min_interval_s:
+                    continue  # throttle
+                last_emit[drone_id] = now
+                frame_b64 = base64.b64encode(frame_bytes).decode("ascii")
+                frame: Dict[str, Any] = {
+                    "type": "drone_camera",
+                    "drone_id": drone_id,
+                    "frame_b64": frame_b64,
+                    "ts": now,
+                }
+                if detections:
+                    frame["detections"] = detections
+                outcome = validate("websocket_messages", frame)
+                if not outcome.valid:
+                    logger.error("BUG: dropped camera frame post-build: %s", outcome.errors)
+                    continue
+                await registry.broadcast(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "camera_broadcaster tick error (continuing): %s: %s",
+                    type(exc).__name__, exc,
+                )
+
+    async def _task_broadcaster_loop() -> None:
+        """γ-MAX++: forward EGS task assignments as drone_task_assignment frames."""
+        while True:
+            try:
+                drone_id, payload = await task_queue.get()
+            except asyncio.CancelledError:
+                raise
+            try:
+                frame: Dict[str, Any] = {
+                    "type": "drone_task_assignment",
+                    "drone_id": drone_id,
+                    "task_id": payload.get("task_id", ""),
+                    "task_type": payload.get("task_type", ""),
+                    "assigned_survey_points": payload.get("assigned_survey_points", []),
+                }
+                outcome = validate("websocket_messages", frame)
+                if not outcome.valid:
+                    logger.error("BUG: dropped task_assignment post-build: %s", outcome.errors)
+                    continue
+                await registry.broadcast(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("task_broadcaster tick error: %s: %s", type(exc).__name__, exc)
+
+    async def _validation_tick_broadcaster_loop() -> None:
+        """γ-MAX++: tail validation_events.jsonl and broadcast new lines."""
+        import time as _time
+        from pathlib import Path as _Path
+        log_path = _Path(os.environ.get("GG_LOG_DIR", "/tmp/gemma_guardian_logs")) / "validation_events.jsonl"
+        last_size = 0
+        # Start from end so we don't dump history on bridge restart.
+        if log_path.exists():
+            last_size = log_path.stat().st_size
+        print(f"[validation_tick_tailer] STARTED path={log_path} last_size={last_size}", flush=True)
+        while True:
+            try:
+                await asyncio.sleep(0.5)
+                if not log_path.exists():
+                    continue
+                cur_size = log_path.stat().st_size
+                if cur_size <= last_size:
+                    continue
+                with open(log_path, "r") as f:
+                    f.seek(last_size)
+                    new_content = f.read()
+                last_size = cur_size
+                for line in new_content.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    frame: Dict[str, Any] = {
+                        "type": "validation_event_tick",
+                        "agent_id": str(rec.get("agent_id", "?")),
+                        "layer": str(rec.get("layer", "?")),
+                        "rule_id": str(rec.get("rule_id", "?")),
+                        "outcome": str(rec.get("outcome", "?")),
+                        "function_or_command": str(rec.get("function_or_command", "?"))[:200],
+                        "valid": bool(rec.get("valid", False)),
+                        "ts": _time.monotonic(),
+                    }
+                    outcome = validate("websocket_messages", frame)
+                    if not outcome.valid:
+                        print(f"[validation_tick] REJECT: {outcome.errors[0].message if outcome.errors else '?'} | frame={frame}", flush=True)
+                        continue
+                    print(f"[validation_tick] BROADCAST: {frame['agent_id']} {frame['outcome']}", flush=True)
+                    await registry.broadcast(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("validation_tick tailer error: %s: %s", type(exc).__name__, exc)
+
     subscriber = RedisSubscriber(
         config=config,
         aggregator=aggregator,
         validation_logger=validation_logger,
         translation_queue=translation_queue,
         validation_log_queue=validation_log_queue,
+        camera_queue=camera_queue,
+        task_queue=task_queue,
     )
     publisher = RedisPublisher(redis_url=config.redis_url)
 
@@ -364,6 +505,14 @@ def create_app() -> FastAPI:
     app.state.publisher = publisher
     app.state.translation_queue = translation_queue
     app.state.translation_broadcaster = _translation_broadcaster_loop
+    # Path γ-lite: camera pipeline registration.
+    app.state.camera_queue = camera_queue
+    app.state.camera_broadcaster = _camera_broadcaster_loop
+    # Path γ-MAX++: task + validation tick pipelines.
+    app.state.task_queue = task_queue
+    app.state.task_broadcaster = _task_broadcaster_loop
+    app.state.validation_tick_queue = validation_tick_queue
+    app.state.validation_tick_broadcaster = _validation_tick_broadcaster_loop
     # Eng-review 2A: validation log queue + single-writer task.
     app.state.validation_log_queue = validation_log_queue
     app.state.validation_log_writer = _validation_log_writer_loop
@@ -371,6 +520,15 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> Dict[str, str]:
         return {"status": "ok", "contract_version": VERSION}
+
+    # Path Δ: serve the Flutter dashboard from /dashboard so the runpod
+    # proxy can reach it without exposing a separate port. Requires the
+    # Flutter build to use --base-href "/dashboard/".
+    from pathlib import Path as _Path
+    from fastapi.staticfiles import StaticFiles
+    _DASHBOARD = _Path("/workspace/Gemma-Guardian/frontend/flutter_dashboard/build/web")
+    if _DASHBOARD.exists():
+        app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD), html=True), name="dashboard")
 
     @app.websocket("/")
     async def ws_endpoint(websocket: WebSocket) -> None:

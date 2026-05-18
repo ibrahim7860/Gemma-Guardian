@@ -108,6 +108,12 @@ def _parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         default=None,
         help="Self-terminate cleanly after N seconds. Omit to run forever (until SIGINT).",
     )
+    parser.add_argument(
+        "--loop-period",
+        type=float,
+        default=None,
+        help="If set, tick index wraps every N seconds for continuous demo playback.",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -136,13 +142,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     )
     start = time.monotonic()
     duration = args.duration
+    loop_period = args.loop_period
     try:
         while True:
             elapsed = time.monotonic() - start
             if duration is not None and elapsed >= duration:
                 print(f"[frame_server] reached --duration={duration}s; exiting cleanly.", flush=True)
                 return 0
-            tick_index = int(elapsed)
+            # --loop-period wraps tick index so the same frame_mappings
+            # window replays continuously (matches waypoint_runner loop).
+            t = elapsed % loop_period if loop_period else elapsed
+            tick_index = int(t)
             server.tick(tick_index=tick_index)
             next_boundary = start + (math.floor(elapsed / period) + 1) * period
             sleep_for = max(0.0, next_boundary - time.monotonic())
