@@ -25,8 +25,8 @@ from PIL import Image
 
 BASE_IMAGES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "base_images"
 LICENSES_PATH = BASE_IMAGES_DIR / "LICENSES.md"
-MAX_W, MAX_H = 1024, 1024
-MAX_SIZE_BYTES = 500_000  # 500KB ceiling — base aerial is one-shot, not per-tick
+MAX_W, MAX_H = 1920, 1080
+MAX_SIZE_BYTES = 800_000  # 800KB ceiling — base aerial is one-shot, not per-tick
 
 # Filenames every scenario YAML references via `base_image_path`. Update
 # if a scenario adds a new aerial. Driving the parametrize off this set

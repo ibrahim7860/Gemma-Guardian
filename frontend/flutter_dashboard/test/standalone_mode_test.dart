@@ -15,7 +15,13 @@ import 'package:flutter_dashboard/widgets/drone_status_panel.dart';
 
 Map<String, dynamic> _stateUpdateWith(List<Map<String, dynamic>> drones) => {
       'type': 'state_update',
-      'egs_state': {'mission_id': 'm1'},
+      'egs_state': {
+        'mission_id': 'm1',
+        // Inner EGS timestamp seeds _egsLastSeenAt; the heartbeat logic
+        // ignores envelopes without one (the aggregator only stamps real
+        // EGS-published timestamps).
+        'timestamp': '2026-05-07T10:00:00.000Z',
+      },
       'active_drones': drones,
       'active_findings': const [],
     };

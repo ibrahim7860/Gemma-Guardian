@@ -958,7 +958,6 @@ class MissionState extends ChangeNotifier {
         : activeFindings.whereType<Map>().toList();
     int n = 0;
     for (final f in source) {
-      if (f is! Map) continue;
       if (f["type"] != "victim") continue;
       n++;
     }

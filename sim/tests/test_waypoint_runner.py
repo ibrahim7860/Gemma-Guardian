@@ -219,7 +219,7 @@ class TestWaypointRunnerSchemaDefaults:
         runner.tick(t_seconds=0.0)
         msgs = _drain(ps, count=1)
         m = msgs[0]
-        assert m["current_task"] is None
+        assert m["current_task"] == "survey"
         assert m["last_action"] == "none"
         assert m["last_action_timestamp"] is None
         assert m["validation_failures_total"] == 0

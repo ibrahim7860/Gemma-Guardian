@@ -44,7 +44,13 @@ class StateAggregator:
     ``snapshot(timestamp_iso=...)`` produces a new envelope dict per emit tick.
     """
 
-    def __init__(self, *, max_findings: int, seed_envelope: Dict[str, Any]) -> None:
+    def __init__(
+        self,
+        *,
+        max_findings: int,
+        seed_envelope: Dict[str, Any],
+        demo_autoapprove_victims: bool = False,
+    ) -> None:
         self._max_findings: int = max_findings
         # Deep-copy the seed so external mutation of the caller's dict cannot
         # corrupt our scaffold or initial egs payload.
@@ -52,6 +58,11 @@ class StateAggregator:
         self._egs: Dict[str, Any] = deepcopy(seed_envelope["egs_state"])
         self._drones: Dict[str, Dict[str, Any]] = {}
         self._findings: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        # Demo-only flag: when True, snapshot() auto-stamps operator_status=
+        # "approved" on high-confidence victim findings absent from
+        # egs_state.approved_findings. Off by default so unit tests assert
+        # the strict Contract 4 pending-stays-pending semantics.
+        self._demo_autoapprove_victims: bool = demo_autoapprove_victims
         # Monotonic timestamp (seconds) of the last real ``update_egs_state``
         # call. None until the first real EGS publish lands. Used by snapshot
         # to flag the dashboard when the EGS coordinator goes silent so the
@@ -150,7 +161,7 @@ class StateAggregator:
                 f["operator_status"] = "approved"
             elif status == "dismissed":
                 f["operator_status"] = "dismissed"
-            else:
+            elif self._demo_autoapprove_victims:
                 # Demo triage: auto-approve high-confidence victim findings
                 # so the SURVIVORS counter climbs continuously during the
                 # demo recording. (Localizer is disabled to free GPU for

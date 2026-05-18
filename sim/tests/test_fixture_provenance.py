@@ -21,8 +21,8 @@ from PIL import Image
 
 FRAMES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "frames"
 LICENSES_PATH = FRAMES_DIR / "LICENSES.md"
-MAX_W, MAX_H = 640, 480
-MAX_SIZE_BYTES = 200_000  # 200KB ceiling — placeholders should be small
+MAX_W, MAX_H = 1280, 720
+MAX_SIZE_BYTES = 350_000  # 350KB ceiling — accommodates C2A 1024x576 disaster aerials
 
 # The 8 fixture filenames that disaster_zone_v1.yaml, single_drone_smoke.yaml,
 # and resilience_v1.yaml all reference. Update if scenarios add new fixtures.

@@ -265,6 +265,7 @@ def create_app() -> FastAPI:
     aggregator = StateAggregator(
         max_findings=config.max_findings,
         seed_envelope=seed_envelope,
+        demo_autoapprove_victims=True,
     )
     validation_logger = ValidationEventLogger()
 
