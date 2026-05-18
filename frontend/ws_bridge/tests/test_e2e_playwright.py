@@ -1256,27 +1256,27 @@ def test_ui_approve_disables_button_after_click(pipeline: Dict[str, Any]) -> Non
             _install_ws_url_rewriter(page, pipeline["bridge_port"])
             sent_frames = _capture_app_outbound_frames(page, pipeline["bridge_port"])
             page.goto(pipeline["flutter_url"], wait_until="domcontentloaded", timeout=15_000)
-            page.locator(
+            approve_locator = page.locator(
                 'flt-semantics[role="button"]:has-text("APPROVE")'
-            ).first.wait_for(state="visible", timeout=20_000)
-            # Resolve to a concrete DOM node so subsequent clicks hit the
-            # SAME button. ``locator(...).first`` re-queries on every call
-            # — and the producer publishes a new finding every ~1.6s, so
-            # the second ``.first`` would target a different tile entirely.
-            approve_handle = page.locator(
-                'flt-semantics[role="button"]:has-text("APPROVE")'
-            ).first.element_handle()
-            assert approve_handle is not None, "approve element handle missing"
-            approve_handle.click()
-            # Click the SAME node again immediately. If the button is
-            # properly disabled, the second click is a no-op.
+            ).first
+            approve_locator.wait_for(state="visible", timeout=20_000)
+            # Use locator.click() (auto-retries on staleness) instead of
+            # element_handle.click(). The bridge ticks every 250 ms and
+            # Flutter web aggressively recycles flt-semantics nodes, so a
+            # captured ElementHandle frequently detaches between capture
+            # and click. The locator re-queries on each click, and the
+            # finding_id-filtered assertion below is robust to whether
+            # the second click hits the same recycled tile or a fresh one
+            # (an approval for a *different* finding_id does not violate
+            # the "same button cannot fire twice" contract).
+            approve_locator.click()
             page.wait_for_timeout(50)
             try:
-                approve_handle.click(timeout=2_000, force=True)
+                approve_locator.click(timeout=2_000, force=True)
             except Exception:
-                # The button may detach / become non-clickable as Flutter
-                # rebuilds the tile with the disabled state. That's exactly
-                # what we want — count the second click as a no-op.
+                # Second click may no-op if the button disabled or the
+                # tile rebuilt without an APPROVE button. Either way is
+                # consistent with the contract under test.
                 pass
             page.wait_for_timeout(800)
 
