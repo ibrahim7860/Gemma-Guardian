@@ -12,12 +12,16 @@ In post-disaster zones, cell towers fail in the first hour. Drones with cloud-AI
 
 - **Kaggle Model (C2A victim-detection LoRA):** [`gemma4-e2b-victim-vision-lora-c2a`](https://www.kaggle.com/models/ibrahimahmed7860/gemma4-e2b-victim-vision-lora-c2a)
 - **Kaggle Notebook (training):** [`gemma-4-e2b-victim-vision-lora-c2a-disaster`](https://www.kaggle.com/code/ibrahimahmed7860/gemma-4-e2b-victim-vision-lora-c2a-disaster)
-- **Demo video:** [TODO: insert YouTube URL after upload]
+- **Demo video:** [YouTube — FieldAgent: Offline Disaster-Response Swarm Powered by Gemma 4](https://www.youtube.com/watch?v=m9KX6amA9C8)
 - **Technical writeup:** [`WRITEUP.md`](WRITEUP.md)
 
 ## Demo video
 
-*Submission video link added once the Beat 5 capture is final (target: Day 15, May 17, 2026).* Storyboard and capture rig: [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md), [`scripts/run_beat5_capture.sh`](scripts/run_beat5_capture.sh).
+[![FieldAgent demo](https://img.youtube.com/vi/m9KX6amA9C8/maxresdefault.jpg)](https://www.youtube.com/watch?v=m9KX6amA9C8)
+
+▶ **Watch on YouTube:** [FieldAgent — Offline Disaster-Response Swarm Powered by Gemma 4](https://www.youtube.com/watch?v=m9KX6amA9C8)
+
+Storyboard and capture rig: [`docs/21-demo-storyboard.md`](docs/21-demo-storyboard.md), [`scripts/run_beat5_capture.sh`](scripts/run_beat5_capture.sh).
 
 ## Quick start
 
