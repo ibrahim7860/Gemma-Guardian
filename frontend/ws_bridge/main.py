@@ -262,10 +262,14 @@ def create_app() -> FastAPI:
     setup_logging("ws_bridge")
     config = BridgeConfig.from_env()
     seed_envelope = _load_seed_envelope()
+    # Demo behavior is on by default; e2e Playwright fixtures set
+    # GG_DEMO_AUTOAPPROVE_VICTIMS=0 to keep APPROVE tiles clickable without
+    # the 1 Hz aggregator flipping them to "approved" mid-test.
+    autoapprove = os.environ.get("GG_DEMO_AUTOAPPROVE_VICTIMS", "1") != "0"
     aggregator = StateAggregator(
         max_findings=config.max_findings,
         seed_envelope=seed_envelope,
-        demo_autoapprove_victims=True,
+        demo_autoapprove_victims=autoapprove,
     )
     validation_logger = ValidationEventLogger()
 

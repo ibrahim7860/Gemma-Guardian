@@ -228,6 +228,14 @@ def pipeline() -> Iterator[Dict[str, Any]]:
         bridge_env["REDIS_URL"] = f"redis://127.0.0.1:{redis_port}"
         bridge_env["BRIDGE_TICK_S"] = "0.25"
         bridge_env["BRIDGE_RECONNECT_MAX_S"] = "2"
+        # Disable demo auto-approve so APPROVE tiles don't re-render to
+        # "approved" mid-test and detach element handles captured by
+        # Playwright. test_ui_approve_disables_button_after_click captures
+        # an element_handle and asserts a second click is a no-op; if the
+        # aggregator flips the finding to approved on its 1 Hz tick, the
+        # tile re-renders and the handle detaches before the first click
+        # lands.
+        bridge_env["GG_DEMO_AUTOAPPROVE_VICTIMS"] = "0"
         # Ensure repo root is on PYTHONPATH so `frontend.ws_bridge.main`
         # resolves regardless of cwd uvicorn inherits.
         existing_pp = bridge_env.get("PYTHONPATH", "")
