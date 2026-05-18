@@ -33,36 +33,36 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **Visual opens on:** news footage dissolves into drone aerial footage over fire-damaged neighborhoods. News audio fades. Voice is already going.
 
-**IBRAHIM (VO, over B-roll):** When the Eaton Fire hit Los Angeles, cell coverage across the foothills collapsed within the first hour. The technology meant to help in moments like this — just stopped working.
+**[S2-I1] IBRAHIM (VO, over B-roll) → Hazim:** When the Eaton Fire hit Los Angeles, cell coverage across the foothills collapsed within the first hour. The technology meant to help in moments like this — just stopped working.
 
 **Cut to webcam:** Ibrahim. Lower-third with his name.
 
-**IBRAHIM (on camera):** And this happens in almost every major disaster.
+**[S2-I2] IBRAHIM (on camera) → Muhammad:** And this happens in almost every major disaster.
 
 **Cut to B-roll:** drone POV slowly tilting down toward a person waving from a rooftop. Hold on the figure.
 
-**THAYYIL (VO, over B-roll):** The first few hours after a disaster hits — that's when most rescues actually happen.
+**[S2-T1] THAYYIL (VO, over B-roll) → Muhammad:** The first few hours after a disaster hits — that's when most rescues actually happen.
 
 **Cut to webcam:** Thayyil.
 
-**THAYYIL (on camera):** But that's also exactly when the network breaks down. So rescue teams end up operating blind, right when they need information the most.
+**[S2-T2] THAYYIL (on camera) → Muhammad:** But that's also exactly when the network breaks down. So rescue teams end up operating blind, right when they need information the most.
 
 **Cut to B-roll:** aerial of collapsed structures, smoke rising. Text overlay fades in mid-shot:
 > 3.6 billion people live in disaster-vulnerable regions.
 
-**HAZIM (VO, over B-roll):** And this isn't a small problem. Billions of people live in places where this happens every year.
+**[S2-H1] HAZIM (VO, over B-roll) → Hazim ✅:** And this isn't a small problem. Billions of people live in places where this happens every year.
 
 **Cut to webcam:** Hazim.
 
-**HAZIM (on camera):** The gap between when help is needed and when the tech can actually deliver — that's where lives get lost.
+**[S2-H2] HAZIM (on camera) → Hazim ✅:** The gap between when help is needed and when the tech can actually deliver — that's where lives get lost.
 
 **Cut to B-roll:** brief shot of a rescue worker or someone trapped near rubble.
 
-**KALEEL (VO, over B-roll):** So we built something to help close that gap,
+**[S2-K1] KALEEL (VO, over B-roll) → Hazim:** So we built something to help close that gap,
 
 **Cut to webcam:** Kaleel.
 
-**KALEEL (on camera):** Something that keeps working when nothing else does.
+**[S2-K2] KALEEL (on camera) → Muhammad:** Something that keeps working when nothing else does.
 
 ---
 
@@ -72,11 +72,11 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **Visual (fallback — pre-made Lottie + paper-PDF inset):** Free Lottie animation from [lottiefiles.com](https://lottiefiles.com/) (search "edge AI" / "drone network" / "offline computing") composed with the Nguyen et al. 2026 paper PDF as a small inset (top-left or bottom-right). Caption overlay: *"Reference: Nguyen, Truong, Le 2026 (arXiv 2601.14437)"*. 30-min edit budget.
 
-**QASIM:** The way we did it is simple. Instead of having drones rely on the internet to think, we put the AI directly on the drones themselves.
+**[S3-Q1] QASIM (VO) → Hazim:** The way we did it is simple. Instead of having drones rely on the internet to think, we put the AI directly on the drones themselves.
 
-**IBRAHIM:** There's a paper from earlier this year — Nguyen, Truong, Le, January 2026 — that proposed something similar but needed cloud GPT-4. We replaced every LLM with Gemma 4 running locally. **Same architecture. Zero cloud.**
+**[S3-I1] IBRAHIM (VO) → Hazim:** There's a paper from earlier this year — Nguyen, Truong, Le, January 2026 — that proposed something similar but needed cloud GPT-4. We replaced every LLM with Gemma 4 running locally. **Same architecture. Zero cloud.**
 
-**IBRAHIM:** So now a swarm of drones can see, think, coordinate rescue work — without any internet at all.
+**[S3-I2] IBRAHIM (VO) → Hazim:** So now a swarm of drones can see, think, coordinate rescue work — without any internet at all.
 
 ---
 
@@ -88,7 +88,7 @@ No "we're the team" introduction. The news audio from the cold open fades, and I
 
 **Visual overlay** (top-right, holds ~2s): real macOS/Windows airplane-mode icon, captured with wifi actually off.
 
-**HAZIM (VO):** And here's what that actually looks like in action. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
+**[S4-H1] HAZIM (VO) → Ibrahim ✅ (demo VO track):** And here's what that actually looks like in action. Three drones surveying a simulated disaster zone — and the wifi on our laptop is turned off.
 
 ### Drone spots a survivor *(~12s)*
 
@@ -103,13 +103,13 @@ report_finding(
 )
 ```
 
-**HAZIM (VO):** Right there — drone one just picked up a survivor. That's Gemma analyzing the camera frame, deciding it's a person who needs help, and producing a structured report — the operator sees it on the dashboard instantly.
+**[S4-H2] HAZIM (VO) → Ibrahim ✅ (demo VO track):** Right there — drone one just picked up a survivor. That's Gemma analyzing the camera frame, deciding it's a person who needs help, and producing a structured report — the operator sees it on the dashboard instantly.
 
 ### Multilingual command *(~10s)*
 
 **Visual:** Operator types in Spanish: *"drone 2, regresa a la base"*. Dashboard shows Gemma's translation popping out as a structured `recall_drone()` call. Drone 2 turns around and heads home.
 
-**HAZIM (VO):** Now the operator's typing a command in Spanish. Gemma understands it, translates it into the right action, and sends drone two back to base.
+**[S4-H3] HAZIM (VO) → Ibrahim ✅ (demo VO track):** Now the operator's typing a command in Spanish. Gemma understands it, translates it into the right action, and sends drone two back to base.
 
 ### The wow moment *(~15s)*
 
@@ -117,19 +117,19 @@ report_finding(
 - **Attempt 1 — FAILED:** *"Your assignments cover 27 points but 25 are available. Reassign so every point is covered exactly once."*
 - **Attempt 2 — PASSED.**
 
-**THAYYIL (VO):** Watch this — Gemma assigns 27 survey points across three drones. But there are only 25. The validator catches the over-count, re-prompts Gemma with the exact correction, and Gemma fixes itself in one retry. No drone ever flew the bad plan. That's Algorithm 1 from the reference paper, running entirely offline.
+**[S4-T1] THAYYIL (VO) → Ibrahim ✅ (demo VO track):** Watch this — Gemma assigns 27 survey points across three drones. But there are only 25. The validator catches the over-count, re-prompts Gemma with the exact correction, and Gemma fixes itself in one retry. No drone ever flew the bad plan. That's Algorithm 1 from the reference paper, running entirely offline.
 
 ### Beat 5 — offline proof *(~15s)*
 
 **Visual:** Operator runs `sudo ifconfig en0 down`. EGS LINK SEVERED banner appears across the top of the dashboard. All three drones grow `STANDALONE` badges. Drones keep flying. Drone 3's sidecar log shows "finding produced (buffered)." Then operator runs `sudo ifconfig en0 up` — banner clears, the buffered finding pops onto the dashboard, victim count chip ticks up by one.
 
-**THAYYIL (VO):** Now we kill the entire ground station — not one drone, the whole coordinator. Watch — all three drones keep flying on their own Gemma 4 brains. Drone three even finds another survivor while it's offline, and the second the link comes back, that finding shows up on the dashboard. Nothing lost.
+**[S4-T2] THAYYIL (VO) → Ibrahim ✅ (demo VO track):** Now we kill the entire ground station — not one drone, the whole coordinator. Watch — all three drones keep flying on their own Gemma 4 brains. Drone three even finds another survivor while it's offline, and the second the link comes back, that finding shows up on the dashboard. Nothing lost.
 
 ### Local-only proof *(~8s)*
 
 **Visual:** Cut to a terminal window. `ollama list` runs, output shows `gemma4:e2b` and `gemma4:e4b` cached locally. Airplane-mode icon still visible.
 
-**KALEEL (VO):** And just to prove it — everything you just saw, every drone, every decision, ran right here on our laptop. No cloud, no internet, nothing.
+**[S4-K1] KALEEL (VO) → Ibrahim ✅ (demo VO track):** And just to prove it — everything you just saw, every drone, every decision, ran right here on our laptop. No cloud, no internet, nothing.
 
 ---
 
@@ -137,15 +137,19 @@ report_finding(
 
 **Visual:** Cut to Kaleel's face.
 
-**KALEEL:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
+**[S5-K1] KALEEL (on camera) → Muhammad:** When the next major disaster hits, emergency teams shouldn't have to lose people just because the cell towers went down.
 
-**QASIM:** A swarm of drones that keeps coordinating offline — that could be the difference between someone being found in time, or not at all.
+**Visual:** Cut away from webcam — cinematic B-roll insert. Recommended clip: **D1** ("drones flying away into the distance over a recovering disaster zone, golden hour"). Holds ~5s. Breaks the otherwise-solo Muhammad close and lets the anchor line land alongside the strongest visual.
 
-**HAZIM:** And that's what we want to put in the hands of real rescue teams. Faster searches, smarter coordination, fewer people falling through the cracks.
+**[S5-Q1] QASIM (VO over B-roll) → Hazim:** A swarm of drones that keeps coordinating offline — that could be the difference between someone being found in time, or not at all.
 
-**THAYYIL:** For us, this isn't just a hackathon project. It's the kind of thing we'd want flying over our own families if something ever happened.
+**Visual:** Cut back to webcam.
 
-**IBRAHIM:** This is our project, FieldAgent, built on Gemma 4.
+**[S5-H1] HAZIM (on camera) → Hazim ✅:** And that's what we want to put in the hands of real rescue teams. Faster searches, smarter coordination, fewer people falling through the cracks.
+
+**[S5-T1] THAYYIL (on camera) → Muhammad:** For us, this isn't just a hackathon project. It's the kind of thing we'd want flying over our own families if something ever happened.
+
+**[S5-I1] IBRAHIM (on camera) → Muhammad:** This is our project, FieldAgent, built on Gemma 4.
 
 **End card:** Project name • GitHub URL • Apache-2.0 • *Built for the Gemma 4 Good Hackathon*
 
@@ -154,6 +158,56 @@ report_finding(
 ---
 
 # Production Notes
+
+## Recording assignments — 2026-05-18 (locked)
+
+Captures actual capture-day availability. Supersedes the original "Speaker distribution" table below (kept for narrative reference). Every speaker tag in the script body above carries `[line-ID]` + `→ recording owner` (✅ = already recorded).
+
+**Availability:**
+- **Ibrahim** — covered all S4 demo VO during Block A screen recording. Otherwise out.
+- **Qasim, Kaleel** — unavailable.
+- **Hazim** — VO-only today. Original-assigned VO + webcam lines (S2-H1, S2-H2, S5-H1) already recorded.
+- **Muhammad** — covers original-assigned lines plus reassigned on-camera work.
+
+### Hazim — VO lines to record (6, ~135 wd)
+
+| ID | Original | Words | Notes |
+|---|---|---|---|
+| S2-I1 | Ibrahim VO | 27 | Segment 2 opener — sets the entire tone |
+| S2-K1 | Kaleel VO | 11 | |
+| S3-Q1 | Qasim | 24 | Segment 3 opener |
+| S3-I1 | Ibrahim | 32 | Paper anchor — academic credibility moment |
+| S3-I2 | Ibrahim | 16 | Transition into demo |
+| S5-Q1 | Qasim (on-cam → VO swap) | 25 | Emotional anchor, plays over B-roll D1 |
+
+### Muhammad — lines to record (7 lines, ~101 wd; 5 on-cam + 2 VO)
+
+| ID | Mode | Original / source | Words |
+|---|---|---|---|
+| S2-T1 | VO | own original | 15 |
+| S2-T2 | on-cam | own original | 22 |
+| S2-I2 | on-cam | Ibrahim reassigned | 8 |
+| S2-K2 | on-cam | Kaleel reassigned | 8 |
+| S5-K1 | on-cam | Kaleel reassigned | 21 |
+| S5-T1 | on-cam | own original | 19 |
+| S5-I1 | on-cam | Ibrahim reassigned (final tagline) | 8 |
+
+### Already covered / no action needed
+
+- **Hazim originals (✅):** S2-H1 (VO), S2-H2 (on-cam), S5-H1 (on-cam) — recorded prior to today.
+- **Ibrahim demo VO track (✅):** all of S4 (S4-H1, S4-H2, S4-H3, S4-T1, S4-T2, S4-K1) captured during Block A demo recording.
+
+### Notable script change vs original
+
+**S5-Q1 flipped from on-camera (Qasim) to VO over B-roll cutaway** (Hazim). Recommended B-roll: D1 ("drones flying away into the distance over a recovering disaster zone, golden hour"). Rationale: (a) Hazim is VO-only today; (b) without this flip, Muhammad solo-carries the entire close with 5 back-to-back on-camera lines, which reads as a monologue. Cutting away to D1 with Hazim's voice lets the cinematic shot land alongside the strongest emotional beat and breaks the cadence.
+
+### Edit-pass checklist impact
+
+Two original checklist items are no longer satisfiable and should be removed or downgraded:
+- ~~All five team members appear on camera~~ — only Muhammad on screen, plus Hazim's already-recorded S2-H2 and S5-H1 webcam takes. Ibrahim/Qasim/Kaleel not on screen.
+- ~~All five team members speak at least one line~~ — Ibrahim's voice is present via the demo VO track, Hazim + Muhammad speak across other segments. Qasim and Kaleel do not appear at all.
+
+Cheapest mitigation if needed: one short phone-recorded clip from each absent member, used as a visual cutaway. Not blocking submission.
 
 ## Speaker distribution
 
